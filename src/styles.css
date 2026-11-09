@@ -31,6 +31,14 @@
   }
 }
 
+.yard,
+.yard * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .hud-safe {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   padding-left: max(0.75rem, env(safe-area-inset-left));

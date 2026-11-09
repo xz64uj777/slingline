@@ -42,6 +42,16 @@ export function CraneYard() {
   const shownBest = useRef(0);
 
   useEffect(() => {
+    const block = (event: Event) => event.preventDefault();
+    document.addEventListener("selectstart", block);
+    document.addEventListener("contextmenu", block);
+    return () => {
+      document.removeEventListener("selectstart", block);
+      document.removeEventListener("contextmenu", block);
+    };
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const sim = new CraneSim();
@@ -139,7 +149,10 @@ export function CraneYard() {
   }, []);
 
   return (
-    <main className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
+    <main
+      className="yard relative h-dvh w-full overflow-hidden bg-bg text-fg"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
       {glError ? (
         <p className="absolute inset-x-0 top-16 px-6 text-center text-danger">{glError}</p>
@@ -316,6 +329,7 @@ function Stick() {
       ref={baseRef}
       className="pointer-events-auto relative size-28 touch-none rounded-full border border-line bg-surface"
       onPointerDown={(e) => {
+        e.preventDefault();
         idRef.current = e.pointerId;
         e.currentTarget.setPointerCapture(e.pointerId);
         place(e.clientX, e.clientY);
@@ -367,10 +381,12 @@ function Hold({
       type="button"
       className="flex h-16 w-24 touch-none flex-col items-center justify-center gap-0.5 border border-line bg-surface font-display text-lg text-fg"
       onPointerDown={(e) => {
+        e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
         held[key] = true;
         syncHoist();
       }}
+      onContextMenu={(e) => e.preventDefault()}
       onPointerUp={() => {
         held[key] = false;
         syncHoist();
