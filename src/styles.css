@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --color-bg: #121418;
+  --color-surface: #1c2128;
+  --color-fg: #e8e4d8;
+  --color-muted: #8e968c;
+  --color-primary: #e3a23a;
+  --color-danger: #c4492c;
+  --color-ok: #7f9a7c;
+  --color-steel: #9aa3ad;
+  --color-line: #2a3038;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    overflow: hidden;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+.hud-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.sway-well {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 999px;
+  border: 2px solid var(--color-primary);
+  background: var(--color-surface);
+  position: relative;
+}
+
+.sway-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -0.35rem;
+  margin-top: -0.35rem;
+  background: var(--color-ok);
+}
+
+.sway-dot[data-level="warn"] {
+  background: var(--color-primary);
+}
+
+.sway-dot[data-level="hot"] {
+  background: var(--color-danger);
+}
+
+.banner[data-show=""] {
+  opacity: 0;
+}
+
+.banner[data-show="break"] {
+  color: var(--color-danger);
+  opacity: 1;
+}
+
+.banner[data-show="set"] {
+  color: var(--color-ok);
+  opacity: 1;
+}
+
+.hold-hot {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
