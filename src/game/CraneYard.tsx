@@ -12,6 +12,7 @@ import {
   setTouchHoist,
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
+import { limitAlarm } from "@/game/alarm";
 
 const STEP = 1 / 60;
 
@@ -41,6 +42,7 @@ export function CraneYard() {
   const buyRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
+  const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
   const meterRef = useRef<HTMLSpanElement>(null);
   const deployRef = useRef<HTMLButtonElement>(null);
@@ -111,6 +113,14 @@ export function CraneYard() {
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (coachRef.current) coachRef.current.textContent = sim.message;
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
+      if (limitRef.current) {
+        const pct = Math.round(sim.limitRatio * 100);
+        limitRef.current.textContent = `${pct}%`;
+        limitRef.current.dataset.level = sim.limitState;
+      }
+      if (playingRef.current && sim.state === "lifting" && sim.phase !== "broke" && sim.phase !== "done") {
+        limitAlarm(sim.limitState, performance.now());
+      }
       if (speedRef.current) {
         speedRef.current.textContent =
           sim.state === "lifting"
@@ -141,6 +151,12 @@ export function CraneYard() {
         } else if (sim.phase === "done") {
           banner.textContent = "Clean set";
           banner.dataset.show = "set";
+        } else if (sim.limitState === "over" && sim.state === "lifting") {
+          banner.textContent = "Over limit";
+          banner.dataset.show = "warn";
+        } else if (sim.limitState === "near" && sim.state === "lifting") {
+          banner.textContent = "Near limit";
+          banner.dataset.show = "warn";
         } else {
           banner.dataset.show = "";
         }
@@ -290,6 +306,8 @@ export function CraneYard() {
           </div>
           <p className="bg-surface px-3 py-1 font-display text-base tracking-wide text-fg">
             SWAY <span ref={swayNumRef} className="text-fg">0°</span>
+            <span className="mx-2 text-steel">LIMIT</span>
+            <span ref={limitRef} data-level="ok" className="limit-read text-fg">0%</span>
             <span className="px-2 text-line">|</span>
             <span ref={meterRef}>SPEED</span> <span ref={speedRef} className="text-fg">0.0</span>
           </p>

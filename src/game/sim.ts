@@ -146,6 +146,9 @@ export class CraneSim {
   swayDeg = 0;
   hookSpeed = 0;
   tipSpeed = 0;
+  limitRatio = 0;
+  limitState: "ok" | "near" | "over" = "ok";
+  limitHold = 0;
   side = 0;
   along = 0;
 
@@ -445,7 +448,7 @@ export class CraneSim {
     this.along = ox * fx + oz * fz;
     this.side = ox * rx + oz * rz;
 
-    this.updateJob();
+    this.updateJob(dt);
 
     if (this.phase === "broke") {
       this.breakFlash -= dt;
@@ -616,9 +619,60 @@ export class CraneSim {
     this.hookSpeed = 0;
   }
 
-  private updateJob() {
+  private loadDemand() {
+    if (this.load === "heavy") return 8.2;
+    if (this.load === "beam") return 4.1;
+    return 2;
+  }
+
+  private chartCapacity() {
+    const rating =
+      this.crane === "crawler"
+        ? 15
+        : this.crane === "tower"
+          ? 11
+          : this.crane === "lattice"
+            ? 9
+            : this.crane === "heavy"
+              ? 7
+              : this.crane === "yard"
+                ? 5
+                : 3.2;
+    const angle = 0.4 + 0.6 * Math.sin(this.boomPitch);
+    const reach = this.extension / Math.max(1, this.extendMax);
+    return rating * angle * (1 - 0.62 * reach);
+  }
+
+  private updateChart(dt: number) {
+    const capacity = Math.max(0.35, this.chartCapacity());
+    this.limitRatio = this.loadDemand() / capacity;
+    if (this.limitRatio > 1) {
+      this.limitState = "over";
+      this.warn = true;
+      this.limitHold += dt;
+      this.message = this.attached
+        ? "Over the chart. Boom in, or raise the angle."
+        : "Over the chart. Shorten the boom before you lift.";
+      return;
+    }
+    this.limitHold = 0;
+    if (this.limitRatio > 0.78) {
+      this.limitState = "near";
+      this.warn = true;
+      this.message = "Near the limit. Watch the angle and the length.";
+      return;
+    }
+    this.limitState = "ok";
+  }
+
+  private updateJob(dt: number) {
     this.warn = false;
     if (this.phase === "broke" || this.phase === "done") return;
+    this.updateChart(dt);
+    if (this.attached && this.airborne && this.limitState === "over" && this.limitHold > 1.15) {
+      this.overload(this.load === "heavy");
+      return;
+    }
 
     if (!this.attached) {
       const dx = this.hx - this.cx;
@@ -630,7 +684,9 @@ export class CraneSim {
         this.attached = true;
         this.airborne = false;
         this.phase = "carry";
-        this.message = "Lift clear, then set it in the amber ring.";
+        if (this.limitState === "ok") this.message = "Lift clear, then set it in the amber ring.";
+      } else if (this.limitState !== "ok") {
+        /* chart warning stays up before the lift */
       } else if (dist < 2.2 && this.hookSpeed >= snatch) {
         this.message = "Too fast to hook. Let the swing die.";
       } else {
@@ -664,7 +720,7 @@ export class CraneSim {
       if (this.hookSpeed > limit) this.fail();
       else if (onTarget) this.succeed();
       else this.setAside();
-    } else if (this.airborne) {
+    } else if (this.airborne && this.limitState === "ok") {
       this.message = this.warn
         ? this.load === "heavy"
           ? "Heavy load. Slow down or the crane goes over."
