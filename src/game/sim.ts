@@ -596,6 +596,7 @@ export class CraneSim {
     } else {
       this.speed *= Math.exp(-5 * dt);
       this.lateralG = 0;
+      if (!this.flipped && this.state !== "lifting") this.roll += -this.roll * Math.min(1, dt * 3);
     }
 
     this.refreshGate();
@@ -669,16 +670,12 @@ export class CraneSim {
       this.limitState = "over";
       this.warn = true;
       this.limitHold += dt;
-      this.message = this.attached
-        ? "Over the chart. Boom in, or raise the angle."
-        : "Over the chart. Shorten the boom before you lift.";
       return;
     }
     this.limitHold = 0;
     if (this.limitRatio > 0.78) {
       this.limitState = "near";
       this.warn = true;
-      this.message = "Near the limit. Watch the angle and the length.";
       return;
     }
     this.limitState = "ok";
@@ -688,10 +685,6 @@ export class CraneSim {
     this.warn = false;
     if (this.phase === "broke" || this.phase === "done") return;
     this.updateChart(dt);
-    if (this.attached && this.airborne && this.limitState === "over" && this.limitHold > 1.15) {
-      this.overload(this.load === "heavy");
-      return;
-    }
 
     if (!this.attached) {
       const dx = this.hx - this.cx;
@@ -704,8 +697,10 @@ export class CraneSim {
         this.airborne = false;
         this.phase = "carry";
         if (this.limitState === "ok") this.message = "Lift clear, then set it in the amber ring.";
-      } else if (this.limitState !== "ok") {
-        /* chart warning stays up before the lift */
+      } else if (this.limitState === "over") {
+        this.message = "Over the chart. Shorten the boom before you lift.";
+      } else if (this.limitState === "near") {
+        this.message = "Near the limit. Watch the angle and the length.";
       } else if (dist < 2.2 && this.hookSpeed >= snatch) {
         this.message = "Too fast to hook. Let the swing die.";
       } else {
@@ -717,20 +712,13 @@ export class CraneSim {
     const bottom = this.hy - this.hang - this.cargoHalf;
     if (bottom > 1.35) this.airborne = true;
 
-    const mass = this.load === "heavy" ? 3 : this.load === "beam" ? 1.4 : 1;
-    const strain = this.hookSpeed * mass + this.tipSpeed * mass * 0.4;
-    const snap = this.mode === "easy" ? 6.2 : 3.2;
-    if (strain > snap && (this.airborne || this.tipSpeed > 2.2)) {
-      const pullOver = this.load === "heavy" && (this.swayDeg > 16 || this.tipSpeed > 3.5);
-      this.overload(pullOver);
+    const fast = this.hookSpeed > (this.mode === "easy" ? 6.4 : 3.6);
+    if (this.load === "heavy" && this.limitState === "over" && fast && this.airborne) {
+      this.overload(Math.abs(this.roll) > 0.22);
       return;
     }
-    if (strain > snap * 0.62 && (this.airborne || this.tipSpeed > 1.4)) {
-      this.warn = true;
-      this.message = this.load === "heavy" ? "Heavy load. Slow down or the crane goes over." : "Too fast. The wire is loading up.";
-    }
 
-    const limit = this.tuning().impact / mass;
+    const limit = this.load === "heavy" ? this.tuning().impact / 1.6 : this.tuning().impact;
     if (this.airborne && bottom < 3.4 && this.hookSpeed > limit * 0.72) this.warn = true;
 
     if (this.airborne && bottom <= 0.08) {
@@ -739,13 +727,38 @@ export class CraneSim {
       if (this.hookSpeed > limit) this.fail();
       else if (onTarget) this.succeed();
       else this.setAside();
-    } else if (this.airborne && this.limitState === "ok") {
-      this.message = this.warn
-        ? this.load === "heavy"
-          ? "Heavy load. Slow down or the crane goes over."
-          : "Too fast. The wire is loading up."
-        : "Set it inside the amber ring.";
+      return;
     }
+
+    this.applyTilt(dt);
+    if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
+      this.message = "Set it inside the amber ring.";
+    }
+  }
+
+  private applyTilt(dt: number) {
+    const excess = Math.max(0, this.limitRatio - 0.8);
+    const sign = Math.sign(this.side || 1);
+    const target = sign * Math.min(0.46, excess * 0.9);
+    this.roll += (target - this.roll) * Math.min(1, dt * 2.2);
+    if (excess < 0.08) return;
+    this.warn = true;
+    this.message =
+      this.limitRatio > 1 ? "Tilt warning. Boom in before it goes over." : "Crane is starting to lean.";
+    const heldOver = this.load === "heavy" && this.limitRatio > 1.45 && Math.abs(this.roll) > 0.4 && this.limitHold > 2.4;
+    if (!heldOver) return;
+    this.flipped = true;
+    this.roll = sign * 1.15;
+    this.rollRate = 0;
+    this.attached = false;
+    this.airborne = false;
+    this.phase = "broke";
+    this.breakFlash = 1.5;
+    this.impulse = 0.7;
+    this.message = "Crane fell over.";
+    this.cy = this.loadRest();
+    this.cx = this.hx;
+    this.cz = this.hz;
   }
 
   private setAside() {

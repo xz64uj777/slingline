@@ -155,6 +155,9 @@ export function CraneYard() {
         } else if (sim.phase === "done") {
           banner.textContent = "Clean set";
           banner.dataset.show = "set";
+        } else if (sim.state === "lifting" && sim.attached && Math.abs(sim.roll) > 0.1) {
+          banner.textContent = "Tilting";
+          banner.dataset.show = "warn";
         } else if (sim.limitState === "over" && sim.state === "lifting") {
           banner.textContent = "Over limit";
           banner.dataset.show = "warn";
