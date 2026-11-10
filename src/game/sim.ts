@@ -22,6 +22,33 @@ const TUNING = {
 
 const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
+const CAREER_KEY = "slingline-career";
+
+export type CraneId = "rental" | "yard" | "heavy";
+
+const CRANES: Record<CraneId, { extend: number; pay: number; next: CraneId | null; price: number }> = {
+  rental: { extend: 6, pay: 400, next: "yard", price: 2500 },
+  yard: { extend: 14, pay: 700, next: "heavy", price: 8000 },
+  heavy: { extend: 20, pay: 1200, next: null, price: 0 },
+};
+
+function readCareer(): { cash: number; crane: CraneId; reputation: number } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CAREER_KEY) || "") as {
+      cash?: number;
+      crane?: CraneId;
+      reputation?: number;
+    };
+    const crane = raw.crane === "yard" || raw.crane === "heavy" ? raw.crane : "rental";
+    return {
+      cash: Number.isFinite(raw.cash) ? Math.max(0, raw.cash as number) : 0,
+      crane,
+      reputation: Number.isFinite(raw.reputation) ? Math.max(0, raw.reputation as number) : 0,
+    };
+  } catch {
+    return { cash: 0, crane: "rental", reputation: 0 };
+  }
+}
 
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
@@ -91,6 +118,9 @@ export class CraneSim {
   to = 1;
   score = 0;
   best = 0;
+  cash = 0;
+  reputation = 0;
+  crane: CraneId = "rental";
   message = "Lower the hook onto the crate.";
   warn = false;
   swayDeg = 0;
@@ -112,7 +142,7 @@ export class CraneSim {
   cz = -18;
 
   readonly baseLen = 8;
-  readonly extendMax = 14;
+  extendMax = 6;
   readonly mountBack = 1.6;
   readonly mountY = 2.15;
   readonly cableMin = 2.2;
@@ -122,7 +152,51 @@ export class CraneSim {
 
   constructor() {
     this.best = readBest();
+    const career = readCareer();
+    this.cash = career.cash;
+    this.crane = career.crane;
+    this.reputation = career.reputation;
+    this.extendMax = CRANES[this.crane].extend;
     this.place(0, 2, true);
+  }
+
+  companyName() {
+    return this.crane === "rental" ? "Temp Hire" : "Independent";
+  }
+
+  buyLabel() {
+    const next = CRANES[this.crane].next;
+    if (!next) return "OWNED";
+    return next === "yard" ? "BUY YARD $2500" : "BUY HEAVY $8000";
+  }
+
+  buyNext() {
+    const next = CRANES[this.crane].next;
+    if (!next) {
+      this.message = "You already own the heavy crane.";
+      return;
+    }
+    const price = CRANES[this.crane].price;
+    if (this.cash < price) {
+      this.message = `Need $${price}. You have $${this.cash}.`;
+      return;
+    }
+    this.cash -= price;
+    this.crane = next;
+    this.extendMax = CRANES[this.crane].extend;
+    this.writeCareer();
+    this.message = next === "yard" ? "Yard crane is yours. Longer boom." : "Heavy crane is yours.";
+  }
+
+  private writeCareer() {
+    try {
+      localStorage.setItem(
+        CAREER_KEY,
+        JSON.stringify({ cash: this.cash, crane: this.crane, reputation: this.reputation }),
+      );
+    } catch {
+      /* private mode */
+    }
   }
 
   tuning() {
@@ -519,6 +593,10 @@ export class CraneSim {
 
   private succeed() {
     this.score += 1;
+    const pay = CRANES[this.crane].pay;
+    this.cash += pay;
+    this.reputation += 1;
+    this.writeCareer();
     if (this.score > this.best) {
       this.best = this.score;
       writeBest(this.best);
@@ -527,7 +605,7 @@ export class CraneSim {
     this.airborne = false;
     this.phase = "done";
     this.deliverFlash = 1.15;
-    this.message = "Clean set.";
+    this.message = `Clean set. +$${pay}`;
     this.cy = this.cargoHalf;
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;

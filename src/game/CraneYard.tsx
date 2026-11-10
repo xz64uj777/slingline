@@ -35,6 +35,9 @@ export function CraneYard() {
 
   const scoreRef = useRef<HTMLSpanElement>(null);
   const bestRef = useRef<HTMLSpanElement>(null);
+  const cashRef = useRef<HTMLSpanElement>(null);
+  const companyRef = useRef<HTMLParagraphElement>(null);
+  const buyRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -101,6 +104,9 @@ export function CraneYard() {
     const paintHud = () => {
       if (scoreRef.current) scoreRef.current.textContent = String(sim.score);
       if (bestRef.current) bestRef.current.textContent = String(sim.best);
+      if (cashRef.current) cashRef.current.textContent = `$${sim.cash}`;
+      if (companyRef.current) companyRef.current.textContent = sim.companyName().toUpperCase();
+      if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (coachRef.current) coachRef.current.textContent = sim.message;
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
       if (speedRef.current) {
@@ -229,7 +235,9 @@ export function CraneYard() {
 
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
         <div className="bg-surface px-3 py-2">
-          <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
+          <p ref={companyRef} className="font-display text-sm tracking-widest text-primary">
+            TEMP HIRE
+          </p>
           <h1 className="font-display text-4xl leading-none text-fg">SLINGLINE</h1>
         </div>
         <div className="bg-surface px-3 py-2 text-right">
@@ -239,6 +247,17 @@ export function CraneYard() {
             <span className="text-muted"> / </span>
             <span ref={bestRef}>{best}</span>
           </p>
+          <p className="mt-1 font-display text-sm tracking-widest text-muted">
+            CASH <span ref={cashRef} className="text-fg">$0</span>
+          </p>
+          <button
+            ref={buyRef}
+            type="button"
+            onClick={() => simRef.current?.buyNext()}
+            className="pointer-events-auto mt-1 h-9 w-full border border-primary bg-bg px-2 font-display text-sm tracking-wide text-fg"
+          >
+            BUY YARD $2500
+          </button>
         </div>
       </header>
 
