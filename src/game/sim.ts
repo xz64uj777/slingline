@@ -25,7 +25,7 @@ const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
 const CAREER_KEY = "slingline-career";
 
-export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower";
+export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
 
 const CRANES: Record<
   CraneId,
@@ -35,7 +35,8 @@ const CRANES: Record<
   yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD", mount: 2.15 },
   heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY", mount: 2.35 },
   lattice: { base: 16, extend: 26, pay: 1800, next: "tower", price: 1800, label: "LATTICE", mount: 2.5 },
-  tower: { base: 14, extend: 22, pay: 2500, next: null, price: 0, label: "TOWER", mount: 14 },
+  tower: { base: 14, extend: 22, pay: 2500, next: "crawler", price: 2500, label: "TOWER", mount: 14 },
+  crawler: { base: 18, extend: 30, pay: 3200, next: null, price: 0, label: "CRAWLER", mount: 3.1 },
 };
 
 function readCareer(): { cash: number; crane: CraneId; reputation: number } {
@@ -46,7 +47,11 @@ function readCareer(): { cash: number; crane: CraneId; reputation: number } {
       reputation?: number;
     };
     const crane: CraneId =
-      raw.crane === "yard" || raw.crane === "heavy" || raw.crane === "lattice" || raw.crane === "tower"
+      raw.crane === "yard" ||
+      raw.crane === "heavy" ||
+      raw.crane === "lattice" ||
+      raw.crane === "tower" ||
+      raw.crane === "crawler"
         ? raw.crane
         : "rental";
     return {
@@ -180,6 +185,7 @@ export class CraneSim {
     if (this.crane === "rental") return "Temp Hire";
     if (this.crane === "lattice") return "Slingline Co";
     if (this.crane === "tower") return "Slingline Tower";
+    if (this.crane === "crawler") return "Slingline Tracks";
     return "Independent";
   }
 
@@ -197,7 +203,7 @@ export class CraneSim {
   buyNext() {
     const next = CRANES[this.crane].next;
     if (!next) {
-      this.message = "You already own the tower crane.";
+      this.message = "You already own the crawler.";
       return;
     }
     const price = CRANES[this.crane].price;
@@ -216,7 +222,9 @@ export class CraneSim {
           ? "Heavy crane is yours."
           : next === "lattice"
             ? "Lattice crane is yours."
-            : "Tower crane is yours. The boom is up on the mast.";
+            : next === "tower"
+              ? "Tower crane is yours. The boom is up on the mast."
+              : "Crawler is yours. It sits on tracks.";
   }
 
   private writeCareer() {

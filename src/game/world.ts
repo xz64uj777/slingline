@@ -118,6 +118,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const nose = new THREE.Mesh(new THREE.BoxGeometry(2.35, 1.25, 2.1), steel);
   nose.position.set(0, 1.55, 3.5);
   truck.add(nose);
+  const wheels: THREE.Mesh[] = [];
   const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 10);
   for (const [x, z] of [
     [1.25, 2.7],
@@ -129,6 +130,18 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(x, 0.48, z);
     truck.add(wheel);
+    wheels.push(wheel);
+  }
+  const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2e32, metalness: 0.35, roughness: 0.7 });
+  const tracks = new THREE.Group();
+  tracks.visible = false;
+  truck.add(tracks);
+  for (const side of [-1, 1]) {
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.5, 7.6), trackMat);
+    tread.position.set(side * 1.45, 0.32, 0.8);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.12, 7.8), steelDark);
+    shoe.position.set(side * 1.45, 0.08, 0.8);
+    tracks.add(tread, shoe);
   }
   const rigs: { beam: THREE.Mesh; pad: THREE.Mesh; sign: number }[] = [];
   for (const [x, z] of [
@@ -307,22 +320,28 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   function render(sim: CraneSim, frameDt: number) {
     slew.rotation.y = sim.yaw - sim.heading;
     slew.position.y = sim.mountY;
+    const onTracks = sim.crane === "crawler";
+    tracks.visible = onTracks;
+    nose.visible = !onTracks;
+    for (const wheel of wheels) wheel.visible = !onTracks;
     mast.visible = sim.crane === "tower";
     boom.rotation.x = sim.boomPitch;
     const style =
-      sim.crane === "tower"
-        ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 2.2 }
-        : sim.crane === "lattice"
-        ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 2.9 }
-        : sim.crane === "heavy"
-          ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
-          : sim.crane === "yard"
-            ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
-            : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
+      sim.crane === "crawler"
+        ? { thick: 1.85, color: 0xe3a23a, ext: 0x8a5a12, counter: 2.6, hook: 3.1 }
+        : sim.crane === "tower"
+          ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 2.2 }
+          : sim.crane === "lattice"
+            ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 2.9 }
+            : sim.crane === "heavy"
+              ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
+              : sim.crane === "yard"
+                ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
+                : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;
-    const draw = sim.crane === "tower" ? 11 : sim.crane === "lattice" ? 12 : sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
+    const draw = sim.crane === "crawler" ? 14 : sim.crane === "tower" ? 11 : sim.crane === "lattice" ? 12 : sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
     const spread = sim.crane === "lattice" ? 0.26 : 0;
     mainTube.scale.set(style.thick, style.thick, base / 8);
     mainTube.position.set(-spread, 0.15, -base / 2);
