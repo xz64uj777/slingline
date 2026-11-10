@@ -25,6 +25,7 @@ const TUNING = {
 const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
 const CAREER_KEY = "slingline-career";
+const STOP_PITCH = (44 * Math.PI) / 180;
 
 export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
 
@@ -106,6 +107,8 @@ export class CraneSim {
   deployDir = 0;
   lateralG = 0;
   flipped = false;
+  safetyLock = false;
+  safetyBypass = false;
   bCanLift = false;
   prevVx = 0;
   prevVz = 0;
@@ -303,7 +306,7 @@ export class CraneSim {
       this.yaw = Math.atan2(-p.x, -p.z);
       this.heading = this.yaw;
       this.yawRate = 0;
-      this.boomPitch = 0.55;
+      this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
       this.pitchRate = 0;
       const reach = Math.max(6, dist - this.mountBack);
       const length = reach / Math.cos(this.boomPitch);
@@ -325,20 +328,59 @@ export class CraneSim {
     if (dt <= 0) return;
     this.stepTruck(dt, actions);
     if (this.state !== "lifting" || this.flipped) {
+      this.safetyLock = false;
+      this.safetyBypass = false;
       this.pinHook();
       return;
     }
     const tune = this.tuning();
     const pace = PACE_SCALE[this.pace];
     const follow = clamp(dt / tune.brake, 0, 1);
-    this.yawRate += (actions.steer * 0.55 * pace - this.yawRate) * follow;
-    this.pitchRate += (actions.trolley * 0.32 * pace - this.pitchRate) * follow;
-    this.extendRate += (actions.extend * 3.2 * pace - this.extendRate) * follow;
+    let steer = actions.steer;
+    let trolley = actions.trolley;
+    let extend = actions.extend;
+    let hoist = actions.hoist;
+    if (this.mode === "hard") {
+      this.safetyLock = false;
+      this.safetyBypass = false;
+    }
+    if (this.safetyLock) {
+      steer = 0;
+      trolley = 0;
+      extend = 0;
+      hoist = 0;
+      this.yawRate = 0;
+      this.pitchRate = 0;
+      this.extendRate = 0;
+    } else if (
+      this.mode === "easy" &&
+      !this.safetyBypass &&
+      this.boomPitch <= STOP_PITCH + 0.012 &&
+      (trolley < -0.05 || extend > 0.05)
+    ) {
+      this.boomPitch = Math.max(this.boomPitch, STOP_PITCH);
+      this.armSafety();
+      steer = 0;
+      trolley = 0;
+      extend = 0;
+      hoist = 0;
+    }
+    this.yawRate += (steer * 0.55 * pace - this.yawRate) * follow;
+    this.pitchRate += (trolley * 0.32 * pace - this.pitchRate) * follow;
+    this.extendRate += (extend * 3.2 * pace - this.extendRate) * follow;
     this.yaw += this.yawRate * dt;
     this.boomPitch = clamp(this.boomPitch + this.pitchRate * dt, 0.12, 1.2);
     this.extension = clamp(this.extension + this.extendRate * dt, 0, this.extendMax);
+    if (this.mode === "easy" && !this.safetyLock && !this.safetyBypass && this.boomPitch < STOP_PITCH) {
+      this.boomPitch = STOP_PITCH;
+      this.pitchRate = 0;
+      this.armSafety();
+    }
+    if (this.mode === "easy" && this.safetyBypass && this.boomPitch > STOP_PITCH + 0.07) {
+      this.safetyBypass = false;
+    }
     const drop = Math.max(this.cableMin, this.boom().y - 0.35);
-    this.cable = clamp(this.cable - actions.hoist * 2.4 * pace * dt, this.cableMin, drop);
+    this.cable = clamp(this.cable - hoist * 2.4 * pace * dt, this.cableMin, drop);
 
     const b = this.boom();
     if (!this.ready) {
@@ -449,6 +491,7 @@ export class CraneSim {
     this.side = ox * rx + oz * rz;
 
     this.updateJob(dt);
+    if (this.safetyLock) this.message = "Safety stop at 44°. Tap SAFETY to move again.";
 
     if (this.phase === "broke") {
       this.breakFlash -= dt;
@@ -457,6 +500,26 @@ export class CraneSim {
       this.deliverFlash -= dt;
       if (this.deliverFlash <= 0) this.spawnNext();
     }
+  }
+
+  requestSafety() {
+    if (!this.safetyLock) return;
+    this.safetyLock = false;
+    this.safetyBypass = true;
+    this.yawRate = 0;
+    this.pitchRate = 0;
+    this.extendRate = 0;
+    this.message = "Safety cleared. Raise the boom above 44° to arm it again.";
+  }
+
+  private armSafety() {
+    this.safetyLock = true;
+    this.safetyBypass = false;
+    this.yawRate = 0;
+    this.pitchRate = 0;
+    this.extendRate = 0;
+    this.warn = true;
+    this.message = "Safety stop at 44°. Tap SAFETY to move again.";
   }
 
   requestDeploy() {

@@ -46,6 +46,7 @@ export function CraneYard() {
   const speedRef = useRef<HTMLSpanElement>(null);
   const meterRef = useRef<HTMLSpanElement>(null);
   const deployRef = useRef<HTMLButtonElement>(null);
+  const safetyRef = useRef<HTMLButtonElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
@@ -136,6 +137,7 @@ export function CraneYard() {
             ? "STOW"
             : "DEPLOY";
       }
+      if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
       const dot = dotRef.current;
       if (dot) {
         const reach = 28;
@@ -155,6 +157,9 @@ export function CraneYard() {
         } else if (sim.phase === "done") {
           banner.textContent = "Clean set";
           banner.dataset.show = "set";
+        } else if (sim.safetyLock) {
+          banner.textContent = "Safety stop";
+          banner.dataset.show = "warn";
         } else if (sim.state === "lifting" && sim.attached && Math.abs(sim.roll) > 0.1) {
           banner.textContent = "Tilting";
           banner.dataset.show = "warn";
@@ -386,6 +391,15 @@ export function CraneYard() {
               className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
             >
               {crane.toUpperCase()}
+            </button>
+            <button
+              ref={safetyRef}
+              type="button"
+              onClick={() => simRef.current?.requestSafety()}
+              style={{ display: "none" }}
+              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              SAFETY
             </button>
             <button
               ref={deployRef}
