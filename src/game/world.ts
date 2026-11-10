@@ -177,18 +177,25 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   base.position.y = 0.3;
   mast.add(base);
 
+  const boomMat = new THREE.MeshStandardMaterial({ color: 0xc4a574, metalness: 0.25, roughness: 0.55 });
+  const boomDark = new THREE.MeshStandardMaterial({ color: 0x8d8474, metalness: 0.3, roughness: 0.5 });
+  const counterMat = new THREE.MeshStandardMaterial({ color: 0x2a2e32, metalness: 0.4, roughness: 0.45 });
   const slew = new THREE.Group();
   slew.position.set(0, 2.15, -1.6);
   truck.add(slew);
   const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.45, 10), steelDark);
   pedestal.position.y = 0.2;
   slew.add(pedestal);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.5), counterMat);
+  counter.position.set(0, 0.55, 1.15);
+  counter.visible = false;
+  slew.add(counter);
   const boom = new THREE.Group();
   slew.add(boom);
-  const mainTube = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 8), steel);
+  const mainTube = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 8), boomMat);
   mainTube.position.set(0, 0.15, -4);
   boom.add(mainTube);
-  const extension = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 8), steelDark);
+  const extension = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 8), boomDark);
   extension.position.set(0, 0.15, -4);
   boom.add(extension);
   const tip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.36), amber);
@@ -296,8 +303,26 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   function render(sim: CraneSim, frameDt: number) {
     slew.rotation.y = sim.yaw - sim.heading;
     boom.rotation.x = sim.boomPitch;
-    extension.position.z = -4 - sim.extension;
-    tip.position.set(0, 0.15, -(8 + sim.extension));
+    const style =
+      sim.crane === "heavy"
+        ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
+        : sim.crane === "yard"
+          ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
+          : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
+    boomMat.color.setHex(style.color);
+    boomDark.color.setHex(style.ext);
+    const base = sim.baseLen;
+    const draw = sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
+    mainTube.scale.set(style.thick, style.thick, base / 8);
+    mainTube.position.z = -base / 2;
+    extension.scale.set(style.thick * 0.82, style.thick * 0.82, draw / 8);
+    extension.position.set(0, 0.15, -(base + sim.extension) + draw / 2);
+    tip.scale.set(style.thick, style.thick, style.thick);
+    tip.position.set(0, 0.15, -(base + sim.extension));
+    pedestal.scale.set(style.thick, 0.7 + style.thick * 0.4, style.thick);
+    counter.visible = sim.crane !== "rental";
+    counter.scale.set(style.thick, style.thick, style.counter);
+    hook.scale.setScalar(style.hook);
     truck.position.set(sim.truckX, sim.flipped ? 0.2 : 0, sim.truckZ);
     truck.rotation.y = sim.heading;
     truck.rotation.z = sim.roll;

@@ -27,10 +27,10 @@ const CAREER_KEY = "slingline-career";
 
 export type CraneId = "rental" | "yard" | "heavy";
 
-const CRANES: Record<CraneId, { extend: number; pay: number; next: CraneId | null; price: number }> = {
-  rental: { extend: 6, pay: 500, next: "yard", price: 500 },
-  yard: { extend: 14, pay: 700, next: "heavy", price: 700 },
-  heavy: { extend: 20, pay: 1200, next: null, price: 0 },
+const CRANES: Record<CraneId, { base: number; extend: number; pay: number; next: CraneId | null; price: number }> = {
+  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500 },
+  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700 },
+  heavy: { base: 12, extend: 20, pay: 1200, next: null, price: 0 },
 };
 
 function readCareer(): { cash: number; crane: CraneId; reputation: number } {
@@ -142,7 +142,7 @@ export class CraneSim {
   cy = 0.8;
   cz = -18;
 
-  readonly baseLen = 8;
+  baseLen = 5.5;
   extendMax = 6;
   readonly mountBack = 1.6;
   readonly mountY = 2.15;
@@ -158,6 +158,7 @@ export class CraneSim {
     this.crane = career.crane;
     this.reputation = career.reputation;
     this.extendMax = CRANES[this.crane].extend;
+    this.baseLen = CRANES[this.crane].base;
     this.place(0, 5, true);
   }
 
@@ -185,6 +186,7 @@ export class CraneSim {
     this.cash -= price;
     this.crane = next;
     this.extendMax = CRANES[this.crane].extend;
+    this.baseLen = CRANES[this.crane].base;
     this.writeCareer();
     this.message = next === "yard" ? "Yard crane is yours. Longer boom." : "Heavy crane is yours.";
   }
