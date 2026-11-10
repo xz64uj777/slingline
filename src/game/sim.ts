@@ -32,12 +32,12 @@ const CRANES: Record<
   CraneId,
   { base: number; extend: number; pay: number; next: CraneId | null; price: number; label: string; mount: number }
 > = {
-  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500, label: "RENTAL", mount: 2.15 },
-  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD", mount: 2.15 },
-  heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY", mount: 2.35 },
-  lattice: { base: 16, extend: 26, pay: 1800, next: "tower", price: 1800, label: "LATTICE", mount: 2.5 },
-  tower: { base: 14, extend: 22, pay: 2500, next: "crawler", price: 2500, label: "TOWER", mount: 14 },
-  crawler: { base: 18, extend: 30, pay: 3200, next: null, price: 0, label: "CRAWLER", mount: 3.1 },
+  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500, label: "RENTAL", mount: 1.32 },
+  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD", mount: 1.32 },
+  heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY", mount: 1.38 },
+  lattice: { base: 16, extend: 26, pay: 1800, next: "tower", price: 1800, label: "LATTICE", mount: 1.38 },
+  tower: { base: 14, extend: 22, pay: 2500, next: "crawler", price: 2500, label: "TOWER", mount: 16.2 },
+  crawler: { base: 18, extend: 30, pay: 3200, next: null, price: 0, label: "CRAWLER", mount: 1.32 },
 };
 
 export const CRANE_CHOICES: { id: CraneId; label: string }[] = (
@@ -460,14 +460,20 @@ export class CraneSim {
   }
 
   requestDeploy() {
-    if (this.state !== "driving" || this.flipped) return;
-    this.refreshGate();
+    if (this.flipped) return;
+    if (this.state === "lifting" || this.outrigger > 0.5) {
+      this.state = "driving";
+      this.deployDir = -1;
+      this.speed = 0;
+      this.message = "Stowing outriggers.";
+      return;
+    }
     if (!this.bStopped()) {
       this.message = "Stop the truck first.";
       return;
     }
-    this.deployDir = this.outrigger > 0.5 ? -1 : 1;
-    this.message = this.deployDir > 0 ? "Deploying outriggers." : "Stowing outriggers.";
+    this.deployDir = 1;
+    this.message = "Deploying outriggers. The boom unlocks when the pads are down.";
   }
 
   requestLift() {
@@ -521,7 +527,7 @@ export class CraneSim {
     if (this.outrigger < 0.57) return "Outriggers are not fully out.";
     if (this.outrigger < 0.98) return "Pads are not down on the ground.";
     if (Math.abs(this.roll) >= (2 * Math.PI) / 180) return "Truck body is not level.";
-    return "Pads set. Tap LIFT.";
+    return "Pads are down.";
   }
 
   private stepTruck(dt: number, actions: Actions) {
@@ -529,6 +535,19 @@ export class CraneSim {
       this.outrigger = clamp(this.outrigger + this.deployDir * (dt / 1.6), 0, 1);
       this.speed = 0;
       if (this.outrigger <= 0 || this.outrigger >= 1) this.deployDir = 0;
+    }
+
+    if (
+      this.state === "driving" &&
+      this.deployDir !== -1 &&
+      !this.flipped &&
+      this.outrigger >= 0.98 &&
+      this.bStopped()
+    ) {
+      this.state = "lifting";
+      this.speed = 0;
+      this.yaw = this.heading;
+      this.message = "Pads set. Stick pitches the boom. Out and In telescope.";
     }
 
     const padsClear = this.outrigger < 0.05;

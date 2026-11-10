@@ -131,7 +131,10 @@ export function CraneYard() {
       }
       if (meterRef.current) meterRef.current.textContent = sim.state === "lifting" ? "HOOK" : sim.mode === "hard" ? "LAT G" : "SPEED";
       if (deployRef.current) deployRef.current.textContent = sim.outrigger > 0.5 && sim.deployDir >= 0 ? "STOW" : "DEPLOY";
-      if (liftRef.current) liftRef.current.textContent = sim.flipped ? "RIGHT" : sim.state === "lifting" ? "DRIVE" : "LIFT";
+      if (liftRef.current) {
+        liftRef.current.hidden = !sim.flipped;
+        liftRef.current.textContent = "RIGHT";
+      }
       const dot = dotRef.current;
       if (dot) {
         const reach = 28;
@@ -391,7 +394,8 @@ export function CraneYard() {
             <button
               ref={liftRef}
               type="button"
-              onClick={() => simRef.current?.requestLift()}
+              hidden
+              onClick={() => simRef.current?.recover()}
               className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
             >
               LIFT

@@ -161,6 +161,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   const mast = new THREE.Group();
   mast.visible = false;
+  mast.position.set(0, 0, -1.6);
   truck.add(mast);
   const postGeo = new THREE.BoxGeometry(0.28, 16, 0.28);
   for (const [x, z] of [
@@ -357,6 +358,14 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     tip.scale.set(style.thick, style.thick, style.thick);
     tip.position.set(0, 0.15, -full);
     pedestal.scale.set(style.thick, 0.7 + style.thick * 0.4, style.thick);
+    if (sim.crane === "tower") {
+      pedestal.position.y = 0.1;
+    } else {
+      const deck = 1.12;
+      const gap = Math.max(0.42, sim.mountY - deck);
+      pedestal.scale.y = gap / 0.45;
+      pedestal.position.y = -gap / 2;
+    }
     counter.visible = sim.crane !== "rental";
     counter.scale.set(style.thick, style.thick, style.counter);
     hook.scale.setScalar(style.hook);
