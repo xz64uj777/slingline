@@ -236,13 +236,21 @@ export class CraneSim {
 
   boom(): Boom {
     const length = this.baseLen + this.extension;
-    const reach = this.mountBack + Math.cos(this.boomPitch) * length;
-    const fx = -Math.sin(this.yaw);
-    const fz = -Math.cos(this.yaw);
+    const pitch = this.boomPitch;
+    const yOnBoom = 0.15 * Math.cos(pitch) + length * Math.sin(pitch);
+    const zOnBoom = 0.15 * Math.sin(pitch) - length * Math.cos(pitch);
+    const ry = this.yaw - this.heading;
+    const lx = zOnBoom * Math.sin(ry);
+    const ly = this.mountY + yOnBoom;
+    const lz = -this.mountBack + zOnBoom * Math.cos(ry);
+    const cH = Math.cos(this.heading);
+    const sH = Math.sin(this.heading);
+    const cR = Math.cos(this.roll);
+    const sR = Math.sin(this.roll);
     return {
-      x: this.truckX + fx * reach,
-      y: this.mountY + Math.sin(this.boomPitch) * length,
-      z: this.truckZ + fz * reach,
+      x: this.truckX + cH * cR * lx - cH * sR * ly + sH * lz,
+      y: sR * lx + cR * ly,
+      z: this.truckZ - sH * cR * lx + sH * sR * ly + cH * lz,
     };
   }
 
@@ -300,8 +308,8 @@ export class CraneSim {
     this.yaw += this.yawRate * dt;
     this.boomPitch = clamp(this.boomPitch + this.pitchRate * dt, 0.12, 1.2);
     this.extension = clamp(this.extension + this.extendRate * dt, 0, this.extendMax);
-    const drop = Math.max(this.cableMin, this.boom().y - 0.9);
-    this.cable = clamp(this.cable - actions.hoist * 2.4 * pace * dt, this.cableMin, Math.min(16, drop));
+    const drop = Math.max(this.cableMin, this.boom().y - 0.35);
+    this.cable = clamp(this.cable - actions.hoist * 2.4 * pace * dt, this.cableMin, drop);
 
     const b = this.boom();
     if (!this.ready) {
@@ -558,6 +566,7 @@ export class CraneSim {
     this.pitchRate = 0;
     this.extendRate = 0;
     const b = this.boom();
+    this.cable = Math.min(this.cable, Math.max(this.cableMin, b.y - 0.35));
     this.hx = b.x;
     this.hy = b.y - this.cable;
     this.hz = b.z;

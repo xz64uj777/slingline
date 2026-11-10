@@ -348,7 +348,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
       rig.pad.position.y = 0.42 - down * 0.38;
     }
-    const b = sim.boom();
+    truck.updateWorldMatrix(true, true);
+    tip.getWorldPosition(mid);
+    const b = { x: mid.x, y: mid.y, z: mid.z };
 
     dir.set(sim.hx - b.x, sim.hy - b.y, sim.hz - b.z);
     const length = Math.max(0.2, dir.length());
