@@ -4,6 +4,15 @@ export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
 export type LoadKind = "crate" | "beam" | "heavy";
+
+export type YardPiece = {
+  kind: LoadKind;
+  x: number;
+  z: number;
+  y: number;
+  homeX: number;
+  homeZ: number;
+};
 export type CraneState = "driving" | "lifting";
 
 export type Pad = { x: number; z: number };
@@ -167,6 +176,8 @@ export class CraneSim {
   cx = 0;
   cy = 0.8;
   cz = -18;
+  pieces: YardPiece[] = [];
+  carry: number | null = null;
 
   baseLen = 5.5;
   extendMax = 6;
@@ -184,7 +195,7 @@ export class CraneSim {
     this.crane = career.crane;
     this.reputation = career.reputation;
     this.applyCrane();
-    this.place(0, 5, true);
+    this.stockYard(true);
   }
 
   private applyCrane() {
@@ -283,45 +294,72 @@ export class CraneSim {
     };
   }
 
-  place(from: number, to: number, aim: boolean) {
-    this.from = from;
-    this.to = to;
-    const p = PADS[from]!;
-    this.cx = p.x;
-    const step = this.score % 3;
-    this.load = step === 1 ? "beam" : step === 2 ? "heavy" : "crate";
-    this.cy = this.loadRest();
-    this.cz = p.z;
+  stockYard(aim: boolean) {
+    const homes: { kind: LoadKind; x: number; z: number }[] = [
+      { kind: "crate", x: -6, z: -8 },
+      { kind: "beam", x: 0, z: -11 },
+      { kind: "heavy", x: 6, z: -8 },
+    ];
+    this.pieces = homes.map((home) => ({
+      kind: home.kind,
+      x: home.x,
+      z: home.z,
+      y: this.restY(home.kind),
+      homeX: home.x,
+      homeZ: home.z,
+    }));
+    this.carry = null;
+    this.load = "crate";
+    this.cx = homes[0]!.x;
+    this.cz = homes[0]!.z;
+    this.cy = this.restY("crate");
+    this.from = 0;
+    this.to = 5;
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
-    const noun = this.load === "beam" ? "steel beam" : this.load === "heavy" ? "heavy block" : "crate";
-    this.message =
-      this.state === "lifting"
-        ? `Lower the hook onto the ${noun}.`
-        : `Drive to the ${noun}. Stop, then deploy the pads.`;
+    this.message = "Crate, steel beam, and heavy block are out. Hook any of them.";
     this.warn = false;
-    if (aim) {
-      const dist = Math.hypot(p.x, p.z);
-      this.yaw = Math.atan2(-p.x, -p.z);
-      this.heading = this.yaw;
-      this.yawRate = 0;
-      this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
-      this.pitchRate = 0;
-      const reach = Math.max(6, dist - this.mountBack);
-      const length = reach / Math.cos(this.boomPitch);
-      this.extension = clamp(length - this.baseLen, 0, this.extendMax);
-      this.extendRate = 0;
-      this.cable = 6.2;
-      this.ready = false;
-    }
+    if (!aim) return;
+    const p = homes[1]!;
+    const dist = Math.hypot(p.x, p.z);
+    this.yaw = Math.atan2(-p.x, -p.z);
+    this.heading = this.yaw;
+    this.yawRate = 0;
+    this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
+    this.pitchRate = 0;
+    const reach = Math.max(6, dist - this.mountBack);
+    const length = reach / Math.cos(this.boomPitch);
+    this.extension = clamp(length - this.baseLen, 0, this.extendMax);
+    this.extendRate = 0;
+    this.cable = 6.2;
+    this.ready = false;
+  }
+
+  private restY(kind: LoadKind) {
+    if (kind === "beam") return 0.32;
+    if (kind === "heavy") return 1.25;
+    return this.cargoHalf;
+  }
+
+  private park(home: boolean) {
+    if (this.carry == null) return;
+    const piece = this.pieces[this.carry];
+    if (!piece) return;
+    piece.x = home ? piece.homeX : this.hx;
+    piece.z = home ? piece.homeZ : this.hz;
+    piece.y = this.restY(piece.kind);
+    this.cx = piece.x;
+    this.cz = piece.z;
+    this.cy = piece.y;
+    this.carry = null;
   }
 
   spawnNext() {
-    let from = Math.floor(Math.random() * PADS.length);
-    let to = Math.floor(Math.random() * PADS.length);
-    if (to === from) to = (to + 1) % PADS.length;
-    this.place(from, to, false);
+    this.phase = "seek";
+    this.attached = false;
+    this.airborne = false;
+    this.message = "Hook the crate, the beam, or the heavy block.";
   }
 
   step(dt: number, actions: Actions) {
@@ -750,26 +788,36 @@ export class CraneSim {
     this.updateChart(dt);
 
     if (!this.attached) {
-      const dx = this.hx - this.cx;
-      const dz = this.hz - this.cz;
-      const dist = Math.hypot(dx, dz);
-      const idealY = this.cy + this.hang;
       const snatch = this.tuning().snatch;
-      if (dist < 1.4 && Math.abs(this.hy - idealY) < 0.8 && this.hookSpeed < snatch) {
-        this.attached = true;
-        this.airborne = false;
-        this.phase = "carry";
-        if (this.limitState === "ok") this.message = "Lift clear, then set it in the amber ring.";
-      } else if (this.limitState === "over") {
-        this.message = "Over the chart. Shorten the boom before you lift.";
-      } else if (this.limitState === "near") {
-        this.message = "Near the limit. Watch the angle and the length.";
-      } else if (dist < 2.2 && this.hookSpeed >= snatch) {
-        this.message = "Too fast to hook. Let the swing die.";
-      } else {
-        this.message = this.load === "heavy" ? "Lower the hook onto the heavy block." : "Lower the hook onto the crate.";
+      for (let i = 0; i < this.pieces.length; i++) {
+        const piece = this.pieces[i]!;
+        const dist = Math.hypot(this.hx - piece.x, this.hz - piece.z);
+        const idealY = piece.y + this.hang;
+        if (dist < 2.1 && Math.abs(this.hy - idealY) < 1.05 && this.hookSpeed < snatch) {
+          this.carry = i;
+          this.load = piece.kind;
+          this.cx = piece.x;
+          this.cz = piece.z;
+          this.cy = piece.y;
+          this.attached = true;
+          this.airborne = false;
+          this.phase = "carry";
+          const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
+          if (this.limitState === "ok") this.message = `${noun} on the hook. Set it in the amber ring.`;
+          return;
+        }
       }
+      if (this.limitState === "over") this.message = "Over the chart. Shorten the boom before you lift.";
+      else if (this.limitState === "near") this.message = "Near the limit. Watch the angle and the length.";
+      else this.message = "Hook the crate, the beam, or the heavy block.";
       return;
+    }
+
+    const carried = this.carry != null ? this.pieces[this.carry] : undefined;
+    if (carried) {
+      carried.x = this.hx;
+      carried.z = this.hz;
+      carried.y = this.hy - this.hang;
     }
 
     const bottom = this.hy - this.hang - this.cargoHalf;
@@ -813,6 +861,7 @@ export class CraneSim {
     this.flipped = true;
     this.roll = sign * 1.15;
     this.rollRate = 0;
+    this.park(false);
     this.attached = false;
     this.airborne = false;
     this.phase = "broke";
@@ -825,9 +874,7 @@ export class CraneSim {
   }
 
   private setAside() {
-    this.cx = this.hx;
-    this.cz = this.hz;
-    this.cy = this.loadRest();
+    this.park(false);
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
@@ -835,12 +882,11 @@ export class CraneSim {
   }
 
   private loadRest() {
-    if (this.load === "beam") return 0.32;
-    if (this.load === "heavy") return 1.25;
-    return this.cargoHalf;
+    return this.restY(this.load);
   }
 
   private overload(pullOver: boolean) {
+    this.park(false);
     this.attached = false;
     this.airborne = false;
     this.phase = "broke";
@@ -870,6 +916,7 @@ export class CraneSim {
       this.best = this.score;
       writeBest(this.best);
     }
+    this.park(true);
     this.attached = false;
     this.airborne = false;
     this.phase = "done";
@@ -881,6 +928,7 @@ export class CraneSim {
   }
 
   private fail() {
+    this.park(false);
     this.attached = false;
     this.airborne = false;
     this.phase = "broke";

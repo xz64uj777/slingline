@@ -231,18 +231,22 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   hook.scale.setScalar(1.7);
   scene.add(hook);
 
-  const cargo = new THREE.Group();
-  const box = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), crateMat);
-  const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.18, 1.62), stripe);
-  cargo.add(box, band);
-  scene.add(cargo);
-  const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(1.1, 16),
-    new THREE.MeshBasicMaterial({ color: 0x050607, transparent: true, opacity: 0.4, depthWrite: false }),
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.03;
-  scene.add(shadow);
+  const loads = (["crate", "beam", "heavy"] as const).map(() => {
+    const mat = crateMat.clone();
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), mat);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.18, 1.62), stripe);
+    group.add(mesh, band);
+    scene.add(group);
+    const shade = new THREE.Mesh(
+      new THREE.CircleGeometry(1.1, 16),
+      new THREE.MeshBasicMaterial({ color: 0x050607, transparent: true, opacity: 0.4, depthWrite: false }),
+    );
+    shade.rotation.x = -Math.PI / 2;
+    shade.position.y = 0.03;
+    scene.add(shade);
+    return { group, mat, shade };
+  });
 
   function ring(material: THREE.Material) {
     const mesh = new THREE.Mesh(new THREE.RingGeometry(1.7, 2.15, 28), material);
@@ -396,23 +400,20 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     dir.multiplyScalar(-1);
     hook.quaternion.setFromUnitVectors(UP, dir);
 
-    if (sim.attached || sim.phase === "broke" || sim.phase === "done") {
-      const y = sim.attached ? sim.hy - sim.hang : sim.cy;
-      const x = sim.attached ? sim.hx : sim.cx;
-      const z = sim.attached ? sim.hz : sim.cz;
-      cargo.position.set(x, y, z);
-    } else {
-      cargo.position.set(sim.cx, sim.cy, sim.cz);
-    }
-    const heavy = sim.load === "heavy";
-    const beam = sim.load === "beam";
-    cargo.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
-    crateMat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
-    shadow.position.x = cargo.position.x;
-    shadow.position.z = cargo.position.z;
-    const lift = Math.max(0, cargo.position.y - sim.cargoHalf);
-    (shadow.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(0.45 - lift * 0.03, 0.12, 0.45);
-    shadow.scale.setScalar(THREE.MathUtils.clamp(1 + lift * 0.04, 1, 1.6));
+    sim.pieces.forEach((piece, i) => {
+      const view = loads[i];
+      if (!view) return;
+      view.group.position.set(piece.x, piece.y, piece.z);
+      const heavy = piece.kind === "heavy";
+      const beam = piece.kind === "beam";
+      view.group.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
+      view.mat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
+      view.shade.position.x = piece.x;
+      view.shade.position.z = piece.z;
+      const lift = Math.max(0, piece.y - (heavy ? 1.25 : beam ? 0.32 : sim.cargoHalf));
+      (view.shade.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(0.45 - lift * 0.03, 0.12, 0.45);
+      view.shade.scale.setScalar(THREE.MathUtils.clamp(1 + lift * 0.04, 1, 1.6));
+    });
 
     const src = PADS[sim.from]!;
     const dst = PADS[sim.to]!;
