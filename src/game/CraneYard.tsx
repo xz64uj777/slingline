@@ -256,7 +256,7 @@ export function CraneYard() {
             onClick={() => simRef.current?.buyNext()}
             className="pointer-events-auto mt-1 h-9 w-full border border-primary bg-bg px-2 font-display text-sm tracking-wide text-fg"
           >
-            BUY YARD $2500
+            BUY YARD $500
           </button>
         </div>
       </header>

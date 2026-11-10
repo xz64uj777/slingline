@@ -8,11 +8,12 @@ export type CraneState = "driving" | "lifting";
 export type Pad = { x: number; z: number };
 
 export const PADS: Pad[] = [
-  { x: 0, z: -18 },
+  { x: 0, z: -9 },
   { x: 17, z: -8 },
   { x: 12, z: 14 },
   { x: -16, z: -4 },
   { x: -10, z: 16 },
+  { x: 7, z: -3 },
 ];
 
 const TUNING = {
@@ -27,8 +28,8 @@ const CAREER_KEY = "slingline-career";
 export type CraneId = "rental" | "yard" | "heavy";
 
 const CRANES: Record<CraneId, { extend: number; pay: number; next: CraneId | null; price: number }> = {
-  rental: { extend: 6, pay: 400, next: "yard", price: 2500 },
-  yard: { extend: 14, pay: 700, next: "heavy", price: 8000 },
+  rental: { extend: 6, pay: 500, next: "yard", price: 500 },
+  yard: { extend: 14, pay: 700, next: "heavy", price: 2000 },
   heavy: { extend: 20, pay: 1200, next: null, price: 0 },
 };
 
@@ -157,7 +158,7 @@ export class CraneSim {
     this.crane = career.crane;
     this.reputation = career.reputation;
     this.extendMax = CRANES[this.crane].extend;
-    this.place(0, 2, true);
+    this.place(0, 5, true);
   }
 
   companyName() {
@@ -167,7 +168,7 @@ export class CraneSim {
   buyLabel() {
     const next = CRANES[this.crane].next;
     if (!next) return "OWNED";
-    return next === "yard" ? "BUY YARD $2500" : "BUY HEAVY $8000";
+    return next === "yard" ? "BUY YARD $500" : "BUY HEAVY $2000";
   }
 
   buyNext() {
@@ -455,7 +456,7 @@ export class CraneSim {
 
   private stepTruck(dt: number, actions: Actions) {
     if (this.deployDir !== 0) {
-      this.outrigger = clamp(this.outrigger + this.deployDir * (dt / 3.5), 0, 1);
+      this.outrigger = clamp(this.outrigger + this.deployDir * (dt / 1.6), 0, 1);
       this.speed = 0;
       if (this.outrigger <= 0 || this.outrigger >= 1) this.deployDir = 0;
     }
