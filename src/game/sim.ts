@@ -29,7 +29,7 @@ export type CraneId = "rental" | "yard" | "heavy";
 
 const CRANES: Record<CraneId, { extend: number; pay: number; next: CraneId | null; price: number }> = {
   rental: { extend: 6, pay: 500, next: "yard", price: 500 },
-  yard: { extend: 14, pay: 700, next: "heavy", price: 2000 },
+  yard: { extend: 14, pay: 700, next: "heavy", price: 700 },
   heavy: { extend: 20, pay: 1200, next: null, price: 0 },
 };
 
@@ -168,7 +168,7 @@ export class CraneSim {
   buyLabel() {
     const next = CRANES[this.crane].next;
     if (!next) return "OWNED";
-    return next === "yard" ? "BUY YARD $500" : "BUY HEAVY $2000";
+    return next === "yard" ? "BUY YARD $500" : "BUY HEAVY $700";
   }
 
   buyNext() {
