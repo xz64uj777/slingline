@@ -178,6 +178,10 @@ export class CraneSim {
   cz = -18;
   pieces: YardPiece[] = [];
   carry: number | null = null;
+  hookGap = 99;
+  hookReady = false;
+  hookLabel = "";
+  private latch: number | null = null;
 
   baseLen = 5.5;
   extendMax = 6;
@@ -560,6 +564,48 @@ export class CraneSim {
     this.message = "Safety stop at 44°. Tap SAFETY to move again.";
   }
 
+  requestHook() {
+    if (this.attached || this.latch == null || !this.hookReady) {
+      this.message = "Move the hook closer, then tap HOOK.";
+      return;
+    }
+    const piece = this.pieces[this.latch];
+    if (!piece) return;
+    this.carry = this.latch;
+    this.load = piece.kind;
+    this.cx = piece.x;
+    this.cz = piece.z;
+    this.cy = piece.y;
+    this.attached = true;
+    this.airborne = false;
+    this.hookReady = false;
+    this.phase = "carry";
+    const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
+    this.message = this.limitState === "ok" ? `${noun} on the hook. Set it in the amber ring.` : this.message;
+  }
+
+  private updateApproach() {
+    this.hookGap = 99;
+    this.hookReady = false;
+    this.hookLabel = "";
+    this.latch = null;
+    let best = 99;
+    for (let i = 0; i < this.pieces.length; i++) {
+      const piece = this.pieces[i]!;
+      const dx = this.hx - piece.x;
+      const dz = this.hz - piece.z;
+      const flat = Math.hypot(dx, dz);
+      const idealY = piece.y + this.hang;
+      const gap = Math.hypot(flat, this.hy - idealY);
+      if (gap >= best) continue;
+      best = gap;
+      this.latch = i;
+      this.hookGap = gap;
+      this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
+      this.hookReady = flat < 2.1 && Math.abs(this.hy - idealY) < 1.05;
+    }
+  }
+
   requestDeploy() {
     if (this.flipped) return;
     if (this.state === "lifting" || this.outrigger > 0.5) {
@@ -788,30 +834,17 @@ export class CraneSim {
     this.updateChart(dt);
 
     if (!this.attached) {
-      const snatch = this.tuning().snatch;
-      for (let i = 0; i < this.pieces.length; i++) {
-        const piece = this.pieces[i]!;
-        const dist = Math.hypot(this.hx - piece.x, this.hz - piece.z);
-        const idealY = piece.y + this.hang;
-        if (dist < 2.1 && Math.abs(this.hy - idealY) < 1.05 && this.hookSpeed < snatch) {
-          this.carry = i;
-          this.load = piece.kind;
-          this.cx = piece.x;
-          this.cz = piece.z;
-          this.cy = piece.y;
-          this.attached = true;
-          this.airborne = false;
-          this.phase = "carry";
-          const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
-          if (this.limitState === "ok") this.message = `${noun} on the hook. Set it in the amber ring.`;
-          return;
-        }
-      }
-      if (this.limitState === "over") this.message = "Over the chart. Shorten the boom before you lift.";
+      this.updateApproach();
+      if (this.hookGap < 12) {
+        this.message = this.hookReady
+          ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m. Tap HOOK.`
+          : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.`;
+      } else if (this.limitState === "over") this.message = "Over the chart. Shorten the boom before you lift.";
       else if (this.limitState === "near") this.message = "Near the limit. Watch the angle and the length.";
       else this.message = "Hook the crate, the beam, or the heavy block.";
       return;
     }
+    this.hookReady = false;
 
     const carried = this.carry != null ? this.pieces[this.carry] : undefined;
     if (carried) {

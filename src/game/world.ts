@@ -228,7 +228,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   throat.rotation.z = Math.PI;
   throat.position.y = -0.22;
   hook.add(block, throat);
-  hook.scale.setScalar(1.7);
+  hook.scale.setScalar(0.55);
   scene.add(hook);
 
   const loads = (["crate", "beam", "heavy"] as const).map(() => {
@@ -333,16 +333,16 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     boom.rotation.x = sim.boomPitch;
     const style =
       sim.crane === "crawler"
-        ? { thick: 1.85, color: 0xe3a23a, ext: 0x8a5a12, counter: 2.6, hook: 3.1 }
+        ? { thick: 1.85, color: 0xe3a23a, ext: 0x8a5a12, counter: 2.6, hook: 0.72 }
         : sim.crane === "tower"
-          ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 2.2 }
+          ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 0.58 }
           : sim.crane === "lattice"
-            ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 2.9 }
+            ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 0.64 }
             : sim.crane === "heavy"
-              ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
+              ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 0.7 }
               : sim.crane === "yard"
-                ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
-                : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
+                ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 0.62 }
+                : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 0.55 };
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;

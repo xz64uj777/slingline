@@ -47,6 +47,8 @@ export function CraneYard() {
   const meterRef = useRef<HTMLSpanElement>(null);
   const deployRef = useRef<HTMLButtonElement>(null);
   const safetyRef = useRef<HTMLButtonElement>(null);
+  const hookBtnRef = useRef<HTMLButtonElement>(null);
+  const gapRef = useRef<HTMLParagraphElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
@@ -138,6 +140,12 @@ export function CraneYard() {
             : "DEPLOY";
       }
       if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
+      if (hookBtnRef.current) hookBtnRef.current.style.display = sim.hookReady && !sim.attached ? "block" : "none";
+      if (gapRef.current) {
+        const show = !sim.attached && sim.hookGap < 12;
+        gapRef.current.style.display = show ? "block" : "none";
+        if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(1)} m`;
+      }
       const dot = dotRef.current;
       if (dot) {
         const reach = 28;
@@ -313,6 +321,13 @@ export function CraneYard() {
           <p ref={coachRef} className="max-w-sm bg-surface px-3 py-2 text-center text-base text-fg">
             Lower the hook onto the crate.
           </p>
+          <p
+            ref={gapRef}
+            style={{ display: "none" }}
+            className="bg-surface px-3 py-2 text-center font-display text-lg tracking-wide text-fg"
+          >
+            0.0 m
+          </p>
           <div className="sway-well">
             <span ref={dotRef} className="sway-dot" />
           </div>
@@ -391,6 +406,15 @@ export function CraneYard() {
               className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
             >
               {crane.toUpperCase()}
+            </button>
+            <button
+              ref={hookBtnRef}
+              type="button"
+              onClick={() => simRef.current?.requestHook()}
+              style={{ display: "none" }}
+              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              HOOK
             </button>
             <button
               ref={safetyRef}
