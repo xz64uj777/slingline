@@ -434,6 +434,7 @@ export class CraneSim {
     if (this.state === "lifting") return;
     if (this.deployDir > 0) this.message = "Deploying outriggers.";
     else if (this.deployDir < 0) this.message = "Stowing outriggers.";
+    else if (padsClear) this.message = "Drive to the crate. Stop, then DEPLOY.";
     else this.message = this.gateReason();
   }
 
