@@ -13,6 +13,7 @@ import {
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
 import { limitAlarm } from "@/game/alarm";
+import { rigAudio, unlockAudio } from "@/game/rig-audio";
 
 const STEP = 1 / 60;
 
@@ -123,6 +124,7 @@ export function CraneYard() {
       if (playingRef.current && sim.state === "lifting" && sim.phase !== "broke" && sim.phase !== "done") {
         limitAlarm(sim.limitState, performance.now());
       }
+      if (playingRef.current) rigAudio(sim, performance.now());
       if (speedRef.current) {
         speedRef.current.textContent =
           sim.state === "lifting"
@@ -389,6 +391,7 @@ export function CraneYard() {
               className="mt-4 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
               onClick={() => {
                 playingRef.current = true;
+                unlockAudio();
                 setPlaying(true);
               }}
             >

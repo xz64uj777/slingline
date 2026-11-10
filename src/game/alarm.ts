@@ -1,4 +1,5 @@
-let ctx: AudioContext | null = null;
+import { audioContext } from "@/game/rig-audio";
+
 let last = 0;
 
 export function limitAlarm(level: "ok" | "near" | "over", now: number) {
@@ -6,9 +7,8 @@ export function limitAlarm(level: "ok" | "near" | "over", now: number) {
   const gap = level === "over" ? 280 : 700;
   if (now - last < gap) return;
   last = now;
-  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) return;
-  if (!ctx) ctx = new AudioCtx();
+  const ctx = audioContext();
+  if (!ctx) return;
   if (ctx.state === "suspended") void ctx.resume();
   const tone = ctx.createOscillator();
   const gain = ctx.createGain();
