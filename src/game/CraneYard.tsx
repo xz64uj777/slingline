@@ -196,7 +196,7 @@ export function CraneYard() {
       ) : null}
 
       {!playing ? (
-        <div className="absolute inset-0 flex items-end justify-center p-4 sm:items-center">
+        <div className="absolute inset-0 flex items-end justify-center p-4 pb-24 sm:items-center">
           <section className="w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-5">
             <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
             <h2 className="mt-1 font-display text-5xl leading-none">Hook. Carry. Set.</h2>
