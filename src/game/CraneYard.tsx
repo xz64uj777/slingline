@@ -46,7 +46,6 @@ export function CraneYard() {
   const speedRef = useRef<HTMLSpanElement>(null);
   const meterRef = useRef<HTMLSpanElement>(null);
   const deployRef = useRef<HTMLButtonElement>(null);
-  const liftRef = useRef<HTMLButtonElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
@@ -130,10 +129,12 @@ export function CraneYard() {
               : `${Math.abs(sim.speed).toFixed(1)} m/s`;
       }
       if (meterRef.current) meterRef.current.textContent = sim.state === "lifting" ? "HOOK" : sim.mode === "hard" ? "LAT G" : "SPEED";
-      if (deployRef.current) deployRef.current.textContent = sim.outrigger > 0.5 && sim.deployDir >= 0 ? "STOW" : "DEPLOY";
-      if (liftRef.current) {
-        liftRef.current.hidden = !sim.flipped;
-        liftRef.current.textContent = "RIGHT";
+      if (deployRef.current) {
+        deployRef.current.textContent = sim.flipped
+          ? "RIGHT"
+          : sim.outrigger > 0.5 && sim.deployDir >= 0
+            ? "STOW"
+            : "DEPLOY";
       }
       const dot = dotRef.current;
       if (dot) {
@@ -386,19 +387,15 @@ export function CraneYard() {
             <button
               ref={deployRef}
               type="button"
-              onClick={() => simRef.current?.requestDeploy()}
+              onClick={() => {
+                const sim = simRef.current;
+                if (!sim) return;
+                if (sim.flipped) sim.recover();
+                else sim.requestDeploy();
+              }}
               className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
             >
               DEPLOY
-            </button>
-            <button
-              ref={liftRef}
-              type="button"
-              hidden
-              onClick={() => simRef.current?.recover()}
-              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              LIFT
             </button>
             <button
               type="button"
