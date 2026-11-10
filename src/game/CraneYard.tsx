@@ -136,7 +136,7 @@ export function CraneYard() {
       const banner = bannerRef.current;
       if (banner) {
         if (sim.phase === "broke") {
-          banner.textContent = "Sling parted";
+          banner.textContent = sim.flipped ? "Crane over" : "Wire snapped";
           banner.dataset.show = "break";
         } else if (sim.phase === "done") {
           banner.textContent = "Clean set";

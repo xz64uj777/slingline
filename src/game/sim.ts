@@ -3,7 +3,7 @@ import type { Actions } from "@/game/input";
 export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
-export type LoadKind = "crate" | "beam";
+export type LoadKind = "crate" | "beam" | "heavy";
 export type CraneState = "driving" | "lifting";
 
 export type Pad = { x: number; z: number };
@@ -145,6 +145,7 @@ export class CraneSim {
   warn = false;
   swayDeg = 0;
   hookSpeed = 0;
+  tipSpeed = 0;
   side = 0;
   along = 0;
 
@@ -281,13 +282,14 @@ export class CraneSim {
     this.to = to;
     const p = PADS[from]!;
     this.cx = p.x;
-    this.load = this.score % 2 === 1 ? "beam" : "crate";
-    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
+    const step = this.score % 3;
+    this.load = step === 1 ? "beam" : step === 2 ? "heavy" : "crate";
+    this.cy = this.loadRest();
     this.cz = p.z;
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
-    const noun = this.load === "beam" ? "steel beam" : "crate";
+    const noun = this.load === "beam" ? "steel beam" : this.load === "heavy" ? "heavy block" : "crate";
     this.message =
       this.state === "lifting"
         ? `Lower the hook onto the ${noun}.`
@@ -353,7 +355,9 @@ export class CraneSim {
     }
 
     const bvx = (b.x - this.prevBx) / dt;
+    const bvy = (b.y - this.prevBy) / dt;
     const bvz = (b.z - this.prevBz) / dt;
+    this.tipSpeed = Math.hypot(bvx, bvy, bvz);
 
     this.vy -= 9.81 * dt;
 
@@ -372,13 +376,14 @@ export class CraneSim {
       this.vz += this.windZ * acc * dt;
     }
 
-    const damp = Math.min(0.85, tune.damp * dt);
+    const dampScale = this.load === "heavy" && this.attached ? 0.3 : 1;
+    const damp = Math.min(0.85, tune.damp * dampScale * dt);
     this.vx -= this.vx * damp;
     this.vy -= this.vy * damp;
     this.vz -= this.vz * damp;
 
     if (tune.assist > 0) {
-      const as = clamp(tune.assist * dt, 0, 1);
+      const as = clamp(tune.assist * dampScale * dt, 0, 1);
       this.vx += (bvx - this.vx) * as;
       this.vz += (bvz - this.vz) * as;
     }
@@ -582,9 +587,11 @@ export class CraneSim {
     else if (this.deployDir < 0) this.message = "Stowing outriggers.";
     else if (padsClear)
       this.message =
-        this.load === "beam"
-          ? "Steel beam. Drive over, stop, then DEPLOY."
-          : "Drive to the crate. Stop, then DEPLOY.";
+        this.load === "heavy"
+          ? "Heavy block. A fast swing will snap the wire or pull the crane over."
+          : this.load === "beam"
+            ? "Steel beam. Drive over, stop, then DEPLOY."
+            : "Drive to the crate. Stop, then DEPLOY.";
     else this.message = this.gateReason();
   }
 
@@ -627,7 +634,7 @@ export class CraneSim {
       } else if (dist < 2.2 && this.hookSpeed >= snatch) {
         this.message = "Too fast to hook. Let the swing die.";
       } else {
-        this.message = "Lower the hook onto the crate.";
+        this.message = this.load === "heavy" ? "Lower the hook onto the heavy block." : "Lower the hook onto the crate.";
       }
       return;
     }
@@ -635,7 +642,20 @@ export class CraneSim {
     const bottom = this.hy - this.hang - this.cargoHalf;
     if (bottom > 1.35) this.airborne = true;
 
-    const limit = this.tuning().impact;
+    const mass = this.load === "heavy" ? 3 : this.load === "beam" ? 1.4 : 1;
+    const strain = this.hookSpeed * mass + this.tipSpeed * mass * 0.4;
+    const snap = this.mode === "easy" ? 6.2 : 3.2;
+    if (strain > snap && (this.airborne || this.tipSpeed > 2.2)) {
+      const pullOver = this.load === "heavy" && (this.swayDeg > 16 || this.tipSpeed > 3.5);
+      this.overload(pullOver);
+      return;
+    }
+    if (strain > snap * 0.62 && (this.airborne || this.tipSpeed > 1.4)) {
+      this.warn = true;
+      this.message = this.load === "heavy" ? "Heavy load. Slow down or the crane goes over." : "Too fast. The wire is loading up.";
+    }
+
+    const limit = this.tuning().impact / mass;
     if (this.airborne && bottom < 3.4 && this.hookSpeed > limit * 0.72) this.warn = true;
 
     if (this.airborne && bottom <= 0.08) {
@@ -645,23 +665,53 @@ export class CraneSim {
       else if (onTarget) this.succeed();
       else this.setAside();
     } else if (this.airborne) {
-      this.message = this.warn ? "Too fast. Ease it down." : "Set it inside the amber ring.";
+      this.message = this.warn
+        ? this.load === "heavy"
+          ? "Heavy load. Slow down or the crane goes over."
+          : "Too fast. The wire is loading up."
+        : "Set it inside the amber ring.";
     }
   }
 
   private setAside() {
     this.cx = this.hx;
     this.cz = this.hz;
-    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
+    this.cy = this.loadRest();
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
     this.message = "Wrong pad. Hook it again.";
   }
 
+  private loadRest() {
+    if (this.load === "beam") return 0.32;
+    if (this.load === "heavy") return 1.25;
+    return this.cargoHalf;
+  }
+
+  private overload(pullOver: boolean) {
+    this.attached = false;
+    this.airborne = false;
+    this.phase = "broke";
+    this.breakFlash = 1.5;
+    this.impulse = 0.7;
+    this.cy = this.loadRest();
+    this.cx = this.hx;
+    this.cz = this.hz;
+    if (pullOver) {
+      this.flipped = true;
+      this.roll = Math.sign(this.side || 1) * 1.2;
+      this.rollRate = 0;
+      this.speed = 0;
+      this.message = "Heavy load pulled the crane over.";
+      return;
+    }
+    this.message = "Wire snapped.";
+  }
+
   private succeed() {
     this.score += 1;
-    const pay = CRANES[this.crane].pay * (this.load === "beam" ? 2 : 1);
+    const pay = CRANES[this.crane].pay * (this.load === "heavy" ? 3 : this.load === "beam" ? 2 : 1);
     this.cash += pay;
     this.reputation += 1;
     this.writeCareer();
@@ -674,7 +724,7 @@ export class CraneSim {
     this.phase = "done";
     this.deliverFlash = 1.15;
     this.message = `Clean set. +$${pay}`;
-    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
+    this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;
   }
@@ -685,8 +735,8 @@ export class CraneSim {
     this.phase = "broke";
     this.breakFlash = 1.35;
     this.impulse = 0.45;
-    this.message = "Sling parted.";
-    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
+    this.message = "Wire snapped.";
+    this.cy = this.loadRest();
     this.cx = this.hx;
     this.cz = this.hz;
   }

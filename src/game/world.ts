@@ -391,7 +391,10 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     } else {
       cargo.position.set(sim.cx, sim.cy, sim.cz);
     }
-    cargo.scale.set(sim.load === "beam" ? 0.5 : 1, sim.load === "beam" ? 0.38 : 1, sim.load === "beam" ? 2.8 : 1);
+    const heavy = sim.load === "heavy";
+    const beam = sim.load === "beam";
+    cargo.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
+    crateMat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
     shadow.position.x = cargo.position.x;
     shadow.position.z = cargo.position.z;
     const lift = Math.max(0, cargo.position.y - sim.cargoHalf);
