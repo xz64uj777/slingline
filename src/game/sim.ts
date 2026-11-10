@@ -603,6 +603,7 @@ export class CraneSim {
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
       this.hookReady = flat < 2.1 && Math.abs(this.hy - idealY) < 1.05;
+      this.load = piece.kind;
     }
   }
 
@@ -755,13 +756,7 @@ export class CraneSim {
     if (this.state === "lifting") return;
     if (this.deployDir > 0) this.message = "Deploying outriggers.";
     else if (this.deployDir < 0) this.message = "Stowing outriggers.";
-    else if (padsClear)
-      this.message =
-        this.load === "heavy"
-          ? "Heavy block. A fast swing will snap the wire or pull the crane over."
-          : this.load === "beam"
-            ? "Steel beam. Drive over, stop, then DEPLOY."
-            : "Drive to the crate. Stop, then DEPLOY.";
+    else if (padsClear) this.message = "Three loads are out. Stop, then DEPLOY.";
     else this.message = this.gateReason();
   }
 
@@ -787,8 +782,10 @@ export class CraneSim {
   }
 
   private loadDemand() {
-    if (this.load === "heavy") return 8.2;
-    if (this.load === "beam") return 4.1;
+    const kind =
+      !this.attached && this.latch != null ? (this.pieces[this.latch]?.kind ?? this.load) : this.load;
+    if (kind === "heavy") return 8.2;
+    if (kind === "beam") return 4.1;
     return 2;
   }
 
@@ -831,16 +828,18 @@ export class CraneSim {
   private updateJob(dt: number) {
     this.warn = false;
     if (this.phase === "broke" || this.phase === "done") return;
+    if (!this.attached) this.updateApproach();
     this.updateChart(dt);
 
     if (!this.attached) {
-      this.updateApproach();
+      const chart =
+        this.limitState === "over" ? " Over the chart for this load." : this.limitState === "near" ? " Near the limit." : "";
       if (this.hookGap < 12) {
         this.message = this.hookReady
-          ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m. Tap HOOK.`
-          : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.`;
-      } else if (this.limitState === "over") this.message = "Over the chart. Shorten the boom before you lift.";
-      else if (this.limitState === "near") this.message = "Near the limit. Watch the angle and the length.";
+          ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m.${chart} Tap HOOK.`
+          : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
+      } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
+      else if (this.limitState === "near") this.message = "That load is near the limit. Watch the angle and the length.";
       else this.message = "Hook the crate, the beam, or the heavy block.";
       return;
     }
