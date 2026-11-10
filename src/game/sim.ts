@@ -112,6 +112,7 @@ export class CraneSim {
   speed = 0;
   roll = 0;
   rollRate = 0;
+  leanSign = 0;
   outrigger = 0;
   deployDir = 0;
   lateralG = 0;
@@ -651,6 +652,7 @@ export class CraneSim {
     this.flipped = false;
     this.roll = 0;
     this.rollRate = 0;
+    this.leanSign = 0;
     this.speed = 0;
     this.state = "driving";
     this.deployDir = -1;
@@ -881,17 +883,21 @@ export class CraneSim {
 
   private applyTilt(dt: number) {
     const excess = Math.max(0, this.limitRatio - 0.8);
-    const sign = Math.sign(this.side || 1);
-    const target = sign * Math.min(0.46, excess * 0.9);
-    this.roll += (target - this.roll) * Math.min(1, dt * 2.2);
-    if (excess < 0.08) return;
+    if (excess < 0.02) {
+      this.leanSign = 0;
+      this.shiftRoll(0, dt);
+      return;
+    }
+    if (this.leanSign === 0) this.leanSign = Math.sign(this.side || 1) || 1;
+    const target = this.leanSign * Math.min(0.46, excess * 0.9);
+    this.shiftRoll(target, dt);
     this.warn = true;
     this.message =
       this.limitRatio > 1 ? "Tilt warning. Boom in before it goes over." : "Crane is starting to lean.";
     const heldOver = this.load === "heavy" && this.limitRatio > 1.45 && Math.abs(this.roll) > 0.4 && this.limitHold > 2.4;
     if (!heldOver) return;
     this.flipped = true;
-    this.roll = sign * 1.15;
+    this.roll = this.leanSign * 1.15;
     this.rollRate = 0;
     this.park(false);
     this.attached = false;
@@ -903,6 +909,23 @@ export class CraneSim {
     this.cy = this.loadRest();
     this.cx = this.hx;
     this.cz = this.hz;
+  }
+
+  private shiftRoll(target: number, dt: number) {
+    const before = this.boom();
+    const next = this.roll + (target - this.roll) * Math.min(1, dt * 0.9);
+    if (Math.abs(next - this.roll) < 1e-5) return;
+    this.roll = next;
+    const after = this.boom();
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    const dz = after.z - before.z;
+    this.hx += dx;
+    this.hy += dy;
+    this.hz += dz;
+    this.prevBx += dx;
+    this.prevBy += dy;
+    this.prevBz += dz;
   }
 
   private setAside() {
