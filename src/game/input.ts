@@ -105,9 +105,13 @@ export function readActions(): Actions {
   const pads = navigator.getGamepads?.() ?? [];
   for (const pad of pads) {
     if (!pad || pad.mapping !== "standard") continue;
-    const stick = radialDeadzone(pad.axes[0] ?? 0, pad.axes[1] ?? 0, 0.18);
-    steer += -stick.x;
-    trolley += -stick.y;
+    const stick = radialDeadzone(pad.axes[0] ?? 0, pad.axes[1] ?? 0, 0.22);
+    const eased = Math.hypot(stick.x, stick.y);
+    const curve = eased * eased;
+    const steerPad = eased > 0 ? (-stick.x / eased) * curve : 0;
+    const trolleyPad = eased > 0 ? (-stick.y / eased) * curve : 0;
+    steer += steerPad;
+    trolley += trolleyPad;
     if (pad.buttons[4]?.pressed) hoist += 1;
     if (pad.buttons[5]?.pressed) hoist -= 1;
     if (pad.buttons[3]?.pressed) modeDown = true;

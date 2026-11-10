@@ -1,6 +1,7 @@
 import type { Actions } from "@/game/input";
 
 export type Mode = "easy" | "hard";
+export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
 
 export type Pad = { x: number; z: number };
@@ -18,6 +19,7 @@ const TUNING = {
   hard: { damp: 0.22, assist: 0, settle: 0, brake: 0.12, impact: 1.45, wind: 1.35, snatch: 1.55 },
 } as const;
 
+const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
 
 function clamp(v: number, a: number, b: number) {
@@ -45,6 +47,7 @@ export type Boom = { x: number; y: number; z: number };
 
 export class CraneSim {
   mode: Mode = "easy";
+  pace: Pace = "steady";
   yaw = 0;
   yawRate = 0;
   trolley = 14;
@@ -145,9 +148,10 @@ export class CraneSim {
   step(dt: number, actions: Actions) {
     if (dt <= 0) return;
     const tune = this.tuning();
+    const pace = PACE_SCALE[this.pace];
     const follow = clamp(dt / tune.brake, 0, 1);
-    this.yawRate += (actions.steer * 0.9 - this.yawRate) * follow;
-    this.trolleySpeed += (actions.trolley * 5.5 - this.trolleySpeed) * follow;
+    this.yawRate += (actions.steer * 0.9 * pace - this.yawRate) * follow;
+    this.trolleySpeed += (actions.trolley * 5.5 * pace - this.trolleySpeed) * follow;
     this.yaw += this.yawRate * dt;
     const nextT = this.trolley + this.trolleySpeed * dt;
     if (nextT >= this.trolleyMax) {
@@ -159,7 +163,7 @@ export class CraneSim {
     } else {
       this.trolley = nextT;
     }
-    this.cable = clamp(this.cable - actions.hoist * 3.5 * dt, this.cableMin, this.cableMax);
+    this.cable = clamp(this.cable - actions.hoist * 3.5 * pace * dt, this.cableMin, this.cableMax);
 
     const b = this.boom();
     if (!this.ready) {

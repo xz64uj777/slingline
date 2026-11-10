@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
-import { CraneSim, type Mode } from "@/game/sim";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
+import { CraneSim, type Mode, type Pace } from "@/game/sim";
 import {
   idleActions,
   installInput,
@@ -14,13 +14,18 @@ import { createYard } from "@/game/world";
 
 const STEP = 1 / 60;
 
+type Scheme = "stick" | "arrows";
+
 export function CraneYard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playingRef = useRef(false);
   const modeRef = useRef<Mode>("easy");
+  const paceRef = useRef<Pace>("steady");
   const simRef = useRef<CraneSim | null>(null);
   const [playing, setPlaying] = useState(false);
   const [mode, setMode] = useState<Mode>("easy");
+  const [pace, setPace] = useState<Pace>("steady");
+  const [scheme, setScheme] = useState<Scheme>("stick");
   const [best, setBest] = useState(0);
   const [glError, setGlError] = useState("");
 
@@ -38,6 +43,11 @@ export function CraneYard() {
     modeRef.current = mode;
     if (simRef.current) simRef.current.mode = mode;
   }, [mode]);
+
+  useEffect(() => {
+    paceRef.current = pace;
+    if (simRef.current) simRef.current.pace = pace;
+  }, [pace]);
 
   const shownBest = useRef(0);
 
@@ -128,6 +138,7 @@ export function CraneYard() {
           prevMode = actions.modeDown;
         }
         sim.mode = modeRef.current;
+        sim.pace = paceRef.current;
         sim.step(STEP, actions);
         acc -= STEP;
         steps += 1;
@@ -147,6 +158,12 @@ export function CraneYard() {
       delete window.__controlsTest;
     };
   }, []);
+
+  const pickScheme = (next: Scheme) => {
+    releaseArrows();
+    setTouchAxes(0, 0);
+    setScheme(next);
+  };
 
   return (
     <main
@@ -196,7 +213,7 @@ export function CraneYard() {
       ) : null}
 
       {!playing ? (
-        <div className="absolute inset-0 flex items-end justify-center p-4 pb-24 sm:items-center">
+        <div className="absolute inset-0 flex items-end justify-center overflow-y-auto p-4 pb-24 sm:items-center">
           <section className="w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-5">
             <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
             <h2 className="mt-1 font-display text-5xl leading-none">Hook. Carry. Set.</h2>
@@ -207,6 +224,15 @@ export function CraneYard() {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Swing dies on its own" />
               <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Stick" detail="Thumb, eased" />
+              <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Hold a direction" />
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
+              <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Yard pace" />
+              <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Full travel" />
             </div>
             <p className="mt-3 hidden text-xs text-steel sm:block">
               A D slew · W S trolley · Q up · E down · H flips mode
@@ -226,8 +252,22 @@ export function CraneYard() {
         </div>
       ) : (
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
-          <Stick />
+          {scheme === "stick" ? <Stick /> : <ArrowPad />}
           <div className="pointer-events-auto flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => pickScheme(scheme === "stick" ? "arrows" : "stick")}
+              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              {scheme === "stick" ? "STICK" : "ARROWS"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPace(pace === "slow" ? "steady" : pace === "steady" ? "fast" : "slow")}
+              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              {pace === "slow" ? "SLOW" : pace === "steady" ? "STEADY" : "FAST"}
+            </button>
             <button
               type="button"
               onClick={() => setMode(mode === "easy" ? "hard" : "easy")}
@@ -307,13 +347,14 @@ function Stick() {
     const nx = dx / max;
     const ny = dy / max;
     const m = Math.hypot(nx, ny);
-    const dz = 0.14;
+    const dz = 0.22;
     if (m < dz) {
       setTouchAxes(0, 0);
       return;
     }
-    const scale = (m - dz) / (1 - dz) / m;
-    setTouchAxes(-nx * scale, -ny * scale);
+    const along = (m - dz) / (1 - dz);
+    const eased = along * along;
+    setTouchAxes((-nx / m) * eased, (-ny / m) * eased);
   };
 
   const end = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -354,6 +395,80 @@ function Stick() {
         className="absolute top-1/2 left-1/2 size-12 rounded-full bg-primary"
       />
     </div>
+  );
+}
+
+const arrows = { left: false, right: false, out: false, inn: false };
+
+function syncArrows() {
+  setTouchAxes((arrows.left ? 1 : 0) - (arrows.right ? 1 : 0), (arrows.out ? 1 : 0) - (arrows.inn ? 1 : 0));
+}
+
+function releaseArrows() {
+  arrows.left = false;
+  arrows.right = false;
+  arrows.out = false;
+  arrows.inn = false;
+}
+
+function ArrowPad() {
+  return (
+    <div className="pointer-events-auto grid grid-cols-3 gap-1">
+      <span />
+      <ArrowHold axis="out" label="Out">
+        <ArrowUp className="size-5" aria-hidden />
+      </ArrowHold>
+      <span />
+      <ArrowHold axis="left" label="Left">
+        <ArrowLeft className="size-5" aria-hidden />
+      </ArrowHold>
+      <span className="size-14" />
+      <ArrowHold axis="right" label="Right">
+        <ArrowRight className="size-5" aria-hidden />
+      </ArrowHold>
+      <span />
+      <ArrowHold axis="inn" label="In">
+        <ArrowDown className="size-5" aria-hidden />
+      </ArrowHold>
+      <span />
+    </div>
+  );
+}
+
+function ArrowHold({
+  axis,
+  label,
+  children,
+}: {
+  axis: keyof typeof arrows;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="flex size-14 touch-none flex-col items-center justify-center border border-line bg-surface font-display text-[10px] tracking-wide text-fg"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        arrows[axis] = true;
+        syncArrows();
+      }}
+      onPointerUp={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+        arrows[axis] = false;
+        syncArrows();
+      }}
+      onPointerCancel={() => {
+        arrows[axis] = false;
+        syncArrows();
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {children}
+      {label}
+    </button>
   );
 }
 
