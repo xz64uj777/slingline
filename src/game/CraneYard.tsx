@@ -10,7 +10,7 @@ import {
   setTouchAxes,
   setTouchHoist,
 } from "@/game/input";
-import { createYard } from "@/game/world";
+import { createYard, type CamView } from "@/game/world";
 
 const STEP = 1 / 60;
 
@@ -22,10 +22,13 @@ export function CraneYard() {
   const modeRef = useRef<Mode>("easy");
   const paceRef = useRef<Pace>("steady");
   const simRef = useRef<CraneSim | null>(null);
+  const yardRef = useRef<ReturnType<typeof createYard> | null>(null);
+  const camDrag = useRef<{ id: number; x: number; y: number } | null>(null);
   const [playing, setPlaying] = useState(false);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
+  const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
   const [glError, setGlError] = useState("");
 
@@ -73,6 +76,7 @@ export function CraneYard() {
     let yard: ReturnType<typeof createYard>;
     try {
       yard = createYard(canvas);
+      yardRef.current = yard;
     } catch (err) {
       setGlError(err instanceof Error ? err.message : "The yard couldn't start.");
       return;
@@ -154,6 +158,7 @@ export function CraneYard() {
     return () => {
       yard.renderer.setAnimationLoop(null);
       yard.dispose();
+      yardRef.current = null;
       removeInput();
       delete window.__controlsTest;
     };
@@ -165,12 +170,45 @@ export function CraneYard() {
     setScheme(next);
   };
 
+  const cycleCam = () => {
+    const order: CamView[] = ["chase", "cab", "hook", "high"];
+    const next = order[(order.indexOf(cam) + 1) % order.length] ?? "chase";
+    setCam(next);
+    yardRef.current?.setView(next);
+  };
+
+  const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.button !== 0) return;
+    camDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onCamMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const drag = camDrag.current;
+    if (!drag || drag.id !== e.pointerId) return;
+    yardRef.current?.nudge(e.clientX - drag.x, e.clientY - drag.y);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+  };
+
+  const onCamEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (camDrag.current?.id !== e.pointerId) return;
+    camDrag.current = null;
+  };
+
   return (
     <main
       className="yard relative h-dvh w-full overflow-hidden bg-bg text-fg"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full touch-none" />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full touch-none"
+        onPointerDown={onCamDown}
+        onPointerMove={onCamMove}
+        onPointerUp={onCamEnd}
+        onPointerCancel={onCamEnd}
+      />
       {glError ? (
         <p className="absolute inset-x-0 top-16 px-6 text-center text-danger">{glError}</p>
       ) : null}
@@ -209,6 +247,13 @@ export function CraneYard() {
             <span className="px-2 text-line">|</span>
             HOOK <span ref={speedRef} className="text-fg">0.0 m/s</span>
           </p>
+          <button
+            type="button"
+            onClick={cycleCam}
+            className="pointer-events-auto bg-surface px-3 py-1 font-display text-base tracking-wide text-fg"
+          >
+            CAM {cam === "chase" ? "CHASE" : cam === "cab" ? "CAB" : cam === "hook" ? "HOOK" : "HIGH"}
+          </button>
         </div>
       ) : null}
 
@@ -237,7 +282,7 @@ export function CraneYard() {
             <p className="mt-3 hidden text-xs text-steel sm:block">
               A D slew · W S trolley · Q up · E down · H flips mode
             </p>
-            <p className="mt-3 text-xs text-muted">Best this device: {best}</p>
+            <p className="mt-3 text-xs text-muted">Drag the open yard to look around. CAM steps through chase, cab, hook, and high.</p>
             <button
               type="button"
               className="mt-4 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"

@@ -1,11 +1,15 @@
 import * as THREE from "three";
 import { PADS, type CraneSim } from "@/game/sim";
 
+export type CamView = "chase" | "cab" | "hook" | "high";
+
 export type Yard = {
   renderer: THREE.WebGLRenderer;
   render: (sim: CraneSim, frameDt: number) => void;
   resize: () => void;
   dispose: () => void;
+  setView: (view: CamView) => void;
+  nudge: (dx: number, dy: number) => void;
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -241,6 +245,20 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const dir = new THREE.Vector3();
   const mid = new THREE.Vector3();
   let shake = 0;
+  let view: CamView = "chase";
+  let orbit = 0;
+  let pitch = 0;
+
+  function setView(next: CamView) {
+    view = next;
+    orbit = 0;
+    pitch = 0;
+  }
+
+  function nudge(dx: number, dy: number) {
+    orbit -= dx * 0.006;
+    pitch = Math.max(-8, Math.min(16, pitch - dy * 0.035));
+  }
 
   function resize() {
     const w = canvas.clientWidth || 1;
@@ -303,20 +321,25 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
     const fx = -Math.sin(sim.yaw);
     const fz = -Math.cos(sim.yaw);
-    const back = 20;
-    const flank = 8;
-    desired.set(
-      Math.sin(sim.yaw) * back + Math.cos(sim.yaw) * flank,
-      9,
-      Math.cos(sim.yaw) * back - Math.sin(sim.yaw) * flank,
-    );
+    const yaw = sim.yaw + orbit;
+    const height = Math.max(2.4, 9 + pitch);
+    if (view === "cab") {
+      const seat = 4.5;
+      desired.set(-fx * seat, Math.max(8, 12 + pitch * 0.4), -fz * seat);
+      const lookYaw = sim.yaw + orbit * 0.65;
+      lookTarget.set(-Math.sin(lookYaw) * sim.trolley, Math.max(2, sim.hy + 1), -Math.cos(lookYaw) * sim.trolley);
+    } else if (view === "hook") {
+      desired.set(sim.hx + Math.sin(yaw) * 7, Math.max(1.8, sim.hy + 3.2 + pitch * 0.45), sim.hz + Math.cos(yaw) * 7);
+      lookTarget.set(sim.hx, sim.hy, sim.hz);
+    } else if (view === "high") {
+      desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
+      lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
+    } else {
+      desired.set(Math.sin(yaw) * 20 + Math.cos(yaw) * 8, height, Math.cos(yaw) * 20 - Math.sin(yaw) * 8);
+      lookTarget.set(sim.hx * 0.72 + fx * 2, Math.max(3.2, sim.hy), sim.hz * 0.72 + fz * 2);
+    }
     const k = 1 - Math.exp(-2.6 * frameDt);
     camPos.lerp(desired, k);
-    lookTarget.set(
-      sim.hx * 0.72 + fx * 2,
-      Math.max(3.2, sim.hy),
-      sim.hz * 0.72 + fz * 2,
-    );
     look.lerp(lookTarget, k);
     if (sim.impulse > 0) {
       shake = Math.max(shake, sim.impulse);
@@ -337,5 +360,5 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     for (const m of mats) m.dispose();
   }
 
-  return { renderer, render, resize, dispose };
+  return { renderer, render, resize, dispose, setView, nudge };
 }
