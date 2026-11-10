@@ -19,7 +19,7 @@ const realKeys = new Set<string>();
 let qaKeys: Set<string> | null = null;
 let steerOverride: number | null = null;
 
-const touch = { steer: 0, trolley: 0, hoist: 0 };
+const touch = { steer: 0, trolley: 0, hoist: 0, extend: 0 };
 
 function radialDeadzone(x: number, y: number, dz = 0.15) {
   const mag = Math.hypot(x, y);
@@ -67,14 +67,19 @@ export function setTouchHoist(hoist: number) {
   touch.hoist = hoist;
 }
 
+export function setTouchExtend(extend: number) {
+  touch.extend = extend;
+}
+
 export type Actions = {
   steer: number;
   trolley: number;
   hoist: number;
+  extend: number;
   modeDown: boolean;
 };
 
-const ZERO: Actions = { steer: 0, trolley: 0, hoist: 0, modeDown: false };
+const ZERO: Actions = { steer: 0, trolley: 0, hoist: 0, extend: 0, modeDown: false };
 
 export function idleActions(): Actions {
   return ZERO;
@@ -89,16 +94,20 @@ export function readActions(): Actions {
   let steer = 0;
   let trolley = 0;
   let hoist = 0;
+  let extend = 0;
   if (keys.has("KeyA") || keys.has("ArrowLeft")) steer += 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) steer -= 1;
   if (keys.has("KeyW") || keys.has("ArrowUp")) trolley += 1;
   if (keys.has("KeyS") || keys.has("ArrowDown")) trolley -= 1;
   if (keys.has("KeyQ") || keys.has("KeyR")) hoist += 1;
   if (keys.has("KeyE") || keys.has("KeyF")) hoist -= 1;
+  if (keys.has("KeyZ")) extend += 1;
+  if (keys.has("KeyC")) extend -= 1;
 
   steer += touch.steer;
   trolley += touch.trolley;
   hoist += touch.hoist;
+  extend += touch.extend;
 
   let modeDown = keys.has("KeyH");
 
@@ -123,6 +132,7 @@ export function readActions(): Actions {
     steer: clamp(steer, -1, 1),
     trolley: clamp(trolley, -1, 1),
     hoist: clamp(hoist, -1, 1),
+    extend: clamp(extend, -1, 1),
     modeDown,
   };
 }

@@ -8,6 +8,7 @@ import {
   setQaKeys,
   setSteerOverride,
   setTouchAxes,
+  setTouchExtend,
   setTouchHoist,
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
@@ -276,8 +277,7 @@ export function CraneYard() {
             <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
             <h2 className="mt-1 font-display text-5xl leading-none">Hook. Carry. Set.</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted">
-              Slew the jib, run the trolley, and pay out cable. Drive to the crate first. Stop, deploy the pads, then lift.
-              Set it inside the amber ring. Hard mode can roll the truck in a fast corner.
+              Drive to the crate, stop, and deploy the pads. Then pitch the boom, telescope with Out and In, and run the hook.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Swing dies on its own" />
@@ -349,6 +349,10 @@ export function CraneYard() {
             >
               {mode === "easy" ? "EASY" : "HARD"}
             </button>
+            <div className="flex gap-2">
+              <ExtendHold label="Out" dir={1} />
+              <ExtendHold label="In" dir={-1} />
+            </div>
             <div className="flex gap-2">
               <Hold
                 buttonRef={upRef}
@@ -547,9 +551,41 @@ function ArrowHold({
 }
 
 const held = { up: false, down: false };
+const telescope = { out: false, inn: false };
 
 function syncHoist() {
   setTouchHoist((held.up ? 1 : 0) + (held.down ? -1 : 0));
+}
+
+function syncExtend() {
+  setTouchExtend((telescope.out ? 1 : 0) + (telescope.inn ? -1 : 0));
+}
+
+function ExtendHold({ label, dir }: { label: string; dir: 1 | -1 }) {
+  const key = dir === 1 ? "out" : "inn";
+  return (
+    <button
+      type="button"
+      className="flex h-11 w-16 touch-none items-center justify-center border border-line bg-surface font-display text-base text-fg"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        telescope[key] = true;
+        syncExtend();
+      }}
+      onPointerUp={(e) => {
+        telescope[key] = false;
+        syncExtend();
+      }}
+      onPointerCancel={() => {
+        telescope[key] = false;
+        syncExtend();
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {label}
+    </button>
+  );
 }
 
 function Hold({

@@ -65,6 +65,10 @@ export class CraneSim {
   prevVz = 0;
   yaw = 0;
   yawRate = 0;
+  boomPitch = 0.85;
+  pitchRate = 0;
+  extension = 0;
+  extendRate = 0;
   trolley = 14;
   trolleySpeed = 0;
   cable = 6.2;
@@ -107,9 +111,10 @@ export class CraneSim {
   cy = 0.8;
   cz = -18;
 
-  readonly jibY = 15.6;
-  readonly trolleyMin = 7.5;
-  readonly trolleyMax = 24;
+  readonly baseLen = 8;
+  readonly extendMax = 14;
+  readonly mountBack = 1.6;
+  readonly mountY = 2.15;
   readonly cableMin = 2.2;
   readonly cableMax = 14.7;
   readonly hang = 0.95;
@@ -125,9 +130,15 @@ export class CraneSim {
   }
 
   boom(): Boom {
+    const length = this.baseLen + this.extension;
+    const reach = this.mountBack + Math.cos(this.boomPitch) * length;
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
-    return { x: this.truckX + fx * this.trolley, y: this.jibY, z: this.truckZ + fz * this.trolley };
+    return {
+      x: this.truckX + fx * reach,
+      y: this.mountY + Math.sin(this.boomPitch) * length,
+      z: this.truckZ + fz * reach,
+    };
   }
 
   place(from: number, to: number, aim: boolean) {
@@ -150,8 +161,12 @@ export class CraneSim {
       this.yaw = Math.atan2(-p.x, -p.z);
       this.heading = this.yaw;
       this.yawRate = 0;
-      this.trolley = clamp(dist, this.trolleyMin, this.trolleyMax);
-      this.trolleySpeed = 0;
+      this.boomPitch = 0.55;
+      this.pitchRate = 0;
+      const reach = Math.max(6, dist - this.mountBack);
+      const length = reach / Math.cos(this.boomPitch);
+      this.extension = clamp(length - this.baseLen, 0, this.extendMax);
+      this.extendRate = 0;
       this.cable = 6.2;
       this.ready = false;
     }
@@ -174,20 +189,14 @@ export class CraneSim {
     const tune = this.tuning();
     const pace = PACE_SCALE[this.pace];
     const follow = clamp(dt / tune.brake, 0, 1);
-    this.yawRate += (actions.steer * 0.9 * pace - this.yawRate) * follow;
-    this.trolleySpeed += (actions.trolley * 5.5 * pace - this.trolleySpeed) * follow;
+    this.yawRate += (actions.steer * 0.55 * pace - this.yawRate) * follow;
+    this.pitchRate += (actions.trolley * 0.32 * pace - this.pitchRate) * follow;
+    this.extendRate += (actions.extend * 3.2 * pace - this.extendRate) * follow;
     this.yaw += this.yawRate * dt;
-    const nextT = this.trolley + this.trolleySpeed * dt;
-    if (nextT >= this.trolleyMax) {
-      this.trolley = this.trolleyMax;
-      if (this.trolleySpeed > 0) this.trolleySpeed = 0;
-    } else if (nextT <= this.trolleyMin) {
-      this.trolley = this.trolleyMin;
-      if (this.trolleySpeed < 0) this.trolleySpeed = 0;
-    } else {
-      this.trolley = nextT;
-    }
-    this.cable = clamp(this.cable - actions.hoist * 3.5 * pace * dt, this.cableMin, this.cableMax);
+    this.boomPitch = clamp(this.boomPitch + this.pitchRate * dt, 0.12, 1.2);
+    this.extension = clamp(this.extension + this.extendRate * dt, 0, this.extendMax);
+    const drop = Math.max(this.cableMin, this.boom().y - 0.9);
+    this.cable = clamp(this.cable - actions.hoist * 2.4 * pace * dt, this.cableMin, Math.min(16, drop));
 
     const b = this.boom();
     if (!this.ready) {
@@ -336,7 +345,7 @@ export class CraneSim {
     this.state = "lifting";
     this.speed = 0;
     this.yaw = this.heading;
-    this.message = "Pads set. Lower the hook onto the crate.";
+    this.message = "Pads set. Stick pitches the boom. Out and In telescope.";
   }
 
   recover() {
@@ -427,8 +436,8 @@ export class CraneSim {
 
     this.refreshGate();
     if (this.state !== "lifting") {
-      this.trolley += (9 - this.trolley) * Math.min(1, dt);
-      this.cable += (4.5 - this.cable) * Math.min(1, dt);
+      this.boomPitch += (0.85 - this.boomPitch) * Math.min(1, dt);
+      this.extension += (0 - this.extension) * Math.min(1, dt);
     }
     if (this.flipped) return;
     if (this.state === "lifting") return;
@@ -441,7 +450,8 @@ export class CraneSim {
   private pinHook() {
     this.yaw = this.heading;
     this.yawRate = 0;
-    this.trolleySpeed = 0;
+    this.pitchRate = 0;
+    this.extendRate = 0;
     const b = this.boom();
     this.hx = b.x;
     this.hy = b.y - this.cable;

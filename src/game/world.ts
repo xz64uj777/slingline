@@ -147,6 +147,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   }
 
   const mast = new THREE.Group();
+  mast.visible = false;
   truck.add(mast);
   const postGeo = new THREE.BoxGeometry(0.28, 16, 0.28);
   for (const [x, z] of [
@@ -177,42 +178,21 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   mast.add(base);
 
   const slew = new THREE.Group();
+  slew.position.set(0, 2.15, -1.6);
   truck.add(slew);
-  const jibTop = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.28, 27), steel);
-  jibTop.position.set(0, 16.7, -12.5);
-  slew.add(jibTop);
-  const jibBot = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 25), steelDark);
-  jibBot.position.set(0, 15.15, -12);
-  slew.add(jibBot);
-  const braceGeo = new THREE.BoxGeometry(0.12, 1.55, 0.12);
-  for (let z = -2; z >= -24; z -= 2.4) {
-    const brace = new THREE.Mesh(braceGeo, steel);
-    brace.position.set(0, 15.9, z);
-    slew.add(brace);
-  }
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 10), steel);
-  counter.position.set(0, 16.7, 5);
-  slew.add(counter);
-  const weight = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 2.2), steelDark);
-  weight.position.set(0, 15.4, 8.2);
-  slew.add(weight);
-  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 1.8), steelDark);
-  cab.position.set(0, 14.5, 1.3);
-  slew.add(cab);
-  const windowMat = new THREE.MeshStandardMaterial({
-    color: 0xc9d6c4,
-    emissive: 0x7f9a7c,
-    emissiveIntensity: 0.35,
-    roughness: 0.2,
-    metalness: 0.1,
-  });
-  const glass = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 0.08), windowMat);
-  glass.position.set(0, 14.55, 0.35);
-  slew.add(glass);
-
-  const trolley = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.4, 0.9), amber);
-  trolley.position.set(0, 16.35, -14);
-  slew.add(trolley);
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.45, 10), steelDark);
+  pedestal.position.y = 0.2;
+  slew.add(pedestal);
+  const boom = new THREE.Group();
+  slew.add(boom);
+  const mainTube = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 8), steel);
+  mainTube.position.set(0, 0.15, -4);
+  boom.add(mainTube);
+  const extension = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 8), steelDark);
+  extension.position.set(0, 0.15, -4);
+  boom.add(extension);
+  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.36), amber);
+  boom.add(tip);
 
   const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1, 6), ropeMat);
   scene.add(rope);
@@ -315,6 +295,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function render(sim: CraneSim, frameDt: number) {
     slew.rotation.y = sim.yaw - sim.heading;
+    boom.rotation.x = sim.boomPitch;
+    extension.position.z = -4 - sim.extension;
+    tip.position.set(0, 0.15, -(8 + sim.extension));
     truck.position.set(sim.truckX, sim.flipped ? 0.2 : 0, sim.truckZ);
     truck.rotation.y = sim.heading;
     truck.rotation.z = sim.roll;
@@ -326,7 +309,6 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
       rig.pad.position.y = 0.42 - down * 0.38;
     }
-    trolley.position.z = -sim.trolley;
     const b = sim.boom();
 
     dir.set(sim.hx - b.x, sim.hy - b.y, sim.hz - b.z);
