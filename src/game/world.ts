@@ -306,9 +306,13 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function render(sim: CraneSim, frameDt: number) {
     slew.rotation.y = sim.yaw - sim.heading;
+    slew.position.y = sim.mountY;
+    mast.visible = sim.crane === "tower";
     boom.rotation.x = sim.boomPitch;
     const style =
-      sim.crane === "lattice"
+      sim.crane === "tower"
+        ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 2.2 }
+        : sim.crane === "lattice"
         ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 2.9 }
         : sim.crane === "heavy"
           ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
@@ -318,7 +322,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;
-    const draw = sim.crane === "lattice" ? 12 : sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
+    const draw = sim.crane === "tower" ? 11 : sim.crane === "lattice" ? 12 : sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
     const spread = sim.crane === "lattice" ? 0.26 : 0;
     mainTube.scale.set(style.thick, style.thick, base / 8);
     mainTube.position.set(-spread, 0.15, -base / 2);
