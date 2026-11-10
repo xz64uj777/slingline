@@ -104,7 +104,7 @@ export function CraneYard() {
     const paintHud = () => {
       if (scoreRef.current) scoreRef.current.textContent = String(sim.score);
       if (bestRef.current) bestRef.current.textContent = String(sim.best);
-      if (cashRef.current) cashRef.current.textContent = `$${sim.cash}`;
+      if (cashRef.current) cashRef.current.textContent = `${sim.craneLabel()}  $${sim.cash}`;
       if (companyRef.current) companyRef.current.textContent = sim.companyName().toUpperCase();
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (coachRef.current) coachRef.current.textContent = sim.message;
@@ -248,7 +248,7 @@ export function CraneYard() {
             <span ref={bestRef}>{best}</span>
           </p>
           <p className="mt-1 font-display text-sm tracking-widest text-muted">
-            CASH <span ref={cashRef} className="text-fg">$0</span>
+            CASH <span ref={cashRef} className="text-fg">NOW RENTAL  $0</span>
           </p>
           <button
             ref={buyRef}

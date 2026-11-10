@@ -25,12 +25,13 @@ const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
 const CAREER_KEY = "slingline-career";
 
-export type CraneId = "rental" | "yard" | "heavy";
+export type CraneId = "rental" | "yard" | "heavy" | "lattice";
 
-const CRANES: Record<CraneId, { base: number; extend: number; pay: number; next: CraneId | null; price: number }> = {
-  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500 },
-  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700 },
-  heavy: { base: 12, extend: 20, pay: 1200, next: null, price: 0 },
+const CRANES: Record<CraneId, { base: number; extend: number; pay: number; next: CraneId | null; price: number; label: string }> = {
+  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500, label: "RENTAL" },
+  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD" },
+  heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY" },
+  lattice: { base: 16, extend: 26, pay: 1800, next: null, price: 0, label: "LATTICE" },
 };
 
 function readCareer(): { cash: number; crane: CraneId; reputation: number } {
@@ -40,7 +41,8 @@ function readCareer(): { cash: number; crane: CraneId; reputation: number } {
       crane?: CraneId;
       reputation?: number;
     };
-    const crane = raw.crane === "yard" || raw.crane === "heavy" ? raw.crane : "rental";
+    const crane: CraneId =
+      raw.crane === "yard" || raw.crane === "heavy" || raw.crane === "lattice" ? raw.crane : "rental";
     return {
       cash: Number.isFinite(raw.cash) ? Math.max(0, raw.cash as number) : 0,
       crane,
@@ -163,19 +165,26 @@ export class CraneSim {
   }
 
   companyName() {
-    return this.crane === "rental" ? "Temp Hire" : "Independent";
+    if (this.crane === "rental") return "Temp Hire";
+    if (this.crane === "lattice") return "Slingline Co";
+    return "Independent";
+  }
+
+  craneLabel() {
+    return `NOW ${CRANES[this.crane].label}`;
   }
 
   buyLabel() {
     const next = CRANES[this.crane].next;
-    if (!next) return "OWNED";
-    return next === "yard" ? "BUY YARD $500" : "BUY HEAVY $700";
+    if (!next) return "TOP CRANE";
+    const spec = CRANES[next];
+    return `BUY ${spec.label} $${CRANES[this.crane].price}`;
   }
 
   buyNext() {
     const next = CRANES[this.crane].next;
     if (!next) {
-      this.message = "You already own the heavy crane.";
+      this.message = "You already own the lattice crane.";
       return;
     }
     const price = CRANES[this.crane].price;
@@ -188,7 +197,12 @@ export class CraneSim {
     this.extendMax = CRANES[this.crane].extend;
     this.baseLen = CRANES[this.crane].base;
     this.writeCareer();
-    this.message = next === "yard" ? "Yard crane is yours. Longer boom." : "Heavy crane is yours.";
+    this.message =
+      next === "yard"
+        ? "Yard crane is yours. Longer boom."
+        : next === "heavy"
+          ? "Heavy crane is yours."
+          : "Lattice crane is yours. Longest boom.";
   }
 
   private writeCareer() {

@@ -198,6 +198,10 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const extension = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 8), boomDark);
   extension.position.set(0, 0.15, -4);
   boom.add(extension);
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 8), boomMat);
+  rail.position.set(0.28, 0.34, -4);
+  rail.visible = false;
+  boom.add(rail);
   const tip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.36), amber);
   boom.add(tip);
 
@@ -304,17 +308,23 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     slew.rotation.y = sim.yaw - sim.heading;
     boom.rotation.x = sim.boomPitch;
     const style =
-      sim.crane === "heavy"
-        ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
-        : sim.crane === "yard"
-          ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
-          : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
+      sim.crane === "lattice"
+        ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 2.9 }
+        : sim.crane === "heavy"
+          ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 2.4 }
+          : sim.crane === "yard"
+            ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 1.7 }
+            : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 1.15 };
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;
-    const draw = sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
+    const draw = sim.crane === "lattice" ? 12 : sim.crane === "heavy" ? 9 : sim.crane === "yard" ? 6.5 : 3.5;
+    const spread = sim.crane === "lattice" ? 0.26 : 0;
     mainTube.scale.set(style.thick, style.thick, base / 8);
-    mainTube.position.z = -base / 2;
+    mainTube.position.set(-spread, 0.15, -base / 2);
+    rail.visible = sim.crane === "lattice";
+    rail.scale.set(style.thick, style.thick, base / 8);
+    rail.position.set(spread, 0.42, -base / 2);
     extension.scale.set(style.thick * 0.82, style.thick * 0.82, draw / 8);
     extension.position.set(0, 0.15, -(base + sim.extension) + draw / 2);
     tip.scale.set(style.thick, style.thick, style.thick);
