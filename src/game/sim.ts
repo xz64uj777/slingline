@@ -3,6 +3,7 @@ import type { Actions } from "@/game/input";
 export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
+export type LoadKind = "crate" | "beam";
 export type CraneState = "driving" | "lifting";
 
 export type Pad = { x: number; z: number };
@@ -132,6 +133,7 @@ export class CraneSim {
   attached = false;
   airborne = false;
   phase: JobPhase = "seek";
+  load: LoadKind = "crate";
   from = 0;
   to = 1;
   score = 0;
@@ -279,15 +281,17 @@ export class CraneSim {
     this.to = to;
     const p = PADS[from]!;
     this.cx = p.x;
-    this.cy = this.cargoHalf;
+    this.load = this.score % 2 === 1 ? "beam" : "crate";
+    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
     this.cz = p.z;
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
+    const noun = this.load === "beam" ? "steel beam" : "crate";
     this.message =
       this.state === "lifting"
-        ? "Lower the hook onto the crate."
-        : "Drive to the crate. Stop, then deploy the pads.";
+        ? `Lower the hook onto the ${noun}.`
+        : `Drive to the ${noun}. Stop, then deploy the pads.`;
     this.warn = false;
     if (aim) {
       const dist = Math.hypot(p.x, p.z);
@@ -576,7 +580,11 @@ export class CraneSim {
     if (this.state === "lifting") return;
     if (this.deployDir > 0) this.message = "Deploying outriggers.";
     else if (this.deployDir < 0) this.message = "Stowing outriggers.";
-    else if (padsClear) this.message = "Drive to the crate. Stop, then DEPLOY.";
+    else if (padsClear)
+      this.message =
+        this.load === "beam"
+          ? "Steel beam. Drive over, stop, then DEPLOY."
+          : "Drive to the crate. Stop, then DEPLOY.";
     else this.message = this.gateReason();
   }
 
@@ -644,7 +652,7 @@ export class CraneSim {
   private setAside() {
     this.cx = this.hx;
     this.cz = this.hz;
-    this.cy = this.cargoHalf;
+    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
@@ -653,7 +661,7 @@ export class CraneSim {
 
   private succeed() {
     this.score += 1;
-    const pay = CRANES[this.crane].pay;
+    const pay = CRANES[this.crane].pay * (this.load === "beam" ? 2 : 1);
     this.cash += pay;
     this.reputation += 1;
     this.writeCareer();
@@ -666,7 +674,7 @@ export class CraneSim {
     this.phase = "done";
     this.deliverFlash = 1.15;
     this.message = `Clean set. +$${pay}`;
-    this.cy = this.cargoHalf;
+    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;
   }
@@ -678,7 +686,7 @@ export class CraneSim {
     this.breakFlash = 1.35;
     this.impulse = 0.45;
     this.message = "Sling parted.";
-    this.cy = this.cargoHalf;
+    this.cy = this.load === "beam" ? 0.32 : this.cargoHalf;
     this.cx = this.hx;
     this.cz = this.hz;
   }

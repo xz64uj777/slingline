@@ -204,7 +204,7 @@ export function CraneYard() {
   };
 
   const cycleCam = () => {
-    const order: CamView[] = ["chase", "cab", "hook", "high"];
+    const order: CamView[] = ["chase", "wide", "cab", "hook", "high"];
     const next = order[(order.indexOf(cam) + 1) % order.length] ?? "chase";
     setCam(next);
     yardRef.current?.setView(next);
@@ -298,7 +298,7 @@ export function CraneYard() {
             onClick={cycleCam}
             className="pointer-events-auto bg-surface px-3 py-1 font-display text-base tracking-wide text-fg"
           >
-            CAM {cam === "chase" ? "CHASE" : cam === "cab" ? "CAB" : cam === "hook" ? "HOOK" : "HIGH"}
+            CAM {cam === "chase" ? "CHASE" : cam === "wide" ? "WIDE" : cam === "cab" ? "CAB" : cam === "hook" ? "HOOK" : "HIGH"}
           </button>
         </div>
       ) : null}
@@ -338,7 +338,7 @@ export function CraneYard() {
             <p className="mt-3 hidden text-xs text-steel sm:block">
               A D slew · W S trolley · Q up · E down · H flips mode
             </p>
-            <p className="mt-3 text-xs text-muted">Drag the open yard to look around. CAM steps through chase, cab, hook, and high.</p>
+            <p className="mt-3 text-xs text-muted">Drag the yard to look around. CAM includes a wide view of the whole crane.</p>
             <button
               type="button"
               className="mt-4 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"

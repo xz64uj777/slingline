@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PADS, type CraneSim } from "@/game/sim";
 
-export type CamView = "chase" | "cab" | "hook" | "high";
+export type CamView = "chase" | "cab" | "hook" | "high" | "wide";
 
 export type Yard = {
   renderer: THREE.WebGLRenderer;
@@ -391,7 +391,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     } else {
       cargo.position.set(sim.cx, sim.cy, sim.cz);
     }
-    cargo.visible = true;
+    cargo.scale.set(sim.load === "beam" ? 0.5 : 1, sim.load === "beam" ? 0.38 : 1, sim.load === "beam" ? 2.8 : 1);
     shadow.position.x = cargo.position.x;
     shadow.position.z = cargo.position.z;
     const lift = Math.max(0, cargo.position.y - sim.cargoHalf);
@@ -422,6 +422,13 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     } else if (view === "hook") {
       desired.set(sim.hx + Math.sin(yaw) * 7, Math.max(1.8, sim.hy + 3.2 + pitch * 0.45), sim.hz + Math.cos(yaw) * 7);
       lookTarget.set(sim.hx, sim.hy, sim.hz);
+    } else if (view === "wide") {
+      desired.set(
+        sim.truckX + Math.sin(yaw) * 52 + Math.cos(yaw) * 26,
+        38 + pitch * 0.35,
+        sim.truckZ + Math.cos(yaw) * 52 - Math.sin(yaw) * 26,
+      );
+      lookTarget.set(sim.truckX, 6, sim.truckZ);
     } else if (view === "high") {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
