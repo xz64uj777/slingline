@@ -39,6 +39,10 @@ const CRANES: Record<
   crawler: { base: 18, extend: 30, pay: 3200, next: null, price: 0, label: "CRAWLER", mount: 3.1 },
 };
 
+export const CRANE_CHOICES: { id: CraneId; label: string }[] = (
+  Object.entries(CRANES) as [CraneId, (typeof CRANES)[CraneId]][]
+).map(([id, spec]) => ({ id, label: spec.label }));
+
 function readCareer(): { cash: number; crane: CraneId; reputation: number } {
   try {
     const raw = JSON.parse(localStorage.getItem(CAREER_KEY) || "") as {
@@ -179,6 +183,14 @@ export class CraneSim {
     this.extendMax = spec.extend;
     this.baseLen = spec.base;
     this.mountY = spec.mount;
+  }
+
+  selectCrane(id: CraneId) {
+    this.crane = id;
+    this.applyCrane();
+    if (this.extension > this.extendMax) this.extension = this.extendMax;
+    this.writeCareer();
+    this.message = `${CRANES[id].label} ready.`;
   }
 
   companyName() {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
-import { CraneSim, type Mode, type Pace } from "@/game/sim";
+import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   idleActions,
   installInput,
@@ -29,6 +29,7 @@ export function CraneYard() {
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
+  const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
   const [glError, setGlError] = useState("");
@@ -79,6 +80,7 @@ export function CraneYard() {
     simRef.current = sim;
     shownBest.current = sim.best;
     setBest(sim.best);
+    setCrane(sim.crane);
 
     let yard: ReturnType<typeof createYard>;
     try {
@@ -188,6 +190,17 @@ export function CraneYard() {
     releaseArrows();
     setTouchAxes(0, 0);
     setScheme(next);
+  };
+
+  const pickCrane = (id: CraneId) => {
+    setCrane(id);
+    simRef.current?.selectCrane(id);
+  };
+
+  const cycleCrane = () => {
+    const ids = CRANE_CHOICES.map((choice) => choice.id);
+    const index = ids.indexOf(simRef.current?.crane ?? crane);
+    pickCrane(ids[(index + 1) % ids.length] ?? "rental");
   };
 
   const cycleCam = () => {
@@ -307,6 +320,17 @@ export function CraneYard() {
               <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Hold a direction" />
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2">
+              {CRANE_CHOICES.map((choice) => (
+                <ModeButton
+                  key={choice.id}
+                  active={crane === choice.id}
+                  onClick={() => pickCrane(choice.id)}
+                  label={choice.label}
+                  detail="Test this crane"
+                />
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
               <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
               <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Yard pace" />
               <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Full travel" />
@@ -331,6 +355,13 @@ export function CraneYard() {
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
           {scheme === "stick" ? <Stick /> : <ArrowPad />}
           <div className="pointer-events-auto flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={cycleCrane}
+              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              {crane.toUpperCase()}
+            </button>
             <button
               ref={deployRef}
               type="button"
