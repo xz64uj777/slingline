@@ -108,8 +108,46 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPts, 3));
   scene.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x5c6770 })));
 
+  const truck = new THREE.Group();
+  truck.rotation.order = "YZX";
+  scene.add(truck);
+
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.7, 7.4), steelDark);
+  chassis.position.set(0, 0.75, 1.1);
+  truck.add(chassis);
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(2.35, 1.25, 2.1), steel);
+  nose.position.set(0, 1.55, 3.5);
+  truck.add(nose);
+  const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 10);
+  for (const [x, z] of [
+    [1.25, 2.7],
+    [-1.25, 2.7],
+    [1.25, -1.5],
+    [-1.25, -1.5],
+  ] as const) {
+    const wheel = new THREE.Mesh(wheelGeo, steelDark);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, 0.48, z);
+    truck.add(wheel);
+  }
+  const rigs: { beam: THREE.Mesh; pad: THREE.Mesh; sign: number }[] = [];
+  for (const [x, z] of [
+    [1.15, 2.3],
+    [-1.15, 2.3],
+    [1.15, -1.2],
+    [-1.15, -1.2],
+  ] as const) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.12), amber);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), steel);
+    const sign = Math.sign(x);
+    beam.position.set(x + sign * 0.4, 0.55, z);
+    pad.position.set(x + sign * 0.8, 0.4, z);
+    truck.add(beam, pad);
+    rigs.push({ beam, pad, sign });
+  }
+
   const mast = new THREE.Group();
-  scene.add(mast);
+  truck.add(mast);
   const postGeo = new THREE.BoxGeometry(0.28, 16, 0.28);
   for (const [x, z] of [
     [-0.7, -0.7],
@@ -139,7 +177,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   mast.add(base);
 
   const slew = new THREE.Group();
-  scene.add(slew);
+  truck.add(slew);
   const jibTop = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.28, 27), steel);
   jibTop.position.set(0, 16.7, -12.5);
   slew.add(jibTop);
@@ -276,7 +314,18 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
-    slew.rotation.y = sim.yaw;
+    slew.rotation.y = sim.yaw - sim.heading;
+    truck.position.set(sim.truckX, sim.flipped ? 0.2 : 0, sim.truckZ);
+    truck.rotation.y = sim.heading;
+    truck.rotation.z = sim.roll;
+    const reach = Math.min(1, sim.outrigger / 0.57);
+    const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
+    for (const rig of rigs) {
+      rig.beam.scale.x = 0.35 + reach * 1.7;
+      rig.beam.position.x = rig.sign * (1.15 + reach * 1.15);
+      rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
+      rig.pad.position.y = 0.42 - down * 0.38;
+    }
     trolley.position.z = -sim.trolley;
     const b = sim.boom();
 
@@ -324,10 +373,10 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const yaw = sim.yaw + orbit;
     const height = Math.max(2.4, 9 + pitch);
     if (view === "cab") {
-      const seat = 4.5;
-      desired.set(-fx * seat, Math.max(8, 12 + pitch * 0.4), -fz * seat);
-      const lookYaw = sim.yaw + orbit * 0.65;
-      lookTarget.set(-Math.sin(lookYaw) * sim.trolley, Math.max(2, sim.hy + 1), -Math.cos(lookYaw) * sim.trolley);
+      const hx = -Math.sin(sim.heading);
+      const hz = -Math.cos(sim.heading);
+      desired.set(sim.truckX - hx * 6, Math.max(2.8, 4.2 + pitch * 0.25), sim.truckZ - hz * 6);
+      lookTarget.set(sim.hx, Math.max(1.5, sim.hy), sim.hz);
     } else if (view === "hook") {
       desired.set(sim.hx + Math.sin(yaw) * 7, Math.max(1.8, sim.hy + 3.2 + pitch * 0.45), sim.hz + Math.cos(yaw) * 7);
       lookTarget.set(sim.hx, sim.hy, sim.hz);
@@ -335,7 +384,11 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
     } else {
-      desired.set(Math.sin(yaw) * 20 + Math.cos(yaw) * 8, height, Math.cos(yaw) * 20 - Math.sin(yaw) * 8);
+      desired.set(
+        sim.truckX + Math.sin(yaw) * 20 + Math.cos(yaw) * 8,
+        height,
+        sim.truckZ + Math.cos(yaw) * 20 - Math.sin(yaw) * 8,
+      );
       lookTarget.set(sim.hx * 0.72 + fx * 2, Math.max(3.2, sim.hy), sim.hz * 0.72 + fz * 2);
     }
     const k = 1 - Math.exp(-2.6 * frameDt);

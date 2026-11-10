@@ -3,6 +3,7 @@ import type { Actions } from "@/game/input";
 export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
+export type CraneState = "driving" | "lifting";
 
 export type Pad = { x: number; z: number };
 
@@ -48,6 +49,20 @@ export type Boom = { x: number; y: number; z: number };
 export class CraneSim {
   mode: Mode = "easy";
   pace: Pace = "steady";
+  state: CraneState = "driving";
+  truckX = 0;
+  truckZ = 0;
+  heading = 0;
+  speed = 0;
+  roll = 0;
+  rollRate = 0;
+  outrigger = 0;
+  deployDir = 0;
+  lateralG = 0;
+  flipped = false;
+  bCanLift = false;
+  prevVx = 0;
+  prevVz = 0;
   yaw = 0;
   yawRate = 0;
   trolley = 14;
@@ -112,7 +127,7 @@ export class CraneSim {
   boom(): Boom {
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
-    return { x: fx * this.trolley, y: this.jibY, z: fz * this.trolley };
+    return { x: this.truckX + fx * this.trolley, y: this.jibY, z: this.truckZ + fz * this.trolley };
   }
 
   place(from: number, to: number, aim: boolean) {
@@ -125,11 +140,15 @@ export class CraneSim {
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
-    this.message = "Lower the hook onto the crate.";
+    this.message =
+      this.state === "lifting"
+        ? "Lower the hook onto the crate."
+        : "Drive to the crate. Stop, then deploy the pads.";
     this.warn = false;
     if (aim) {
       const dist = Math.hypot(p.x, p.z);
       this.yaw = Math.atan2(-p.x, -p.z);
+      this.heading = this.yaw;
       this.yawRate = 0;
       this.trolley = clamp(dist, this.trolleyMin, this.trolleyMax);
       this.trolleySpeed = 0;
@@ -147,6 +166,11 @@ export class CraneSim {
 
   step(dt: number, actions: Actions) {
     if (dt <= 0) return;
+    this.stepTruck(dt, actions);
+    if (this.state !== "lifting" || this.flipped) {
+      this.pinHook();
+      return;
+    }
     const tune = this.tuning();
     const pace = PACE_SCALE[this.pace];
     const follow = clamp(dt / tune.brake, 0, 1);
@@ -279,6 +303,157 @@ export class CraneSim {
       this.deliverFlash -= dt;
       if (this.deliverFlash <= 0) this.spawnNext();
     }
+  }
+
+  requestDeploy() {
+    if (this.state !== "driving" || this.flipped) return;
+    this.refreshGate();
+    if (!this.bStopped()) {
+      this.message = "Stop the truck first.";
+      return;
+    }
+    this.deployDir = this.outrigger > 0.5 ? -1 : 1;
+    this.message = this.deployDir > 0 ? "Deploying outriggers." : "Stowing outriggers.";
+  }
+
+  requestLift() {
+    if (this.flipped) {
+      this.recover();
+      return;
+    }
+    if (this.state === "lifting") {
+      this.state = "driving";
+      this.deployDir = -1;
+      this.speed = 0;
+      this.message = "Stowing outriggers.";
+      return;
+    }
+    this.refreshGate();
+    if (!this.bCanLift) {
+      this.message = this.gateReason();
+      return;
+    }
+    this.state = "lifting";
+    this.speed = 0;
+    this.yaw = this.heading;
+    this.message = "Pads set. Lower the hook onto the crate.";
+  }
+
+  recover() {
+    this.flipped = false;
+    this.roll = 0;
+    this.rollRate = 0;
+    this.speed = 0;
+    this.state = "driving";
+    this.deployDir = -1;
+    this.message = "Upright. Stow the pads, then drive.";
+  }
+
+  private bStopped() {
+    return Math.abs(this.speed) < 0.2;
+  }
+
+  private refreshGate() {
+    const reach = Math.min(1, this.outrigger / 0.57);
+    const down = Math.max(0, (this.outrigger - 0.57) / 0.43);
+    const stopped = this.bStopped();
+    const level = Math.abs(this.roll) < (2 * Math.PI) / 180;
+    const contact = down >= 0.98 && !this.flipped;
+    this.bCanLift = stopped && reach >= 0.98 && down >= 0.98 && contact && level;
+  }
+
+  private gateReason() {
+    if (!this.bStopped()) return "Truck is still moving.";
+    if (this.outrigger < 0.57) return "Outriggers are not fully out.";
+    if (this.outrigger < 0.98) return "Pads are not down on the ground.";
+    if (Math.abs(this.roll) >= (2 * Math.PI) / 180) return "Truck body is not level.";
+    return "Pads set. Tap LIFT.";
+  }
+
+  private stepTruck(dt: number, actions: Actions) {
+    if (this.deployDir !== 0) {
+      this.outrigger = clamp(this.outrigger + this.deployDir * (dt / 3.5), 0, 1);
+      this.speed = 0;
+      if (this.outrigger <= 0 || this.outrigger >= 1) this.deployDir = 0;
+    }
+
+    const padsClear = this.outrigger < 0.05;
+    const canDrive = this.state === "driving" && padsClear && this.deployDir === 0 && !this.flipped;
+    const pace = PACE_SCALE[this.pace];
+
+    if (canDrive) {
+      const maxV = (this.mode === "hard" ? 12 : 8) * pace;
+      const target = actions.trolley * maxV;
+      const follow = 1 - Math.exp(-dt * (this.mode === "easy" ? 2.6 : 1.1));
+      this.speed += (target - this.speed) * follow;
+      const turn = actions.steer * (0.7 + Math.min(0.8, Math.abs(this.speed) * 0.1));
+      if (Math.abs(this.speed) > 0.15) this.heading += turn * dt * Math.sign(this.speed);
+      const fx = -Math.sin(this.heading);
+      const fz = -Math.cos(this.heading);
+      this.truckX = clamp(this.truckX + fx * this.speed * dt, -32, 32);
+      this.truckZ = clamp(this.truckZ + fz * this.speed * dt, -32, 32);
+
+      const vx = fx * this.speed;
+      const vz = fz * this.speed;
+      const ax = (vx - this.prevVx) / dt;
+      const az = (vz - this.prevVz) / dt;
+      const rx = Math.cos(this.heading);
+      const rz = -Math.sin(this.heading);
+      this.lateralG = (ax * rx + az * rz) / 9.81;
+      this.prevVx = vx;
+      this.prevVz = vz;
+
+      if (this.mode === "easy") {
+        const rollDeg = Math.abs(this.roll) * (180 / Math.PI);
+        if (rollDeg > 8) {
+          this.rollRate = 0;
+          this.roll += -this.roll * 6 * dt;
+        } else {
+          this.roll += (this.lateralG * 0.035 - this.roll) * Math.min(1, dt * 4);
+        }
+      } else {
+        this.rollRate += (this.lateralG * 1.35 - this.roll * 1.4 - this.rollRate * 0.7) * dt;
+        this.roll += this.rollRate * dt;
+        if (Math.abs(this.roll) > 0.62) {
+          this.flipped = true;
+          this.speed = 0;
+          this.message = "Truck rolled. Corner was too fast.";
+        }
+      }
+    } else {
+      this.speed *= Math.exp(-5 * dt);
+      this.lateralG = 0;
+    }
+
+    this.refreshGate();
+    if (this.state !== "lifting") {
+      this.trolley += (9 - this.trolley) * Math.min(1, dt);
+      this.cable += (4.5 - this.cable) * Math.min(1, dt);
+    }
+    if (this.flipped) return;
+    if (this.state === "lifting") return;
+    if (this.deployDir > 0) this.message = "Deploying outriggers.";
+    else if (this.deployDir < 0) this.message = "Stowing outriggers.";
+    else this.message = this.gateReason();
+  }
+
+  private pinHook() {
+    this.yaw = this.heading;
+    this.yawRate = 0;
+    this.trolleySpeed = 0;
+    const b = this.boom();
+    this.hx = b.x;
+    this.hy = b.y - this.cable;
+    this.hz = b.z;
+    this.vx = 0;
+    this.vy = 0;
+    this.vz = 0;
+    this.prevBx = b.x;
+    this.prevBy = b.y;
+    this.prevBz = b.z;
+    this.ready = true;
+    this.swayDeg = 0;
+    this.hookSpeed = 0;
   }
 
   private updateJob() {

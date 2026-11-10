@@ -37,6 +37,9 @@ export function CraneYard() {
   const coachRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
+  const meterRef = useRef<HTMLSpanElement>(null);
+  const deployRef = useRef<HTMLButtonElement>(null);
+  const liftRef = useRef<HTMLButtonElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +102,17 @@ export function CraneYard() {
       if (bestRef.current) bestRef.current.textContent = String(sim.best);
       if (coachRef.current) coachRef.current.textContent = sim.message;
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
-      if (speedRef.current) speedRef.current.textContent = `${sim.hookSpeed.toFixed(1)} m/s`;
+      if (speedRef.current) {
+        speedRef.current.textContent =
+          sim.state === "lifting"
+            ? `${sim.hookSpeed.toFixed(1)} m/s`
+            : sim.mode === "hard"
+              ? `${sim.lateralG.toFixed(2)} g`
+              : `${Math.abs(sim.speed).toFixed(1)} m/s`;
+      }
+      if (meterRef.current) meterRef.current.textContent = sim.state === "lifting" ? "HOOK" : sim.mode === "hard" ? "LAT G" : "SPEED";
+      if (deployRef.current) deployRef.current.textContent = sim.outrigger > 0.5 && sim.deployDir >= 0 ? "STOW" : "DEPLOY";
+      if (liftRef.current) liftRef.current.textContent = sim.flipped ? "RIGHT" : sim.state === "lifting" ? "DRIVE" : "LIFT";
       const dot = dotRef.current;
       if (dot) {
         const reach = 28;
@@ -245,7 +258,7 @@ export function CraneYard() {
           <p className="bg-surface px-3 py-1 font-display text-base tracking-wide text-fg">
             SWAY <span ref={swayNumRef} className="text-fg">0°</span>
             <span className="px-2 text-line">|</span>
-            HOOK <span ref={speedRef} className="text-fg">0.0 m/s</span>
+            <span ref={meterRef}>SPEED</span> <span ref={speedRef} className="text-fg">0.0</span>
           </p>
           <button
             type="button"
@@ -263,8 +276,8 @@ export function CraneYard() {
             <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
             <h2 className="mt-1 font-display text-5xl leading-none">Hook. Carry. Set.</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted">
-              Slew the jib, run the trolley, and pay out cable. The crate keeps its speed when you stop.
-              Set it inside the amber ring. Too hard a landing parts the sling.
+              Slew the jib, run the trolley, and pay out cable. Drive to the crate first. Stop, deploy the pads, then lift.
+              Set it inside the amber ring. Hard mode can roll the truck in a fast corner.
             </p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Swing dies on its own" />
@@ -299,6 +312,22 @@ export function CraneYard() {
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
           {scheme === "stick" ? <Stick /> : <ArrowPad />}
           <div className="pointer-events-auto flex flex-col items-end gap-2">
+            <button
+              ref={deployRef}
+              type="button"
+              onClick={() => simRef.current?.requestDeploy()}
+              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              DEPLOY
+            </button>
+            <button
+              ref={liftRef}
+              type="button"
+              onClick={() => simRef.current?.requestLift()}
+              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
+            >
+              LIFT
+            </button>
             <button
               type="button"
               onClick={() => pickScheme(scheme === "stick" ? "arrows" : "stick")}
