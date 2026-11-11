@@ -1059,10 +1059,11 @@ export class CraneSim {
   }
 
   private loadDemand() {
-    const kind =
-      !this.attached && this.latch != null ? (this.pieces[this.latch]?.kind ?? this.load) : this.load;
-    if (kind === "heavy") return 8.2;
-    if (kind === "beam") return 4.1;
+    // An empty hook has no suspended load. Nearby yard pieces are candidates,
+    // not cargo; never apply their weight to the live load chart until hooked.
+    if (!this.attached) return 0;
+    if (this.load === "heavy") return 8.2;
+    if (this.load === "beam") return 4.1;
     return 2;
   }
 
