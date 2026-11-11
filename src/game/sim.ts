@@ -17,6 +17,16 @@ export type CraneState = "driving" | "lifting";
 
 export type Pad = { x: number; z: number };
 
+export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
+  { x: -24, z: -20, hx: 1.5, hz: 3.3 },
+  { x: 26, z: 8, hx: 1.5, hz: 3.3 },
+  { x: 22, z: 22, hx: 1.5, hz: 3.3 },
+  { x: -26, z: 12, hx: 1.5, hz: 3.3 },
+  { x: -18, z: 24, hx: 3.4, hz: 2.4 },
+  { x: 40, z: -32, hx: 8, hz: 6.5 },
+  { x: 28, z: -32, hx: 2.4, hz: 2.4 },
+];
+
 export const PADS: Pad[] = [
   { x: 0, z: -9 },
   { x: 17, z: -8 },
@@ -126,6 +136,7 @@ export class CraneSim {
   truckZ = 0;
   heading = 0;
   speed = 0;
+  driveSteer = 0;
   roll = 0;
   rollRate = 0;
   leanSign = 0;
@@ -697,6 +708,13 @@ export class CraneSim {
     this.message = "Upright. Stow the pads, then drive.";
   }
 
+  private hitsYard(x: number, z: number) {
+    for (const block of YARD_BLOCKS) {
+      if (Math.abs(x - block.x) < block.hx + 1.7 && Math.abs(z - block.z) < block.hz + 3.8) return true;
+    }
+    return false;
+  }
+
   private bStopped() {
     return Math.abs(this.speed) < 0.2;
   }
@@ -743,16 +761,34 @@ export class CraneSim {
     const pace = PACE_SCALE[this.pace];
 
     if (canDrive) {
-      const maxV = (this.mode === "hard" ? 12 : 8) * pace;
+      const maxV = (this.mode === "hard" ? 11 : 9) * pace;
       const target = actions.trolley * maxV;
-      const follow = 1 - Math.exp(-dt * (this.mode === "easy" ? 2.6 : 1.1));
+      const follow = 1 - Math.exp(-dt * (this.pace === "slow" ? 1.4 : this.mode === "easy" ? 2.2 : 1.15));
       this.speed += (target - this.speed) * follow;
-      const turn = actions.steer * (0.7 + Math.min(0.8, Math.abs(this.speed) * 0.1));
-      if (Math.abs(this.speed) > 0.15) this.heading += turn * dt * Math.sign(this.speed);
+      this.driveSteer += (actions.steer - this.driveSteer) * Math.min(1, dt * 6);
+      const moving = Math.abs(this.speed) > 0.08;
+      if (moving) {
+        const tightness = 0.95 / (1 + Math.abs(this.speed) * 0.16);
+        this.heading += this.driveSteer * tightness * Math.sign(this.speed) * dt;
+      } else if (Math.abs(this.driveSteer) > 0.25 && Math.abs(actions.trolley) < 0.2) {
+        this.heading += this.driveSteer * 0.4 * pace * dt;
+      }
       const fx = -Math.sin(this.heading);
       const fz = -Math.cos(this.heading);
-      this.truckX = clamp(this.truckX + fx * this.speed * dt, -32, 32);
-      this.truckZ = clamp(this.truckZ + fz * this.speed * dt, -32, 32);
+      const nx = clamp(this.truckX + fx * this.speed * dt, -46, 46);
+      const nz = clamp(this.truckZ + fz * this.speed * dt, -46, 46);
+      if (!this.hitsYard(nx, nz)) {
+        this.truckX = nx;
+        this.truckZ = nz;
+      } else if (!this.hitsYard(nx, this.truckZ)) {
+        this.truckX = nx;
+        this.speed *= 0.55;
+      } else if (!this.hitsYard(this.truckX, nz)) {
+        this.truckZ = nz;
+        this.speed *= 0.55;
+      } else {
+        this.speed *= 0.15;
+      }
 
       const vx = fx * this.speed;
       const vz = fz * this.speed;
@@ -783,6 +819,7 @@ export class CraneSim {
       }
     } else {
       this.speed *= Math.exp(-5 * dt);
+      this.driveSteer += (0 - this.driveSteer) * Math.min(1, dt * 6);
       this.lateralG = 0;
       if (!this.flipped && this.state !== "lifting") this.roll += -this.roll * Math.min(1, dt * 3);
     }

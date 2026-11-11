@@ -119,18 +119,22 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   nose.position.set(0, 1.55, 3.5);
   truck.add(nose);
   const wheels: THREE.Mesh[] = [];
+  const frontHubs: THREE.Group[] = [];
   const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 10);
+  wheelGeo.rotateZ(Math.PI / 2);
   for (const [x, z] of [
     [1.25, 2.7],
     [-1.25, 2.7],
     [1.25, -1.5],
     [-1.25, -1.5],
   ] as const) {
+    const hub = new THREE.Group();
+    hub.position.set(x, 0.48, z);
     const wheel = new THREE.Mesh(wheelGeo, steelDark);
-    wheel.rotation.z = Math.PI / 2;
-    wheel.position.set(x, 0.48, z);
-    truck.add(wheel);
+    hub.add(wheel);
+    truck.add(hub);
     wheels.push(wheel);
+    if (z > 0) frontHubs.push(hub);
   }
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2e32, metalness: 0.35, roughness: 0.7 });
   const tracks = new THREE.Group();
@@ -274,6 +278,76 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     scene.add(can);
   }
 
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x3e4650, roughness: 0.92, metalness: 0.02 });
+  const dirtMat = new THREE.MeshStandardMaterial({ color: 0x8d7b62, roughness: 0.95, metalness: 0 });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xc9d6df,
+    roughness: 0.15,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.45,
+  });
+  const road = new THREE.Mesh(new THREE.BoxGeometry(96, 0.04, 7), roadMat);
+  road.position.set(0, 0.03, 2);
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(7, 0.04, 70), roadMat);
+  cross.position.set(-8, 0.025, -6);
+  const apron = new THREE.Mesh(new THREE.CircleGeometry(16, 20), dirtMat);
+  apron.rotation.x = -Math.PI / 2;
+  apron.position.set(40, 0.02, -32);
+  scene.add(road, cross, apron);
+
+  const fenceMat = steelDark;
+  for (const edge of [-48, 48]) {
+    for (let z = -40; z <= 36; z += 8) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.6, 0.16), fenceMat);
+      post.position.set(edge, 0.8, z);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 8), amber);
+      rail.position.set(edge, 1.15, z + 4);
+      scene.add(post, rail);
+    }
+  }
+
+  const office = new THREE.Mesh(new THREE.BoxGeometry(6.2, 2.6, 4.2), steel);
+  office.position.set(-18, 1.3, 24);
+  const officeGlass = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 0.08), glassMat);
+  officeGlass.position.set(-18, 1.6, 26.12);
+  scene.add(office, officeGlass);
+
+  const rise = new THREE.Group();
+  rise.position.set(40, 0, -32);
+  scene.add(rise);
+  const colGeo = new THREE.BoxGeometry(0.35, 16, 0.35);
+  for (const x of [-5, -1.6, 1.6, 5]) {
+    for (const z of [-4, 0, 4]) {
+      const col = new THREE.Mesh(colGeo, steel);
+      col.position.set(x, 8, z);
+      rise.add(col);
+    }
+  }
+  const slabGeo = new THREE.BoxGeometry(12, 0.22, 10);
+  for (let level = 0; level < 5; level += 1) {
+    const slab = new THREE.Mesh(slabGeo, level === 4 ? concrete : steelDark);
+    slab.position.y = 3.2 * level + 0.2;
+    rise.add(slab);
+  }
+
+  const fixed = new THREE.Group();
+  fixed.position.set(28, 0, -32);
+  scene.add(fixed);
+  const mastPost = new THREE.Mesh(new THREE.BoxGeometry(1.1, 22, 1.1), steel);
+  mastPost.position.y = 11;
+  const jib = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 16), steel);
+  jib.position.set(0, 21.4, -6);
+  const counterJib = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 4), steelDark);
+  counterJib.position.set(0, 21.3, 3);
+  const weight = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.4), steelDark);
+  weight.position.set(0, 20.6, 4.2);
+  const hang = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 5), ropeMat);
+  hang.position.set(0, 17, -12);
+  const hung = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.4), amber);
+  hung.position.set(0, 12.8, -12);
+  fixed.add(mastPost, jib, counterJib, weight, hang, hung);
+
   const geos = new Set<THREE.BufferGeometry>();
   const mats = new Set<THREE.Material>();
   scene.traverse((obj) => {
@@ -378,6 +452,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     truck.position.set(sim.truckX, sim.flipped ? 0.2 : 0, sim.truckZ);
     truck.rotation.y = sim.heading;
     truck.rotation.z = sim.roll;
+    const spin = (sim.speed * frameDt) / 0.48;
+    for (const wheel of wheels) wheel.rotation.x -= spin;
+    for (const hub of frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;
     const reach = Math.min(1, sim.outrigger / 0.57);
     const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
     for (const rig of rigs) {
