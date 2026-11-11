@@ -18,6 +18,7 @@ const GAME_KEYS = new Set([
 const realKeys = new Set<string>();
 let qaKeys: Set<string> | null = null;
 let steerOverride: number | null = null;
+let touchSensitivity = 1;
 
 const touch = { steer: 0, trolley: 0, hoist: 0, extend: 0 };
 
@@ -34,7 +35,14 @@ export function installInput() {
     if (GAME_KEYS.has(e.code)) e.preventDefault();
   };
   const up = (e: KeyboardEvent) => realKeys.delete(e.code);
-  const clear = () => realKeys.clear();
+  const clear = () => {
+    realKeys.clear();
+    touch.steer = 0;
+    touch.trolley = 0;
+    touch.hoist = 0;
+    touch.extend = 0;
+    steerOverride = null;
+  };
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
   window.addEventListener("blur", clear);
@@ -51,6 +59,10 @@ export function installInput() {
 
 export function setQaKeys(codes: string[]) {
   qaKeys = new Set(codes);
+}
+
+export function setTouchSensitivity(value: number) {
+  touchSensitivity = clamp(value, 0.65, 1.35);
 }
 
 export function setSteerOverride(v: number | null) {
@@ -104,8 +116,8 @@ export function readActions(): Actions {
   if (keys.has("KeyZ")) extend += 1;
   if (keys.has("KeyC")) extend -= 1;
 
-  steer += touch.steer;
-  trolley += touch.trolley;
+  steer += touch.steer * touchSensitivity;
+  trolley += touch.trolley * touchSensitivity;
   hoist += touch.hoist;
   extend += touch.extend;
 
