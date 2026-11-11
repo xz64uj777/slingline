@@ -417,7 +417,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     slew.rotation.y = sim.yaw - face;
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
     slew.position.y = mount;
-    mast.scale.y = sim.crane === "tower" ? 0.22 + (1 - sim.stow) * 0.78 : 1;
+    mast.scale.y = sim.crane === "tower" ? 0.04 + (1 - sim.stow) * 0.96 : 1;
     const onTracks = sim.crane === "crawler";
     tracks.visible = onTracks;
     nose.visible = !onTracks;
@@ -439,21 +439,23 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;
-    const full = sim.hauling ? Math.min(base + sim.extension, 10) : base + sim.extension;
     const lattice = sim.crane === "lattice";
-    const span = lattice ? full : base;
+    const packed = sim.state !== "lifting";
+    const shown = packed ? sim.travelLength() : base + sim.extension;
+    const span = packed || !lattice ? (packed ? shown : base) : shown;
     const overlap = Math.min(3.4, base * 0.5);
-    const slide = Math.max(0.8, sim.extension + overlap);
+    const slide = packed ? 0.2 : Math.max(0.8, sim.extension + overlap);
     const spread = lattice ? 0.26 : 0;
     mainTube.scale.set(style.thick, style.thick, span / 8);
     mainTube.position.set(lattice ? -spread : 0, 0.15, -span / 2);
     rail.visible = lattice;
-    rail.scale.set(style.thick, style.thick, full / 8);
-    rail.position.set(spread, 0.42, -full / 2);
+    rail.scale.set(style.thick, style.thick, shown / 8);
+    rail.position.set(spread, 0.42, -shown / 2);
+    extension.visible = !packed;
     extension.scale.set(style.thick * 0.72, style.thick * 0.72, slide / 8);
-    extension.position.set(0, 0.15, -full + slide / 2);
+    extension.position.set(0, 0.15, -shown + slide / 2);
     tip.scale.set(style.thick, style.thick, style.thick);
-    tip.position.set(0, 0.15, -full);
+    tip.position.set(0, 0.15, -shown);
     pedestal.scale.set(style.thick, 0.7 + style.thick * 0.4, style.thick);
     if (sim.crane === "tower") {
       pedestal.position.y = 0.1;
@@ -464,7 +466,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       pedestal.position.y = -gap / 2;
     }
     counter.visible = sim.crane !== "rental";
-    counter.scale.set(style.thick, style.thick, style.counter);
+    const travelWeight = packed ? 0.35 : 1;
+    counter.scale.set(style.thick, style.thick * travelWeight, style.counter * travelWeight);
     hook.scale.setScalar(style.hook);
     const origin = sim.rigOrigin();
     truck.position.set(origin.x, origin.y, origin.z);
