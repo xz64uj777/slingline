@@ -297,6 +297,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function setView(next: CamView) {
     view = next;
+    camera.zoom = 1;
+    camera.updateProjectionMatrix();
     orbit = next === "wide" ? 0.6 : 0;
     pitch = next === "wide" ? 24 : 0;
   }
