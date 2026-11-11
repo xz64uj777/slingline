@@ -1,0 +1,85 @@
+name: Build and publish Slingline to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: slingline-pages-build
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out application source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+
+      - name: Check out GitHub Pages site
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+
+      - name: Install dependencies
+        working-directory: source
+        run: npm ci
+
+      - name: Build client and server bundles
+        working-directory: source
+        env:
+          GITHUB_PAGES: "true"
+        run: npx vite build
+
+      - name: Publish fresh client assets into Pages site
+        working-directory: source
+        run: |
+          set -euo pipefail
+          test -f ../site/index.html
+          test -d .vercel/output/static/assets
+          cp -a .vercel/output/static/. ../site/
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+          const htmlPath = '../site/index.html';
+          let html = readFileSync(htmlPath, 'utf8');
+          const assets = readdirSync('.vercel/output/static/assets');
+          const index = assets.find((name) => /^index-.*\\.js$/.test(name));
+          const routes = assets.find((name) => /^routes-.*\\.js$/.test(name));
+          if (!index || !routes) throw new Error('Fresh client entry bundles were not found');
+          html = html.replace(/\\/slingline\\/assets\\/index-[A-Za-z0-9_-]+\\.js/g, '/slingline/assets/' + index);
+          html = html.replace(/\\/slingline\\/assets\\/routes-[A-Za-z0-9_-]+\\.js/g, '/slingline/assets/' + routes);
+          if (!html.includes('/slingline/assets/' + index) || !html.includes('/slingline/assets/' + routes)) {
+            throw new Error('Could not update both client bundle references in the existing Pages HTML');
+          }
+          writeFileSync(htmlPath, html);
+          console.log('Published client bundles:', index, routes);
+          NODE
+
+      - name: Commit and push updated Pages files
+        working-directory: site
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No Pages changes to publish"
+            exit 0
+          fi
+          git commit -m "Deploy latest Slingline client build"
+          git push origin gh-pages
