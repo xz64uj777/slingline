@@ -41,6 +41,7 @@ export function CraneYard() {
   const camPointers = useRef(new Map<number, { x: number; y: number }>());
   const pinchDistance = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
@@ -527,6 +528,63 @@ export function CraneYard() {
               </button>
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {playing ? (
+        <div className="pointer-events-auto absolute right-3 top-32 z-20 flex flex-col items-end gap-2">
+          <button
+            type="button"
+            aria-label="Open game settings"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((open) => !open)}
+            className="flex size-12 items-center justify-center rounded-full border border-primary bg-surface text-2xl text-fg shadow-lg"
+          >
+            ⚙
+          </button>
+          {settingsOpen ? (
+            <section className="max-h-[62dvh] w-[min(19rem,calc(100vw-1.5rem))] overflow-y-auto border border-primary bg-surface p-3 shadow-xl">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-display text-xl tracking-wide">GAME OPTIONS</h2>
+                <button type="button" onClick={() => setSettingsOpen(false)} className="min-h-10 border border-line px-3 font-display text-sm">CLOSE</button>
+              </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">DIFFICULTY</p>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Assisted swing" />
+                <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
+              </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">CONTROL METHOD</p>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Stick" detail="Thumb control" />
+                <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Directional buttons" />
+              </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">MOVEMENT SPEED</p>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
+                <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Normal" />
+                <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Quick" />
+              </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">TOUCH SENSITIVITY</p>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                <ModeButton active={sensitivity === "low"} onClick={() => { setSensitivity("low"); setTouchSensitivity(0.75); }} label="Low" detail="Fine" />
+                <ModeButton active={sensitivity === "normal"} onClick={() => { setSensitivity("normal"); setTouchSensitivity(1); }} label="Normal" detail="Balanced" />
+                <ModeButton active={sensitivity === "high"} onClick={() => { setSensitivity("high"); setTouchSensitivity(1.3); }} label="High" detail="Fast" />
+              </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">CAMERA VIEW</p>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
+                  <button key={id} type="button" onClick={() => { setCam(id); yardRef.current?.setView(id); }} className={`min-h-10 border px-2 font-display text-xs tracking-wide ${cam === id ? "border-primary bg-primary text-bg" : "border-line bg-bg text-fg"}`}>
+                    {id.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => yardRef.current?.setView(cam)} className="mt-2 min-h-10 w-full border border-line bg-bg px-3 font-display text-sm">RESET CAMERA VIEW</button>
+              <details className="mt-3 border border-line bg-bg p-2">
+                <summary className="cursor-pointer font-display text-sm tracking-wide">OPERATING HELP</summary>
+                <p className="mt-2 text-sm leading-relaxed text-muted">Stop the carrier and deploy the stabilizer pads before lifting. Use the joystick or arrows to position the crane, Out/In to telescope, and Up/Down to raise or lower the hook. Drag the yard to look around; use two fingers to zoom.</p>
+              </details>
+            </section>
+          ) : null}
         </div>
       ) : null}
 
