@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
 
-export type CamView = "chase" | "cab" | "hook" | "high" | "wide";
+export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck";
 
 export type Yard = {
   renderer: THREE.WebGLRenderer;
@@ -413,7 +413,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
-    slew.rotation.y = sim.yaw - sim.heading;
+    const face = sim.bodyHeading();
+    slew.rotation.y = sim.yaw - face;
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
     slew.position.y = mount;
     mast.scale.y = sim.crane === "tower" ? 0.22 + (1 - sim.stow) * 0.78 : 1;
@@ -438,7 +439,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     boomMat.color.setHex(style.color);
     boomDark.color.setHex(style.ext);
     const base = sim.baseLen;
-    const full = base + sim.extension;
+    const full = sim.hauling ? Math.min(base + sim.extension, 10) : base + sim.extension;
     const lattice = sim.crane === "lattice";
     const span = lattice ? full : base;
     const overlap = Math.min(3.4, base * 0.5);
@@ -467,7 +468,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     hook.scale.setScalar(style.hook);
     const origin = sim.rigOrigin();
     truck.position.set(origin.x, origin.y, origin.z);
-    truck.rotation.y = sim.heading;
+    truck.rotation.y = face;
     truck.rotation.z = sim.hauling ? 0 : sim.roll;
     const showHaul = sim.crane === "crawler" && (sim.hauling || sim.crawlerOnSite);
     lowboy.visible = showHaul;
@@ -555,6 +556,11 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     } else if (view === "high") {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
+    } else if (view === "truck") {
+      const hx = -Math.sin(sim.heading);
+      const hz = -Math.cos(sim.heading);
+      desired.set(sim.truckX - hx * 16, 7.2, sim.truckZ - hz * 16);
+      lookTarget.set(sim.truckX + hx * 10, 2.4, sim.truckZ + hz * 10);
     } else {
       desired.set(
         sim.truckX + Math.sin(yaw) * 20 + Math.cos(yaw) * 8,

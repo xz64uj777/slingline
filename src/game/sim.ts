@@ -283,9 +283,12 @@ export class CraneSim {
 
   rigOrigin() {
     if (!this.hauling) return { x: this.truckX, y: this.flipped ? 0.2 : 0, z: this.truckZ };
-    const fx = -Math.sin(this.heading);
-    const fz = -Math.cos(this.heading);
-    return { x: this.truckX - fx * 8, y: 1.15, z: this.truckZ - fz * 8 };
+    const h = this.heading;
+    return { x: this.truckX + Math.sin(h) * 4.6, y: 0.98, z: this.truckZ + Math.cos(h) * 4.6 };
+  }
+
+  bodyHeading() {
+    return this.hauling ? this.heading + Math.PI : this.heading;
   }
 
   usesOutriggers() {
@@ -379,16 +382,17 @@ export class CraneSim {
   }
 
   boom(): Boom {
-    const length = this.baseLen + this.extension;
+    const length = this.hauling ? Math.min(this.baseLen + this.extension, 10) : this.baseLen + this.extension;
     const pitch = this.boomPitch;
     const yOnBoom = 0.15 * Math.cos(pitch) + length * Math.sin(pitch);
     const zOnBoom = 0.15 * Math.sin(pitch) - length * Math.cos(pitch);
-    const ry = this.yaw - this.heading;
+    const face = this.bodyHeading();
+    const ry = this.yaw - face;
     const lx = zOnBoom * Math.sin(ry);
     const ly = this.liveMount() + yOnBoom;
     const lz = -this.mountBack + zOnBoom * Math.cos(ry);
-    const cH = Math.cos(this.heading);
-    const sH = Math.sin(this.heading);
+    const cH = Math.cos(face);
+    const sH = Math.sin(face);
     const cR = Math.cos(this.roll);
     const sR = Math.sin(this.roll);
     const origin = this.rigOrigin();
@@ -924,7 +928,7 @@ export class CraneSim {
     const want = fold ? 1 : 0;
     this.stow += (want - this.stow) * Math.min(1, dt * 0.55);
     if (fold) {
-      this.boomPitch += (0.18 - this.boomPitch) * Math.min(1, dt * 0.85);
+      this.boomPitch += ((this.hauling ? 0.08 : 0.18) - this.boomPitch) * Math.min(1, dt * 0.85);
       this.extension += (0 - this.extension) * Math.min(1, dt * 0.9);
     }
     if (this.flipped) return;
@@ -943,7 +947,7 @@ export class CraneSim {
   }
 
   private pinHook() {
-    this.yaw = this.heading;
+    this.yaw = this.bodyHeading();
     this.yawRate = 0;
     this.pitchRate = 0;
     this.extendRate = 0;

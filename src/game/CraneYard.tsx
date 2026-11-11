@@ -359,7 +359,7 @@ export function CraneYard() {
             0.0 m
           </p>
           <div className="pointer-events-auto flex flex-wrap gap-1">
-            {(["chase", "wide", "cab", "hook", "high"] as CamView[]).map((id) => (
+            {(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -369,7 +369,17 @@ export function CraneYard() {
                 }}
                 className={`px-2 py-1 font-display text-base tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-surface text-fg"}`}
               >
-                {id === "chase" ? "CHASE" : id === "wide" ? "WIDE" : id === "cab" ? "CAB" : id === "hook" ? "HOOK" : "HIGH"}
+                {id === "chase"
+                  ? "CHASE"
+                  : id === "wide"
+                    ? "WIDE"
+                    : id === "truck"
+                      ? "TRUCK"
+                      : id === "cab"
+                        ? "CAB"
+                        : id === "hook"
+                          ? "HOOK"
+                          : "HIGH"}
               </button>
             ))}
           </div>
