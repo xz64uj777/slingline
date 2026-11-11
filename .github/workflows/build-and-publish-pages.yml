@@ -21,13 +21,7 @@ jobs:
         with:
           ref: main
           path: source
-
-      - name: Check out GitHub Pages site
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: site
-          token: \${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -48,8 +42,11 @@ jobs:
 
       - name: Publish fresh client assets into Pages site
         working-directory: source
+        env:
+          GITHUB_TOKEN: \${{ github.token }}
         run: |
           set -euo pipefail
+          git clone --depth=1 --branch gh-pages https://github.com/xz64uj777/slingline.git ../site
           test -f ../site/index.html
           test -d .vercel/output/static/assets
           cp -a .vercel/output/static/. ../site/
@@ -69,11 +66,7 @@ jobs:
           writeFileSync(htmlPath, html);
           console.log('Published client bundles:', index, routes);
           NODE
-
-      - name: Commit and push updated Pages files
-        working-directory: site
-        run: |
-          set -euo pipefail
+          cd ../site
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .
@@ -82,4 +75,5 @@ jobs:
             exit 0
           fi
           git commit -m "Deploy latest Slingline client build"
+          git remote set-url origin "https://x-access-token:$GITHUB_TOKEN@github.com/xz64uj777/slingline.git"
           git push origin gh-pages
