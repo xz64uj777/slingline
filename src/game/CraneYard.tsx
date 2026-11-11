@@ -251,13 +251,6 @@ export function CraneYard() {
     pickCrane(ids[(index + 1) % ids.length] ?? "rental");
   };
 
-  const cycleCam = () => {
-    const order: CamView[] = ["chase", "wide", "cab", "hook", "high"];
-    const next = order[(order.indexOf(cam) + 1) % order.length] ?? "chase";
-    setCam(next);
-    yardRef.current?.setView(next);
-  };
-
   const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     camDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -317,7 +310,7 @@ export function CraneYard() {
             onClick={() => simRef.current?.buyNext()}
             className="pointer-events-auto mt-1 h-9 w-full border border-primary bg-bg px-2 font-display text-sm tracking-wide text-fg"
           >
-            BUY YARD $500
+            BUY YARD $250
           </button>
           {playing ? (
             <div className="mt-2 border-t border-line pt-2 font-display text-sm tracking-wide text-fg">
@@ -359,13 +352,21 @@ export function CraneYard() {
           >
             0.0 m
           </p>
-          <button
-            type="button"
-            onClick={cycleCam}
-            className="pointer-events-auto bg-surface px-3 py-1 font-display text-base tracking-wide text-fg"
-          >
-            CAM {cam === "chase" ? "CHASE" : cam === "wide" ? "WIDE" : cam === "cab" ? "CAB" : cam === "hook" ? "HOOK" : "HIGH"}
-          </button>
+          <div className="pointer-events-auto flex flex-wrap gap-1">
+            {(["chase", "wide", "cab", "hook", "high"] as CamView[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setCam(id);
+                  yardRef.current?.setView(id);
+                }}
+                className={`px-2 py-1 font-display text-base tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-surface text-fg"}`}
+              >
+                {id === "chase" ? "CHASE" : id === "wide" ? "WIDE" : id === "cab" ? "CAB" : id === "hook" ? "HOOK" : "HIGH"}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 

@@ -298,13 +298,15 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function setView(next: CamView) {
     view = next;
-    orbit = 0;
-    pitch = 0;
+    orbit = next === "wide" ? 0.6 : 0;
+    pitch = next === "wide" ? 24 : 0;
   }
 
   function nudge(dx: number, dy: number) {
-    orbit -= dx * 0.006;
-    pitch = Math.max(-8, Math.min(16, pitch - dy * 0.035));
+    const wide = view === "wide";
+    orbit -= dx * (wide ? 0.012 : 0.006);
+    if (wide) pitch = Math.max(8, Math.min(56, pitch - dy * 0.07));
+    else pitch = Math.max(-8, Math.min(16, pitch - dy * 0.035));
   }
 
   function resize() {
@@ -440,12 +442,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       desired.set(sim.hx + Math.sin(yaw) * 7, Math.max(1.8, sim.hy + 3.2 + pitch * 0.45), sim.hz + Math.cos(yaw) * 7);
       lookTarget.set(sim.hx, sim.hy, sim.hz);
     } else if (view === "wide") {
-      desired.set(
-        sim.truckX + Math.sin(yaw) * 52 + Math.cos(yaw) * 26,
-        38 + pitch * 0.35,
-        sim.truckZ + Math.cos(yaw) * 52 - Math.sin(yaw) * 26,
-      );
-      lookTarget.set(sim.truckX, 6, sim.truckZ);
+      const dist = 28 + pitch;
+      desired.set(sim.truckX + Math.sin(orbit) * dist, 6 + pitch * 0.7, sim.truckZ + Math.cos(orbit) * dist);
+      lookTarget.set(sim.truckX, 5, sim.truckZ);
     } else if (view === "high") {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);

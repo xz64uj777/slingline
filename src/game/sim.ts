@@ -31,17 +31,26 @@ const TUNING = {
   hard: { damp: 0.22, assist: 0, settle: 0, brake: 0.12, impact: 1.45, wind: 1.35, snatch: 1.55 },
 } as const;
 
-const PACE_SCALE = { slow: 0.42, steady: 0.7, fast: 1 } as const;
+const PACE_SCALE = { slow: 0.16, steady: 0.55, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
 const CAREER_KEY = "slingline-career";
 const STOP_PITCH = (44 * Math.PI) / 180;
 
-const CALLS: { title: string; kind: LoadKind; pad: number; bonus: number }[] = [
-  { title: "YARD MOVE", kind: "crate", pad: 5, bonus: 250 },
-  { title: "STEEL SET", kind: "beam", pad: 1, bonus: 500 },
-  { title: "HEAVY PICK", kind: "heavy", pad: 2, bonus: 900 },
-  { title: "NIGHT CALL", kind: "beam", pad: 4, bonus: 1400 },
+const CALLS: {
+  title: string;
+  kind: LoadKind;
+  pad: number;
+  pay: number;
+  follow?: { kind: LoadKind; pad: number; pay: number };
+}[] = [
+  { title: "YARD MOVE", kind: "crate", pad: 5, pay: 250 },
+  { title: "STEEL SET", kind: "beam", pad: 1, pay: 700 },
+  { title: "HEAVY PICK", kind: "heavy", pad: 2, pay: 1600 },
+  { title: "NIGHT CALL", kind: "beam", pad: 4, pay: 1100 },
+  { title: "DOUBLE RUN", kind: "crate", pad: 5, pay: 250, follow: { kind: "beam", pad: 3, pay: 2200 } },
 ];
+
+const SIZE_PAY: Record<LoadKind, number> = { crate: 250, beam: 700, heavy: 1600 };
 
 export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
 
@@ -49,7 +58,7 @@ const CRANES: Record<
   CraneId,
   { base: number; extend: number; pay: number; next: CraneId | null; price: number; label: string; mount: number }
 > = {
-  rental: { base: 5.5, extend: 6, pay: 500, next: "yard", price: 500, label: "RENTAL", mount: 1.32 },
+  rental: { base: 5.5, extend: 6, pay: 250, next: "yard", price: 250, label: "RENTAL", mount: 1.32 },
   yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD", mount: 1.32 },
   heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY", mount: 1.38 },
   lattice: { base: 16, extend: 26, pay: 1800, next: "tower", price: 1800, label: "LATTICE", mount: 1.38 },
@@ -158,6 +167,7 @@ export class CraneSim {
   to = 1;
   score = 0;
   contract = 0;
+  leg = 0;
   best = 0;
   cash = 0;
   reputation = 0;
@@ -237,7 +247,7 @@ export class CraneSim {
   contractLabel() {
     const spec = this.contractSpec();
     const noun = spec.kind === "beam" ? "BEAM" : spec.kind === "heavy" ? "BLOCK" : "CRATE";
-    return `${spec.title}: ${noun} +$${spec.bonus}`;
+    return `${spec.title}: ${noun} $${spec.pay}`;
   }
 
   craneLabel() {
@@ -247,7 +257,11 @@ export class CraneSim {
   private contractSpec() {
     const spec = CALLS[this.contract % CALLS.length]!;
     const lap = Math.floor(this.contract / CALLS.length);
-    return { ...spec, bonus: spec.bonus + lap * 400 };
+    const bump = lap * 200;
+    if (this.leg === 1 && spec.follow) {
+      return { title: `${spec.title} 2`, kind: spec.follow.kind, pad: spec.follow.pad, pay: spec.follow.pay + bump };
+    }
+    return { title: spec.title, kind: spec.kind, pad: spec.pad, pay: spec.pay + bump };
   }
 
   private applyContract() {
@@ -402,7 +416,7 @@ export class CraneSim {
     }
     const tune = this.tuning();
     const pace = PACE_SCALE[this.pace];
-    const follow = clamp(dt / tune.brake, 0, 1);
+    const follow = clamp(dt / (this.pace === "slow" ? 1.15 : tune.brake), 0, 1);
     let steer = actions.steer;
     let trolley = actions.trolley;
     let extend = actions.extend;
@@ -882,19 +896,20 @@ export class CraneSim {
     const bottom = this.hy - this.hang - this.cargoHalf;
     if (bottom > 1.35) this.airborne = true;
 
+    const gentle = this.pace === "slow";
     const fast = this.hookSpeed > (this.mode === "easy" ? 6.4 : 3.6);
-    if (this.load === "heavy" && this.limitState === "over" && fast && this.airborne) {
+    if (!gentle && this.load === "heavy" && this.limitState === "over" && fast && this.airborne) {
       this.overload(Math.abs(this.roll) > 0.22);
       return;
     }
 
     const limit = this.load === "heavy" ? this.tuning().impact / 1.6 : this.tuning().impact;
-    if (this.airborne && bottom < 3.4 && this.hookSpeed > limit * 0.72) this.warn = true;
+    if (!gentle && this.airborne && bottom < 3.4 && this.hookSpeed > limit * 0.72) this.warn = true;
 
     if (this.airborne && bottom <= 0.08) {
       const pad = PADS[this.to]!;
       const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < 2.4;
-      if (this.hookSpeed > limit) this.fail();
+      if (!gentle && this.hookSpeed > limit) this.fail();
       else if (onTarget) this.succeed();
       else this.setAside();
       return;
@@ -989,12 +1004,19 @@ export class CraneSim {
   private succeed() {
     this.score += 1;
     const spec = this.contractSpec();
+    const raw = CALLS[this.contract % CALLS.length]!;
     const matched = this.load === spec.kind;
-    let pay = CRANES[this.crane].pay * (this.load === "heavy" ? 3 : this.load === "beam" ? 2 : 1);
+    let pay = SIZE_PAY[this.load];
     if (matched) {
-      pay += spec.bonus;
-      this.contract += 1;
-      this.applyContract();
+      pay = spec.pay;
+      if (this.leg === 0 && raw.follow) {
+        this.leg = 1;
+        this.applyContract();
+      } else {
+        this.leg = 0;
+        this.contract += 1;
+        this.applyContract();
+      }
     }
     this.cash += pay;
     this.reputation += 1;
@@ -1009,7 +1031,9 @@ export class CraneSim {
     this.phase = "done";
     this.deliverFlash = 1.15;
     this.message = matched
-      ? `Call done. +$${pay}. Next: ${this.contractLabel()}`
+      ? this.leg === 1
+        ? `First half set. +$${pay}. Now ${this.contractLabel()}`
+        : `Call done. +$${pay}. Next: ${this.contractLabel()}`
       : `Not the call. +$${pay}. Still need ${this.contractLabel()}`;
     this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;
