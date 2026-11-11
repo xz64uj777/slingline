@@ -2,6 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
+  ECONOMY,
+  canFound,
+  careerSummary,
+  jobBoard,
+  money,
+  readCareerStore,
+  type CareerState,
+  type JobId,
+  type JobOffer,
+} from "@/game/career";
+import {
   idleActions,
   installInput,
   readActions,
@@ -35,12 +46,21 @@ export function CraneYard() {
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
   const [glError, setGlError] = useState("");
+  const [books, setBooks] = useState<CareerState>(() => readCareerStore());
+  const [practiceId, setPracticeId] = useState<CraneId | null>(null);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [beat, setBeat] = useState<string | null>(null);
+  const summary = careerSummary(books);
 
   const scoreRef = useRef<HTMLSpanElement>(null);
   const bestRef = useRef<HTMLSpanElement>(null);
   const cashRef = useRef<HTMLSpanElement>(null);
   const companyRef = useRef<HTMLParagraphElement>(null);
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  const bookRef = useRef<HTMLParagraphElement>(null);
   const buyRef = useRef<HTMLButtonElement>(null);
+  const soloRef = useRef<HTMLButtonElement>(null);
+  const jobsRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const callRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
@@ -68,6 +88,11 @@ export function CraneYard() {
   }, [pace]);
 
   const shownBest = useRef(0);
+  const beatShown = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (simRef.current) simRef.current.boardPause = boardOpen;
+  }, [boardOpen]);
 
   useEffect(() => {
     const block = (event: Event) => event.preventDefault();
@@ -88,6 +113,7 @@ export function CraneYard() {
     shownBest.current = sim.best;
     setBest(sim.best);
     setCrane(sim.crane);
+    setBooks({ ...sim.career });
 
     let yard: ReturnType<typeof createYard>;
     try {
@@ -113,13 +139,37 @@ export function CraneYard() {
     const paintHud = () => {
       if (scoreRef.current) scoreRef.current.textContent = String(sim.score);
       if (bestRef.current) bestRef.current.textContent = String(sim.best);
-      if (cashRef.current) cashRef.current.textContent = `${sim.craneLabel()}  $${sim.cash}`;
+      if (cashRef.current) cashRef.current.textContent = `${sim.craneLabel()}  ${money(sim.cash)}`;
       if (companyRef.current) companyRef.current.textContent = sim.companyName().toUpperCase();
+      if (statusRef.current) statusRef.current.textContent = sim.statusLine();
+      if (bookRef.current) {
+        if (sim.practicing) bookRef.current.textContent = "PRACTICE · NOT SAVED";
+        else {
+          const note = sim.career.note > 0 ? `  NOTE ${money(sim.career.note)}` : "";
+          const down = sim.career.downtime > 0 ? `  DOWNTIME ${sim.career.downtime}` : "";
+          const mark = sim.career.status === "hired" ? `STANDING ${sim.career.standing}` : `REP ${sim.career.reputation}`;
+          bookRef.current.textContent = `${mark}${note}${down}`;
+        }
+      }
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (callRef.current) callRef.current.textContent = sim.contractLabel();
+      if (soloRef.current) {
+        const show = !sim.practicing && sim.career.status === "hired" && canFound(sim.career).ok;
+        soloRef.current.style.display = show ? "block" : "none";
+      }
+      if (jobsRef.current) {
+        const show = !sim.practicing && sim.career.status === "independent" && !sim.attached;
+        jobsRef.current.style.display = show ? "block" : "none";
+      }
+      if (sim.careerBeat !== beatShown.current) {
+        beatShown.current = sim.careerBeat;
+        setBeat(sim.careerBeat);
+        setBooks({ ...sim.career });
+      }
       if (coachRef.current) {
-        coachRef.current.textContent = sim.message;
-        coachRef.current.style.display = sim.message === sim.contractLabel() ? "none" : "block";
+        const text = sim.toastLeft > 0 ? sim.toast : sim.message;
+        coachRef.current.textContent = text;
+        coachRef.current.style.display = text === sim.contractLabel() ? "none" : "block";
       }
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
       if (limitRef.current) {
@@ -181,8 +231,9 @@ export function CraneYard() {
           banner.textContent = sim.flipped ? "Crane over" : "Wire snapped";
           banner.dataset.show = "break";
         } else if (sim.phase === "done") {
-          banner.textContent = sim.message.startsWith("Call done") ? "Call done" : "Clean set";
-          banner.dataset.show = "set";
+          const wrong = sim.message.startsWith("Wrong");
+          banner.textContent = wrong ? "No pay" : sim.practicing ? "Practice set" : sim.career.status === "hired" ? "Wage paid" : "Call paid";
+          banner.dataset.show = wrong ? "warn" : "set";
         } else if (sim.safetyLock) {
           banner.textContent = "Safety stop";
           banner.dataset.show = "warn";
@@ -247,14 +298,53 @@ export function CraneYard() {
   };
 
   const pickCrane = (id: CraneId) => {
+    setPracticeId(id);
     setCrane(id);
-    simRef.current?.selectCrane(id);
+  };
+
+  const refreshBooks = () => {
+    const sim = simRef.current;
+    if (!sim) return;
+    setBooks({ ...sim.career });
+  };
+
+  const fileCompany = () => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.foundCompany();
+    refreshBooks();
+    setBeat(sim.careerBeat);
+  };
+
+  const startCareer = () => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.clockIn();
+    setPracticeId(null);
+    setCrane(sim.crane);
+    refreshBooks();
+    playingRef.current = true;
+    unlockAudio();
+    setPlaying(true);
+  };
+
+  const startPractice = () => {
+    const sim = simRef.current;
+    if (!sim || !practiceId) return;
+    sim.selectCrane(practiceId);
+    setCrane(practiceId);
+    playingRef.current = true;
+    unlockAudio();
+    setPlaying(true);
   };
 
   const cycleCrane = () => {
     const ids = CRANE_CHOICES.map((choice) => choice.id);
     const index = ids.indexOf(simRef.current?.crane ?? crane);
-    pickCrane(ids[(index + 1) % ids.length] ?? "rental");
+    const next = ids[(index + 1) % ids.length] ?? "rental";
+    setPracticeId(next);
+    setCrane(next);
+    simRef.current?.selectCrane(next);
   };
 
   const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -298,7 +388,10 @@ export function CraneYard() {
           <p ref={companyRef} className="font-display text-sm tracking-widest text-primary">
             TEMP HIRE
           </p>
-          <h1 className="font-display text-4xl leading-none text-fg">SLINGLINE</h1>
+          <h1 className="font-display text-3xl leading-none text-fg sm:text-4xl">SLINGLINE</h1>
+          <p ref={statusRef} className="mt-1 font-display text-xs tracking-widest text-muted">
+            FOR HARGROVE
+          </p>
         </div>
         <div className="bg-surface px-3 py-2 text-right">
           <p className="font-display text-sm tracking-widest text-muted">SETS</p>
@@ -310,13 +403,19 @@ export function CraneYard() {
           <p className="mt-1 font-display text-sm tracking-widest text-muted">
             CASH <span ref={cashRef} className="text-fg">NOW RENTAL  $0</span>
           </p>
+          <p ref={bookRef} className="font-display text-xs tracking-widest text-steel">
+            STANDING 70
+          </p>
           <button
             ref={buyRef}
             type="button"
-            onClick={() => simRef.current?.buyNext()}
-            className="pointer-events-auto mt-1 h-9 w-full border border-primary bg-bg px-2 font-display text-sm tracking-wide text-fg"
+            onClick={() => {
+              simRef.current?.buyNext();
+              refreshBooks();
+            }}
+            className="pointer-events-auto mt-1 min-h-11 w-full border border-primary bg-bg px-2 py-1 font-display text-xs leading-tight tracking-wide text-fg"
           >
-            BUY YARD $250
+            HARGROVE'S CRANE
           </button>
           {playing ? (
             <div className="mt-2 border-t border-line pt-2 font-display text-sm tracking-wide text-fg">
@@ -344,9 +443,9 @@ export function CraneYard() {
       />
 
       {playing ? (
-        <div className="pointer-events-none absolute left-3 top-28 flex max-w-[16rem] flex-col items-start gap-2">
-          <p ref={callRef} className="bg-surface px-3 py-2 font-display text-lg tracking-wide text-primary">
-            YARD MOVE
+        <div className="pointer-events-none absolute left-3 top-36 flex max-w-[11.5rem] flex-col items-start gap-2 sm:max-w-xs">
+          <p ref={callRef} className="bg-surface px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">
+            YARD MOVE: CRATE · WAGE $315 OF $900
           </p>
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Lower the hook onto the crate.
@@ -359,6 +458,24 @@ export function CraneYard() {
             0.0 m
           </p>
           <div className="pointer-events-auto flex flex-wrap gap-1">
+            <button
+              ref={soloRef}
+              type="button"
+              onClick={fileCompany}
+              style={{ display: "none" }}
+              className="h-11 bg-primary px-3 font-display text-base tracking-wide text-bg"
+            >
+              FILE SLINGLINE
+            </button>
+            <button
+              ref={jobsRef}
+              type="button"
+              onClick={() => setBoardOpen(true)}
+              style={{ display: "none" }}
+              className="h-11 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg"
+            >
+              JOBS
+            </button>
             {(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
               <button
                 key={id}
@@ -396,13 +513,78 @@ export function CraneYard() {
         HOOK
       </button>
       {!playing ? (
-        <div className="absolute inset-0 flex items-end justify-center overflow-y-auto p-4 pb-24 sm:items-center">
-          <section className="w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-5">
-            <p className="font-display text-sm tracking-widest text-primary">YARD CRANE</p>
-            <h2 className="mt-1 font-display text-5xl leading-none">Hook. Carry. Set.</h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted">
-              Drive to the crate, stop, and deploy the pads. Then pitch the boom, telescope with Out and In, and run the hook.
-            </p>
+        <div className="absolute inset-0 overflow-y-auto p-3 pb-8 sm:p-6">
+          <section className="mx-auto w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-4 sm:max-w-3xl sm:p-5">
+            <p className="font-display text-sm tracking-widest text-primary">{summary.status}</p>
+            <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">{summary.company}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">{summary.employer}</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <p className="bg-bg px-3 py-2">
+                <span className="block font-display text-xs tracking-widest text-muted">CASH</span>
+                <span className="font-display text-2xl leading-none">{summary.cash}</span>
+              </p>
+              <p className="bg-bg px-3 py-2">
+                <span className="block font-display text-xs tracking-widest text-muted">{summary.hired ? "STANDING" : "REPUTATION"}</span>
+                <span className="font-display text-2xl leading-none">{summary.hired ? summary.standing : summary.reputation}</span>
+              </p>
+              <p className="bg-bg px-3 py-2">
+                <span className="block font-display text-xs tracking-widest text-muted">CRANE</span>
+                <span className="font-display text-2xl leading-none">{summary.crane}</span>
+              </p>
+              <p className="bg-bg px-3 py-2">
+                <span className="block font-display text-xs tracking-widest text-muted">{summary.note > 0 ? "NOTE" : "JOBS"}</span>
+                <span className="font-display text-2xl leading-none">{summary.note > 0 ? money(summary.note) : summary.jobsDone}</span>
+              </p>
+            </div>
+            <p className="mt-3 bg-bg px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">{summary.call}</p>
+            <p className="mt-2 text-sm leading-relaxed text-fg">{summary.hired ? summary.found.reason : summary.buyDetail}</p>
+            {summary.downtime > 0 ? (
+              <p className="mt-2 text-sm text-danger">Downtime {summary.downtime}. A yard move is the way back out.</p>
+            ) : null}
+            {summary.hired && summary.found.ok ? (
+              <button
+                type="button"
+                onClick={fileCompany}
+                className="mt-3 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
+              >
+                FILE SLINGLINE · {money(ECONOMY.foundFee)}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="mt-3 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
+              onClick={startCareer}
+            >
+              {summary.hired ? "Clock in" : "Take the call"}
+            </button>
+            {!summary.hired ? (
+              <>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {jobBoard(books).map((offer) => (
+                    <JobButton
+                      key={offer.id}
+                      offer={offer}
+                      hired={false}
+                      onPick={(id) => {
+                        simRef.current?.acceptJob(id);
+                        refreshBooks();
+                      }}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    simRef.current?.buyNext();
+                    refreshBooks();
+                    setCrane(simRef.current?.crane ?? crane);
+                  }}
+                  className="mt-3 h-12 w-full border border-primary bg-bg font-display text-lg tracking-wide text-fg"
+                >
+                  {summary.buy}
+                </button>
+              </>
+            ) : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
               <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Swing dies on its own" />
               <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
@@ -412,49 +594,52 @@ export function CraneYard() {
               <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Hold a direction" />
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {CRANE_CHOICES.map((choice) => (
-                <ModeButton
-                  key={choice.id}
-                  active={crane === choice.id}
-                  onClick={() => pickCrane(choice.id)}
-                  label={choice.label}
-                  detail="Test this crane"
-                />
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-2">
               <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
               <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Yard pace" />
               <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Full travel" />
             </div>
+            <p className="mt-4 font-display text-xs tracking-widest text-muted">PRACTICE A CRANE · NOT SAVED</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {CRANE_CHOICES.map((choice) => (
+                <ModeButton
+                  key={choice.id}
+                  active={practiceId === choice.id}
+                  onClick={() => pickCrane(choice.id)}
+                  label={choice.label}
+                  detail="Try it. Not saved"
+                />
+              ))}
+            </div>
             <p className="mt-3 hidden text-xs text-steel sm:block">
               A D slew · W S trolley · Q up · E down · H flips mode
             </p>
-            <p className="mt-3 text-xs text-muted">Drag the yard to look around. CAM includes a wide view of the whole crane.</p>
-            <button
-              type="button"
-              className="mt-4 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
-              onClick={() => {
-                playingRef.current = true;
-                unlockAudio();
-                setPlaying(true);
-              }}
-            >
-              Start
-            </button>
+            <p className="mt-3 text-xs text-muted">
+              Stop, deploy the pads, then pitch, telescope, and hook. Drag the yard to look around.
+            </p>
+            {practiceId ? (
+              <button
+                type="button"
+                className="mt-2 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg"
+                onClick={startPractice}
+              >
+                Practice {practiceId}
+              </button>
+            ) : null}
           </section>
         </div>
       ) : (
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
           {scheme === "stick" ? <Stick /> : <ArrowPad />}
           <div className="pointer-events-auto flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={cycleCrane}
-              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              {crane.toUpperCase()}
-            </button>
+            {practiceId ? (
+              <button
+                type="button"
+                onClick={cycleCrane}
+                className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
+              >
+                {crane.toUpperCase()}
+              </button>
+            ) : null}
             <button
               ref={safetyRef}
               type="button"
@@ -519,7 +704,107 @@ export function CraneYard() {
           </div>
         </div>
       )}
+      {boardOpen ? (
+        <JobSheet
+          offers={jobBoard(simRef.current?.career ?? books)}
+          hired={(simRef.current?.career.status ?? books.status) === "hired"}
+          onPick={(id) => {
+            simRef.current?.acceptJob(id);
+            refreshBooks();
+            setBoardOpen(false);
+          }}
+          onClose={() => setBoardOpen(false)}
+        />
+      ) : null}
+      {beat ? (
+        <div className="absolute inset-0 z-30 flex items-end justify-center bg-bg/80 p-4 sm:items-center">
+          <section className="w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-5">
+            <p className="font-display text-sm tracking-widest text-primary">YOUR COMPANY</p>
+            <h2 className="mt-1 font-display text-4xl leading-none">The papers are filed</h2>
+            <p className="mt-3 text-base leading-relaxed">{beat}</p>
+            <button
+              type="button"
+              className="mt-4 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
+              onClick={() => {
+                simRef.current?.dismissBeat();
+                beatShown.current = null;
+                setBeat(null);
+                refreshBooks();
+              }}
+            >
+              Open Slingline
+            </button>
+          </section>
+        </div>
+      ) : null}
     </main>
+  );
+}
+
+function JobButton({
+  offer,
+  hired,
+  onPick,
+}: {
+  offer: JobOffer;
+  hired: boolean;
+  onPick: (id: JobId) => void;
+}) {
+  const pay = offer.locked
+    ? offer.reason
+    : offer.wage
+      ? `Wage ${money(offer.take)} of ${money(offer.gross)}`
+      : `Contract ${money(offer.gross)}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(offer.id)}
+      className={
+        offer.current
+          ? "min-h-11 border border-primary bg-bg px-3 py-2 text-left"
+          : "min-h-11 border border-line bg-bg px-3 py-2 text-left"
+      }
+    >
+      <span className="block font-display text-xl leading-none text-fg">{offer.title}</span>
+      <span className={`mt-1 block text-xs leading-snug ${offer.locked ? "text-muted" : "text-steel"}`}>
+        {hired && !offer.locked ? "Assigned. " : ""}
+        {pay}
+      </span>
+      {!offer.locked && offer.reason ? <span className="mt-1 block text-xs leading-snug text-muted">{offer.reason}</span> : null}
+    </button>
+  );
+}
+
+function JobSheet({
+  offers,
+  hired,
+  onPick,
+  onClose,
+}: {
+  offers: JobOffer[];
+  hired: boolean;
+  onPick: (id: JobId) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex items-end justify-center bg-bg/75 p-3 sm:items-center">
+      <section className="max-h-[86dvh] w-full max-w-lg overflow-y-auto border border-line border-t-4 border-t-primary bg-surface p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-display text-sm tracking-widest text-primary">{hired ? "ASSIGNED" : "JOB BOARD"}</p>
+            <h2 className="font-display text-3xl leading-none">{hired ? "Hargrove picks the call" : "Pick a call"}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="h-11 px-3 font-display text-lg text-fg">
+            CLOSE
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {offers.map((offer) => (
+            <JobButton key={offer.id} offer={offer} hired={hired} onPick={onPick} />
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
