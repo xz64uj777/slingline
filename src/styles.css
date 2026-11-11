@@ -40,7 +40,7 @@
 }
 
 .hud-safe {
-  padding-bottom: max(5.25rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+  padding-bottom: max(0.6rem, env(safe-area-inset-bottom));
   padding-left: max(0.75rem, env(safe-area-inset-left));
   padding-right: max(0.75rem, env(safe-area-inset-right));
 }

@@ -42,6 +42,7 @@ export function CraneYard() {
   const companyRef = useRef<HTMLParagraphElement>(null);
   const buyRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
+  const callRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -115,10 +116,10 @@ export function CraneYard() {
       if (cashRef.current) cashRef.current.textContent = `${sim.craneLabel()}  $${sim.cash}`;
       if (companyRef.current) companyRef.current.textContent = sim.companyName().toUpperCase();
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
+      if (callRef.current) callRef.current.textContent = sim.contractLabel();
       if (coachRef.current) {
         coachRef.current.textContent = sim.message;
-        const idle = sim.message.startsWith("Hook the crate");
-        coachRef.current.style.display = idle ? "none" : "block";
+        coachRef.current.style.display = sim.message === sim.contractLabel() ? "none" : "block";
       }
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
       if (limitRef.current) {
@@ -174,7 +175,7 @@ export function CraneYard() {
           banner.textContent = sim.flipped ? "Crane over" : "Wire snapped";
           banner.dataset.show = "break";
         } else if (sim.phase === "done") {
-          banner.textContent = "Clean set";
+          banner.textContent = sim.message.startsWith("Call done") ? "Call done" : "Clean set";
           banner.dataset.show = "set";
         } else if (sim.safetyLock) {
           banner.textContent = "Safety stop";
@@ -345,6 +346,9 @@ export function CraneYard() {
 
       {playing ? (
         <div className="pointer-events-none absolute left-3 top-28 flex max-w-[16rem] flex-col items-start gap-2">
+          <p ref={callRef} className="bg-surface px-3 py-2 font-display text-lg tracking-wide text-primary">
+            YARD MOVE
+          </p>
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Lower the hook onto the crate.
           </p>
@@ -365,6 +369,15 @@ export function CraneYard() {
         </div>
       ) : null}
 
+      <button
+        ref={hookBtnRef}
+        type="button"
+        onClick={() => simRef.current?.requestHook()}
+        style={{ display: "none" }}
+        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-16 min-w-28 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-4 font-display text-2xl tracking-wide text-fg"
+      >
+        HOOK
+      </button>
       {!playing ? (
         <div className="absolute inset-0 flex items-end justify-center overflow-y-auto p-4 pb-24 sm:items-center">
           <section className="w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-5">
@@ -424,15 +437,6 @@ export function CraneYard() {
               className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
             >
               {crane.toUpperCase()}
-            </button>
-            <button
-              ref={hookBtnRef}
-              type="button"
-              onClick={() => simRef.current?.requestHook()}
-              style={{ display: "none" }}
-              className="h-11 min-w-20 border border-primary bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              HOOK
             </button>
             <button
               ref={safetyRef}

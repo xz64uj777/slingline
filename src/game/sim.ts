@@ -36,6 +36,13 @@ const BEST_KEY = "slingline-best";
 const CAREER_KEY = "slingline-career";
 const STOP_PITCH = (44 * Math.PI) / 180;
 
+const CALLS: { title: string; kind: LoadKind; pad: number; bonus: number }[] = [
+  { title: "YARD MOVE", kind: "crate", pad: 5, bonus: 250 },
+  { title: "STEEL SET", kind: "beam", pad: 1, bonus: 500 },
+  { title: "HEAVY PICK", kind: "heavy", pad: 2, bonus: 900 },
+  { title: "NIGHT CALL", kind: "beam", pad: 4, bonus: 1400 },
+];
+
 export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
 
 const CRANES: Record<
@@ -150,6 +157,7 @@ export class CraneSim {
   from = 0;
   to = 1;
   score = 0;
+  contract = 0;
   best = 0;
   cash = 0;
   reputation = 0;
@@ -226,8 +234,24 @@ export class CraneSim {
     return "Independent";
   }
 
+  contractLabel() {
+    const spec = this.contractSpec();
+    const noun = spec.kind === "beam" ? "BEAM" : spec.kind === "heavy" ? "BLOCK" : "CRATE";
+    return `${spec.title}: ${noun} +$${spec.bonus}`;
+  }
+
   craneLabel() {
     return `NOW ${CRANES[this.crane].label}`;
+  }
+
+  private contractSpec() {
+    const spec = CALLS[this.contract % CALLS.length]!;
+    const lap = Math.floor(this.contract / CALLS.length);
+    return { ...spec, bonus: spec.bonus + lap * 400 };
+  }
+
+  private applyContract() {
+    this.to = this.contractSpec().pad;
   }
 
   buyLabel() {
@@ -319,11 +343,11 @@ export class CraneSim {
     this.cz = homes[0]!.z;
     this.cy = this.restY("crate");
     this.from = 0;
-    this.to = 5;
+    this.applyContract();
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
-    this.message = "Crate, steel beam, and heavy block are out. Hook any of them.";
+    this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
     const p = homes[1]!;
@@ -364,7 +388,7 @@ export class CraneSim {
     this.phase = "seek";
     this.attached = false;
     this.airborne = false;
-    this.message = "Hook the crate, the beam, or the heavy block.";
+    this.message = this.contractLabel();
   }
 
   step(dt: number, actions: Actions) {
@@ -758,7 +782,7 @@ export class CraneSim {
     if (this.state === "lifting") return;
     if (this.deployDir > 0) this.message = "Deploying outriggers.";
     else if (this.deployDir < 0) this.message = "Stowing outriggers.";
-    else if (padsClear) this.message = "Three loads are out. Stop, then DEPLOY.";
+    else if (padsClear) this.message = `${this.contractLabel()}. Stop, then DEPLOY.`;
     else this.message = this.gateReason();
   }
 
@@ -843,7 +867,7 @@ export class CraneSim {
           : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
       } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
       else if (this.limitState === "near") this.message = "That load is near the limit. Watch the angle and the length.";
-      else this.message = "Hook the crate, the beam, or the heavy block.";
+      else this.message = this.contractLabel();
       return;
     }
     this.hookReady = false;
@@ -934,7 +958,7 @@ export class CraneSim {
     this.attached = false;
     this.airborne = false;
     this.phase = "seek";
-    this.message = "Wrong pad. Hook it again.";
+    this.message = `Wrong pad. Call is ${this.contractLabel()}.`;
   }
 
   private loadRest() {
@@ -964,7 +988,14 @@ export class CraneSim {
 
   private succeed() {
     this.score += 1;
-    const pay = CRANES[this.crane].pay * (this.load === "heavy" ? 3 : this.load === "beam" ? 2 : 1);
+    const spec = this.contractSpec();
+    const matched = this.load === spec.kind;
+    let pay = CRANES[this.crane].pay * (this.load === "heavy" ? 3 : this.load === "beam" ? 2 : 1);
+    if (matched) {
+      pay += spec.bonus;
+      this.contract += 1;
+      this.applyContract();
+    }
     this.cash += pay;
     this.reputation += 1;
     this.writeCareer();
@@ -977,7 +1008,9 @@ export class CraneSim {
     this.airborne = false;
     this.phase = "done";
     this.deliverFlash = 1.15;
-    this.message = `Clean set. +$${pay}`;
+    this.message = matched
+      ? `Call done. +$${pay}. Next: ${this.contractLabel()}`
+      : `Not the call. +$${pay}. Still need ${this.contractLabel()}`;
     this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;
