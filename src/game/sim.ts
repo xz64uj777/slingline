@@ -1,9 +1,32 @@
 import type { Actions } from "@/game/input";
+import { CRANES } from "@/game/cranes";
+import {
+  acceptJob as acceptCareerJob,
+  activeOffer,
+  buyCrane as buyCareerCrane,
+  buyDetail,
+  buyLabel as careerBuyLabel,
+  companyName as careerCompanyName,
+  contractLabel as careerContractLabel,
+  employerLine,
+  foundCompany as foundCareer,
+  readCareerStore,
+  resolveFailure,
+  resolveSet,
+  statusLine,
+  writeCareerStore,
+  type CareerState,
+  type CraneId,
+  type JobId,
+  type LoadKind,
+} from "@/game/career";
+
+export type { CraneId, JobId, LoadKind } from "@/game/career";
+export { CRANE_CHOICES } from "@/game/cranes";
 
 export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
 export type JobPhase = "seek" | "carry" | "broke" | "done";
-export type LoadKind = "crate" | "beam" | "heavy";
 
 export type YardPiece = {
   kind: LoadKind;
@@ -44,74 +67,9 @@ const TUNING = {
 
 const PACE_SCALE = { slow: 0.16, steady: 0.55, fast: 1 } as const;
 const BEST_KEY = "slingline-best";
-const CAREER_KEY = "slingline-career";
 const STOP_PITCH = (44 * Math.PI) / 180;
-
-const CALLS: {
-  title: string;
-  kind: LoadKind;
-  pad: number;
-  pay: number;
-  follow?: { kind: LoadKind; pad: number; pay: number };
-}[] = [
-  { title: "YARD MOVE", kind: "crate", pad: 5, pay: 250 },
-  { title: "STEEL SET", kind: "beam", pad: 1, pay: 700 },
-  { title: "HEAVY PICK", kind: "heavy", pad: 2, pay: 1600 },
-  { title: "NIGHT CALL", kind: "beam", pad: 4, pay: 1100 },
-  { title: "DOUBLE RUN", kind: "crate", pad: 5, pay: 250, follow: { kind: "beam", pad: 3, pay: 2200 } },
-];
-
-const SIZE_PAY: Record<LoadKind, number> = { crate: 250, beam: 700, heavy: 1600 };
-
 const ROOF = { x: 36, z: -32, y: 13.11 };
 const FLOOR = { x: 36, z: -32, y: 6.71 };
-
-export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
-
-const CRANES: Record<
-  CraneId,
-  { base: number; extend: number; pay: number; next: CraneId | null; price: number; label: string; mount: number }
-> = {
-  rental: { base: 5.5, extend: 6, pay: 250, next: "yard", price: 250, label: "RENTAL", mount: 1.32 },
-  yard: { base: 8.5, extend: 14, pay: 700, next: "heavy", price: 700, label: "YARD", mount: 1.32 },
-  heavy: { base: 12, extend: 20, pay: 1200, next: "lattice", price: 1200, label: "HEAVY", mount: 1.38 },
-  lattice: { base: 16, extend: 26, pay: 1800, next: "tower", price: 1800, label: "LATTICE", mount: 1.38 },
-  tower: { base: 14, extend: 22, pay: 2500, next: "crawler", price: 2500, label: "TOWER", mount: 16.2 },
-  crawler: { base: 18, extend: 30, pay: 3200, next: null, price: 0, label: "CRAWLER", mount: 1.32 },
-};
-
-export const CRANE_CHOICES: { id: CraneId; label: string }[] = (
-  Object.entries(CRANES) as [CraneId, (typeof CRANES)[CraneId]][]
-).map(([id, spec]) => ({ id, label: spec.label }));
-
-function readCareer(): { cash: number; crane: CraneId; reputation: number; roofDone: boolean; roofActive: boolean } {
-  try {
-    const raw = JSON.parse(localStorage.getItem(CAREER_KEY) || "") as {
-      cash?: number;
-      crane?: CraneId;
-      reputation?: number;
-      roofDone?: boolean;
-      roofActive?: boolean;
-    };
-    const crane: CraneId =
-      raw.crane === "yard" ||
-      raw.crane === "heavy" ||
-      raw.crane === "lattice" ||
-      raw.crane === "tower" ||
-      raw.crane === "crawler"
-        ? raw.crane
-        : "rental";
-    return {
-      cash: Number.isFinite(raw.cash) ? Math.max(0, raw.cash as number) : 0,
-      crane,
-      reputation: Number.isFinite(raw.reputation) ? Math.max(0, raw.reputation as number) : 0,
-      roofDone: raw.roofDone === true,
-      roofActive: raw.roofActive === true,
-    };
-  } catch {
-    return { cash: 0, crane: "rental", reputation: 0, roofDone: false, roofActive: false };
-  }
-}
 
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
@@ -151,7 +109,7 @@ export class CraneSim {
   outrigger = 0;
   stow = 1;
   hauling = false;
-  crawlerOnSite = false;
+  crawlerOnSite = true;
   haulX = 0;
   haulZ = 0;
   haulH = 0;
@@ -191,15 +149,16 @@ export class CraneSim {
   from = 0;
   to = 1;
   score = 0;
-  contract = 0;
-  leg = 0;
   best = 0;
-  cash = 0;
-  reputation = 0;
-  roofDone = false;
-  roofActive = false;
+  career: CareerState = readCareerStore();
+  practicing = false;
+  careerBeat: string | null = null;
+  boardPause = false;
+  toast = "";
+  toastLeft = 0;
   crane: CraneId = "rental";
-  message = "Lower the hook onto the crate.";
+  message = "You work for Hargrove. Take the wage and set the crate.";
+  private flipBilled = false;
   warn = false;
   swayDeg = 0;
   hookSpeed = 0;
@@ -240,16 +199,28 @@ export class CraneSim {
 
   constructor() {
     this.best = readBest();
-    const career = readCareer();
-    this.cash = career.cash;
-    this.crane = career.crane;
-    this.reputation = career.reputation;
-    this.roofDone = career.roofDone;
-    this.roofActive = career.roofActive && !career.roofDone;
-    if (!this.roofDone) this.roofActive = true;
+    this.career = readCareerStore();
+    this.crane = this.career.crane;
+    this.crawlerOnSite = this.career.crawlerOnSite;
     this.applyCrane();
     this.stockYard(true);
-    if (this.crane === "crawler") this.beginHaul();
+    if (this.crane === "crawler" && !this.career.crawlerOnSite) this.beginHaul();
+  }
+
+  get cash() {
+    return this.career.cash;
+  }
+
+  get reputation() {
+    return this.career.reputation;
+  }
+
+  get roofDone() {
+    return this.career.roofDone;
+  }
+
+  get roofActive() {
+    return this.career.roofActive;
   }
 
   private applyCrane() {
@@ -260,16 +231,43 @@ export class CraneSim {
   }
 
   selectCrane(id: CraneId) {
+    this.practicing = true;
     this.crane = id;
     this.applyCrane();
     if (this.extension > this.extendMax) this.extension = this.extendMax;
-    this.writeCareer();
-    if (id === "crawler" && !this.crawlerOnSite) {
+    this.hauling = false;
+    this.crawlerOnSite = true;
+    if (id === "crawler") {
       this.beginHaul();
+      this.message = "Practice crawler. It is on the lowboy. Nothing is saved.";
       return;
     }
+    this.message = `${CRANES[id].label} practice. Nothing is saved.`;
+  }
+
+  clockIn() {
+    if (!this.practicing) {
+      this.message = this.contractLabel();
+      return;
+    }
+    this.practicing = false;
+    this.flipBilled = false;
+    this.flipped = false;
+    this.careerBeat = null;
+    this.crane = this.career.crane;
+    this.applyCrane();
+    this.extension = Math.min(this.extension, this.extendMax);
     this.hauling = false;
-    this.message = `${CRANES[id].label} ready.`;
+    this.crawlerOnSite = this.career.crawlerOnSite;
+    this.state = "driving";
+    this.speed = 0;
+    this.roll = 0;
+    this.rollRate = 0;
+    this.truckX = 0;
+    this.truckZ = 0;
+    this.heading = 0;
+    this.stockYard(true);
+    if (this.crane === "crawler" && !this.career.crawlerOnSite) this.beginHaul();
   }
 
   private beginHaul() {
@@ -308,100 +306,144 @@ export class CraneSim {
   }
 
   companyName() {
-    if (this.crane === "rental") return "Temp Hire";
-    if (this.crane === "lattice") return "Slingline Co";
-    if (this.crane === "tower") return "Slingline Tower";
-    if (this.crane === "crawler") return "Slingline Tracks";
-    return "Independent";
+    return this.practicing ? "Practice" : careerCompanyName(this.career);
+  }
+
+  statusLine() {
+    return this.practicing ? "NOT SAVED" : statusLine(this.career);
+  }
+
+  employerLine() {
+    return this.practicing ? "Practice. Cash, reputation, and the crane you own stay as they were." : employerLine(this.career);
   }
 
   contractLabel() {
-    const spec = this.contractSpec();
-    const noun = spec.kind === "beam" ? "BEAM" : spec.kind === "heavy" ? "BLOCK" : "CRATE";
-    return `${spec.title}: ${noun} $${spec.pay}`;
+    if (this.practicing) return `PRACTICE · ${careerContractLabel(this.career)} · NO PAY`;
+    return careerContractLabel(this.career);
   }
 
   craneLabel() {
-    return `NOW ${CRANES[this.crane].label}`;
-  }
-
-  private contractSpec() {
-    if (this.roofActive) {
-      const deck = this.roofDeck();
-      return {
-        title: deck.y > 10 ? "ROOF SET" : "FLOOR SET",
-        kind: "beam" as LoadKind,
-        pad: 0,
-        pay: deck.y > 10 ? 2400 : 1400,
-      };
-    }
-    const spec = CALLS[this.contract % CALLS.length]!;
-    const lap = Math.floor(this.contract / CALLS.length);
-    const bump = lap * 200;
-    if (this.leg === 1 && spec.follow) {
-      return { title: `${spec.title} 2`, kind: spec.follow.kind, pad: spec.follow.pad, pay: spec.follow.pay + bump };
-    }
-    return { title: spec.title, kind: spec.kind, pad: spec.pad, pay: spec.pay + bump };
+    const owned = this.practicing ? `OWN ${CRANES[this.career.crane].label} · ` : "";
+    return `${owned}NOW ${CRANES[this.crane].label}`;
   }
 
   private applyContract() {
-    this.to = this.contractSpec().pad;
+    this.to = activeOffer(this.career).pad;
+  }
+
+  private say(text: string) {
+    this.message = text;
+    this.toast = text;
+    this.toastLeft = 3.4;
   }
 
   buyLabel() {
-    const next = CRANES[this.crane].next;
-    if (!next) return "TOP CRANE";
-    const spec = CRANES[next];
-    return `BUY ${spec.label} $${CRANES[this.crane].price}`;
+    if (this.practicing) return "PRACTICE";
+    return careerBuyLabel(this.career);
+  }
+
+  buyDetail() {
+    if (this.practicing) return "Practice does not buy cranes.";
+    return buyDetail(this.career);
   }
 
   buyNext() {
-    const next = CRANES[this.crane].next;
-    if (!next) {
-      this.message = "You already own the crawler.";
+    if (this.practicing) {
+      this.message = "Practice does not buy cranes.";
       return;
     }
-    const price = CRANES[this.crane].price;
-    if (this.cash < price) {
-      this.message = `Need $${price}. You have $${this.cash}.`;
+    if (this.attached) {
+      this.message = "Set the load down before you buy.";
       return;
     }
-    this.cash -= price;
-    this.crane = next;
-    this.applyCrane();
+    const result = buyCareerCrane(this.career);
+    this.say(result.message);
+    if (!result.ok) return;
+    this.adopt(result.state);
     this.writeCareer();
-    this.message =
-      next === "yard"
-        ? "Yard crane is yours. Longer boom."
-        : next === "heavy"
-          ? "Heavy crane is yours."
-          : next === "lattice"
-            ? "Lattice crane is yours."
-            : next === "tower"
-              ? "Tower crane is yours. The boom is up on the mast."
-              : "Crawler is yours. It sits on tracks.";
+    if (result.haul) this.beginHaul();
+  }
+
+  foundCompany() {
+    if (this.practicing) {
+      this.message = "Practice cannot file a company.";
+      return;
+    }
+    const result = foundCareer(this.career);
+    this.say(result.message);
+    if (!result.ok) return;
+    this.adopt(result.state);
+    this.writeCareer();
+    this.careerBeat = result.message;
+  }
+
+  dismissBeat() {
+    this.careerBeat = null;
+  }
+
+  acceptJob(id: JobId) {
+    if (this.practicing) {
+      this.message = "Practice does not take calls.";
+      return;
+    }
+    if (this.attached) {
+      this.say("Finish this pick before you change calls.");
+      return;
+    }
+    const result = acceptCareerJob(this.career, id);
+    if (!result.ok) {
+      this.say(result.message);
+      return;
+    }
+    this.adopt(result.state);
+    this.writeCareer();
+    this.spawnNext();
+    this.say(result.message);
   }
 
   roofDeck() {
-    const reach = this.mountY + this.baseLen + this.extendMax;
-    return reach >= 20 ? ROOF : FLOOR;
+    if (this.career.job === "roof") return ROOF;
+    return FLOOR;
+  }
+
+  private adopt(state: CareerState) {
+    const craneChanged = !this.practicing && state.crane !== this.crane;
+    this.career = state;
+    if (!craneChanged) return;
+    this.crane = state.crane;
+    this.applyCrane();
+    if (this.extension > this.extendMax) this.extension = this.extendMax;
   }
 
   private writeCareer() {
-    try {
-      localStorage.setItem(
-        CAREER_KEY,
-        JSON.stringify({
-          cash: this.cash,
-          crane: this.crane,
-          reputation: this.reputation,
-          roofDone: this.roofDone,
-          roofActive: this.roofActive,
-        }),
-      );
-    } catch {
-      /* private mode */
+    if (this.practicing) return;
+    writeCareerStore(this.career);
+  }
+
+  private billDrop() {
+    this.breakFlash = 2.6;
+    if (this.practicing) {
+      this.message = "Practice drop. Nothing is saved.";
+      return;
     }
+    const result = resolveFailure(this.career, "drop");
+    this.adopt(result.state);
+    this.writeCareer();
+    this.message = result.message;
+  }
+
+  private billFlip() {
+    if (this.flipBilled) return;
+    this.flipBilled = true;
+    this.breakFlash = 2.6;
+    if (this.practicing) {
+      this.message = "Practice tip. Nothing is saved.";
+      return;
+    }
+    const result = resolveFailure(this.career, "tip");
+    this.adopt(result.state);
+    this.writeCareer();
+    this.message = result.message;
   }
 
   tuning() {
@@ -510,7 +552,8 @@ export class CraneSim {
   }
 
   step(dt: number, actions: Actions) {
-    if (dt <= 0) return;
+    if (dt <= 0 || this.careerBeat || this.boardPause) return;
+    if (this.toastLeft > 0) this.toastLeft = Math.max(0, this.toastLeft - dt);
     this.stepTruck(dt, actions);
     if (this.state !== "lifting" || this.flipped) {
       this.safetyLock = false;
@@ -772,6 +815,10 @@ export class CraneSim {
       this.crawlerOnSite = true;
       this.speed = 0;
       this.state = "driving";
+      if (!this.practicing) {
+        this.career = { ...this.career, crawlerOnSite: true };
+        this.writeCareer();
+      }
       this.message = "Crawler is on the ground. Stop, then LIFT. The lowboy waits.";
       return;
     }
@@ -832,6 +879,7 @@ export class CraneSim {
 
   recover() {
     this.flipped = false;
+    this.flipBilled = false;
     this.roll = 0;
     this.rollRate = 0;
     this.leanSign = 0;
@@ -951,7 +999,7 @@ export class CraneSim {
         if (Math.abs(this.roll) > 0.62) {
           this.flipped = true;
           this.speed = 0;
-          this.message = "Truck rolled. Corner was too fast.";
+          this.billFlip();
         }
       }
     } else {
@@ -978,10 +1026,10 @@ export class CraneSim {
         : "Crawler is on the lowboy. Drive to the marked pad.";
       return;
     }
-    if (!this.usesOutriggers()) this.message = `${this.contractLabel()}. Boom is down. Stop, then LIFT.`;
+    if (!this.usesOutriggers()) this.message = "Boom is down. Stop, then LIFT.";
     else if (this.deployDir > 0) this.message = "Outriggers out, then pads down.";
     else if (this.deployDir < 0) this.message = "Pads coming up. Boom folding over the cab.";
-    else if (padsClear) this.message = `${this.contractLabel()}. Boom is stowed. Stop, then DEPLOY.`;
+    else if (padsClear) this.message = "Boom is stowed. Stop, then DEPLOY.";
     else this.message = this.gateReason();
   }
 
@@ -1146,9 +1194,8 @@ export class CraneSim {
     this.attached = false;
     this.airborne = false;
     this.phase = "broke";
-    this.breakFlash = 1.5;
     this.impulse = 0.7;
-    this.message = "Crane fell over.";
+    this.billFlip();
     this.cy = this.loadRest();
     this.cx = this.hx;
     this.cz = this.hz;
@@ -1190,7 +1237,6 @@ export class CraneSim {
     this.attached = false;
     this.airborne = false;
     this.phase = "broke";
-    this.breakFlash = 1.5;
     this.impulse = 0.7;
     this.cy = this.loadRest();
     this.cx = this.hx;
@@ -1200,56 +1246,51 @@ export class CraneSim {
       this.roll = Math.sign(this.side || 1) * 1.2;
       this.rollRate = 0;
       this.speed = 0;
-      this.message = "Heavy load pulled the crane over.";
+      this.billFlip();
       return;
     }
     this.leanSign = 0;
-    this.message = "Wire snapped.";
+    this.billDrop();
   }
 
   private succeed() {
-    this.score += 1;
-    const spec = this.contractSpec();
-    const raw = CALLS[this.contract % CALLS.length]!;
-    const matched = this.load === spec.kind;
-    let pay = SIZE_PAY[this.load];
     const wasRoof = this.roofActive;
-    if (matched) pay = spec.pay;
-    if (matched && wasRoof) {
-      this.roofActive = false;
-      this.roofDone = true;
-      this.applyContract();
-    } else if (matched) {
-      if (this.leg === 0 && raw.follow) {
-        this.leg = 1;
-        this.applyContract();
-      } else {
-        this.leg = 0;
-        this.contract += 1;
-        this.applyContract();
+    if (this.practicing) {
+      this.score += 1;
+      if (this.score > this.best) {
+        this.best = this.score;
+        writeBest(this.best);
       }
-      if (!this.roofDone) this.roofActive = true;
+      this.park(true);
+      this.attached = false;
+      this.airborne = false;
+      this.leanSign = 0;
+      this.phase = "done";
+      this.deliverFlash = 1.4;
+      this.message = wasRoof ? "Practice set on the building. Nothing is saved." : "Practice set. Nothing is saved.";
+      this.cy = this.loadRest();
+      this.cx = PADS[this.to]!.x;
+      this.cz = PADS[this.to]!.z;
+      return;
     }
-    this.cash += pay;
-    this.reputation += 1;
+    const result = resolveSet(this.career, this.load);
+    this.adopt(result.state);
+    this.applyContract();
     this.writeCareer();
-    if (this.score > this.best) {
-      this.best = this.score;
-      writeBest(this.best);
+    if (result.matched) {
+      this.score += 1;
+      if (this.score > this.best) {
+        this.best = this.score;
+        writeBest(this.best);
+      }
     }
     this.park(true);
     this.attached = false;
     this.airborne = false;
     this.leanSign = 0;
     this.phase = "done";
-    this.deliverFlash = 1.15;
-    this.message = matched
-      ? wasRoof
-        ? `Beam is on the building. +$${pay}. Next: ${this.contractLabel()}`
-        : this.leg === 1
-          ? `First half set. +$${pay}. Now ${this.contractLabel()}`
-          : `Call done. +$${pay}. Next: ${this.contractLabel()}`
-      : `Not the call. +$${pay}. Still need ${this.contractLabel()}`;
+    this.deliverFlash = result.matched ? 2.3 : 2;
+    this.message = result.message;
     this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;
@@ -1261,9 +1302,8 @@ export class CraneSim {
     this.airborne = false;
     this.leanSign = 0;
     this.phase = "broke";
-    this.breakFlash = 1.35;
     this.impulse = 0.45;
-    this.message = "Wire snapped.";
+    this.billDrop();
     this.cy = this.loadRest();
     this.cx = this.hx;
     this.cz = this.hz;
