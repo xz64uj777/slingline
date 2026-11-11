@@ -63,6 +63,9 @@ const CALLS: {
 
 const SIZE_PAY: Record<LoadKind, number> = { crate: 250, beam: 700, heavy: 1600 };
 
+const ROOF = { x: 36, z: -32, y: 13.11 };
+const FLOOR = { x: 36, z: -32, y: 6.71 };
+
 export type CraneId = "rental" | "yard" | "heavy" | "lattice" | "tower" | "crawler";
 
 const CRANES: Record<
@@ -81,12 +84,14 @@ export const CRANE_CHOICES: { id: CraneId; label: string }[] = (
   Object.entries(CRANES) as [CraneId, (typeof CRANES)[CraneId]][]
 ).map(([id, spec]) => ({ id, label: spec.label }));
 
-function readCareer(): { cash: number; crane: CraneId; reputation: number } {
+function readCareer(): { cash: number; crane: CraneId; reputation: number; roofDone: boolean; roofActive: boolean } {
   try {
     const raw = JSON.parse(localStorage.getItem(CAREER_KEY) || "") as {
       cash?: number;
       crane?: CraneId;
       reputation?: number;
+      roofDone?: boolean;
+      roofActive?: boolean;
     };
     const crane: CraneId =
       raw.crane === "yard" ||
@@ -100,9 +105,11 @@ function readCareer(): { cash: number; crane: CraneId; reputation: number } {
       cash: Number.isFinite(raw.cash) ? Math.max(0, raw.cash as number) : 0,
       crane,
       reputation: Number.isFinite(raw.reputation) ? Math.max(0, raw.reputation as number) : 0,
+      roofDone: raw.roofDone === true,
+      roofActive: raw.roofActive === true,
     };
   } catch {
-    return { cash: 0, crane: "rental", reputation: 0 };
+    return { cash: 0, crane: "rental", reputation: 0, roofDone: false, roofActive: false };
   }
 }
 
@@ -189,6 +196,8 @@ export class CraneSim {
   best = 0;
   cash = 0;
   reputation = 0;
+  roofDone = false;
+  roofActive = false;
   crane: CraneId = "rental";
   message = "Lower the hook onto the crate.";
   warn = false;
@@ -235,6 +244,9 @@ export class CraneSim {
     this.cash = career.cash;
     this.crane = career.crane;
     this.reputation = career.reputation;
+    this.roofDone = career.roofDone;
+    this.roofActive = career.roofActive && !career.roofDone;
+    if (!this.roofDone) this.roofActive = true;
     this.applyCrane();
     this.stockYard(true);
     if (this.crane === "crawler") this.beginHaul();
@@ -314,6 +326,15 @@ export class CraneSim {
   }
 
   private contractSpec() {
+    if (this.roofActive) {
+      const deck = this.roofDeck();
+      return {
+        title: deck.y > 10 ? "ROOF SET" : "FLOOR SET",
+        kind: "beam" as LoadKind,
+        pad: 0,
+        pay: deck.y > 10 ? 2400 : 1400,
+      };
+    }
     const spec = CALLS[this.contract % CALLS.length]!;
     const lap = Math.floor(this.contract / CALLS.length);
     const bump = lap * 200;
@@ -361,11 +382,22 @@ export class CraneSim {
               : "Crawler is yours. It sits on tracks.";
   }
 
+  roofDeck() {
+    const reach = this.mountY + this.baseLen + this.extendMax;
+    return reach >= 20 ? ROOF : FLOOR;
+  }
+
   private writeCareer() {
     try {
       localStorage.setItem(
         CAREER_KEY,
-        JSON.stringify({ cash: this.cash, crane: this.crane, reputation: this.reputation }),
+        JSON.stringify({
+          cash: this.cash,
+          crane: this.crane,
+          reputation: this.reputation,
+          roofDone: this.roofDone,
+          roofActive: this.roofActive,
+        }),
       );
     } catch {
       /* private mode */
@@ -1054,7 +1086,17 @@ export class CraneSim {
     }
 
     const limit = this.load === "heavy" ? this.tuning().impact / 1.6 : this.tuning().impact;
-    if (!gentle && this.airborne && bottom < 3.4 && this.hookSpeed > limit * 0.72) this.warn = true;
+    if (!gentle && this.airborne && bottom < 3.4 && !this.roofActive && this.hookSpeed > limit * 0.72) this.warn = true;
+
+    if (this.roofActive && this.airborne) {
+      const deck = this.roofDeck();
+      const flat = Math.hypot(this.hx - deck.x, this.hz - deck.z);
+      if (flat < 3.6 && bottom < deck.y + 0.45 && bottom > deck.y - 1.1) {
+        if (!gentle && this.hookSpeed > limit) this.fail();
+        else this.succeed();
+        return;
+      }
+    }
 
     if (this.airborne && bottom <= 0.08) {
       const pad = PADS[this.to]!;
@@ -1067,7 +1109,11 @@ export class CraneSim {
 
     this.applyTilt(dt);
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
-      this.message = "Set it inside the amber ring.";
+      this.message = this.roofActive
+        ? this.roofDeck().y > 10
+          ? "Set the beam on the roof ring."
+          : "Set the beam on the floor ring."
+        : "Set it inside the amber ring.";
     }
   }
 
@@ -1160,8 +1206,13 @@ export class CraneSim {
     const raw = CALLS[this.contract % CALLS.length]!;
     const matched = this.load === spec.kind;
     let pay = SIZE_PAY[this.load];
-    if (matched) {
-      pay = spec.pay;
+    const wasRoof = this.roofActive;
+    if (matched) pay = spec.pay;
+    if (matched && wasRoof) {
+      this.roofActive = false;
+      this.roofDone = true;
+      this.applyContract();
+    } else if (matched) {
       if (this.leg === 0 && raw.follow) {
         this.leg = 1;
         this.applyContract();
@@ -1170,6 +1221,7 @@ export class CraneSim {
         this.contract += 1;
         this.applyContract();
       }
+      if (!this.roofDone) this.roofActive = true;
     }
     this.cash += pay;
     this.reputation += 1;
@@ -1185,9 +1237,11 @@ export class CraneSim {
     this.phase = "done";
     this.deliverFlash = 1.15;
     this.message = matched
-      ? this.leg === 1
-        ? `First half set. +$${pay}. Now ${this.contractLabel()}`
-        : `Call done. +$${pay}. Next: ${this.contractLabel()}`
+      ? wasRoof
+        ? `Beam is on the building. +$${pay}. Next: ${this.contractLabel()}`
+        : this.leg === 1
+          ? `First half set. +$${pay}. Now ${this.contractLabel()}`
+          : `Call done. +$${pay}. Next: ${this.contractLabel()}`
       : `Not the call. +$${pay}. Still need ${this.contractLabel()}`;
     this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;

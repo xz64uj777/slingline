@@ -526,15 +526,18 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     });
 
     const src = PADS[sim.from]!;
+    const deck = sim.roofActive ? sim.roofDeck() : null;
     const dst = PADS[sim.to]!;
     sourceRing.position.x = src.x;
     sourceRing.position.z = src.z;
-    targetRing.position.x = dst.x;
-    targetRing.position.z = dst.z;
+    targetRing.position.set(deck ? deck.x : dst.x, deck ? deck.y + 0.08 : 0.04, deck ? deck.z : dst.z);
     const edge = 2.3;
-    const sign = dst.x >= 0 ? 1 : -1;
-    pole.position.set(dst.x + sign * edge, 1.6, dst.z);
-    beacon.position.set(dst.x + sign * edge, 3.5, dst.z);
+    const sign = (deck ? deck.x : dst.x) >= 0 ? 1 : -1;
+    const px = (deck ? deck.x : dst.x) + (deck ? -4.2 : sign * edge);
+    const pz = deck ? deck.z : dst.z;
+    const py = deck ? deck.y : 0;
+    pole.position.set(px, py + 1.6, pz);
+    beacon.position.set(px, py + 3.5, pz);
     beacon.rotation.y += frameDt * 0.8;
 
     const fx = -Math.sin(sim.yaw);
