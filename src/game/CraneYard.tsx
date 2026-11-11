@@ -208,7 +208,10 @@ export function CraneYard() {
                 : "DEPLOY";
       }
       if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
-      if (hookBtnRef.current) hookBtnRef.current.style.display = sim.hookReady && !sim.attached ? "block" : "none";
+      if (hookBtnRef.current) {
+        hookBtnRef.current.style.display = sim.attached || sim.hookReady ? "block" : "none";
+        hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : "HOOK";
+      }
       if (gapRef.current) {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
@@ -495,16 +498,7 @@ export function CraneYard() {
             >
               FILE SLINGLINE
             </button>
-            <button
-              ref={jobsRef}
-              type="button"
-              onClick={() => setBoardOpen(true)}
-              style={{ display: "none" }}
-              className="h-11 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg"
-            >
-              JOBS
-            </button>
-            {(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
+{(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -543,12 +537,13 @@ export function CraneYard() {
             ⚙
           </button>
           {settingsOpen ? (
-            <section className="max-h-[62dvh] w-[min(19rem,calc(100vw-1.5rem))] overflow-y-auto border border-primary bg-surface p-3 shadow-xl">
+            <section className="max-h-[62dvh] w-[min(17rem,calc(100vw-1.5rem))] overflow-y-auto border border-primary bg-surface p-2 text-xs shadow-xl">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="font-display text-xl tracking-wide">GAME OPTIONS</h2>
+                <h2 className="font-display text-base tracking-wide">GAME OPTIONS</h2>
                 <button type="button" onClick={() => setSettingsOpen(false)} className="min-h-10 border border-line px-3 font-display text-sm">CLOSE</button>
               </div>
-              <p className="mt-3 font-display text-xs tracking-widest text-muted">DIFFICULTY</p>
+              <button ref={jobsRef} type="button" onClick={() => setBoardOpen(true)} className="mt-2 min-h-9 w-full border border-primary bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-fg">JOBS &amp; CONTRACTS</button>
+              <p className="mt-2 font-display text-[10px] tracking-widest text-muted">DIFFICULTY</p>
               <div className="mt-1 grid grid-cols-2 gap-2">
                 <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Assisted swing" />
                 <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
@@ -591,9 +586,14 @@ export function CraneYard() {
       <button
         ref={hookBtnRef}
         type="button"
-        onClick={() => simRef.current?.requestHook()}
+        onClick={() => {
+          const sim = simRef.current;
+          if (!sim) return;
+          if (sim.attached) sim.requestRelease();
+          else sim.requestHook();
+        }}
         style={{ display: "none" }}
-        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-16 min-w-28 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-4 font-display text-2xl tracking-wide text-fg"
+        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-12 min-w-24 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg"
       >
         HOOK
       </button>
