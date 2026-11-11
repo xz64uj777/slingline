@@ -776,6 +776,21 @@ export class CraneSim {
     this.message = this.limitState === "ok" ? `${noun} on the hook. Set it in the amber ring.` : this.message;
   }
 
+  requestRelease() {
+    if (!this.attached) return;
+    this.park(false);
+    this.attached = false;
+    this.airborne = false;
+    this.leanSign = 0;
+    this.phase = "seek";
+    this.limitRatio = 0;
+    this.limitState = "ok";
+    this.limitHold = 0;
+    this.warn = false;
+    this.shiftRoll(0, 0.35);
+    this.message = "Load released on the ground. Shorten the boom or reposition before hooking again.";
+  }
+
   private updateApproach() {
     this.hookGap = 99;
     this.hookReady = false;
@@ -794,7 +809,7 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      this.hookReady = flat < 2.1 && Math.abs(this.hy - idealY) < 1.05;
+      this.hookReady = flat < 1.25 && Math.abs(this.hy - idealY) < 0.55;
       this.load = piece.kind;
     }
   }
