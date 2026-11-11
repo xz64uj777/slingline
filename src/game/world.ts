@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PADS, type CraneSim } from "@/game/sim";
+import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
 
 export type CamView = "chase" | "cab" | "hook" | "high" | "wide";
 
@@ -313,6 +313,37 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   officeGlass.position.set(-18, 1.6, 26.12);
   scene.add(office, officeGlass);
 
+  const lowboy = new THREE.Group();
+  lowboy.visible = false;
+  scene.add(lowboy);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.1, 3.2), steel);
+  cab.position.set(0, 1.45, -5.2);
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.28, 12), steelDark);
+  bed.position.set(0, 0.85, 4.2);
+  const neck = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 3.2), steelDark);
+  neck.position.set(0, 0.95, -1.6);
+  lowboy.add(cab, bed, neck);
+  for (const [x, z] of [
+    [1.15, -5.6],
+    [-1.15, -5.6],
+    [1.2, 1.2],
+    [-1.2, 1.2],
+    [1.2, 6.4],
+    [-1.2, 6.4],
+    [1.2, 8.6],
+    [-1.2, 8.6],
+  ] as const) {
+    const hub = new THREE.Group();
+    hub.position.set(x, 0.48, z);
+    hub.add(new THREE.Mesh(wheelGeo, steelDark));
+    lowboy.add(hub);
+  }
+  const dropMark = new THREE.Mesh(new THREE.RingGeometry(5.2, 5.7, 28), ringAmber);
+  dropMark.rotation.x = -Math.PI / 2;
+  dropMark.position.set(LOWBOY_DROP.x, 0.05, LOWBOY_DROP.z);
+  dropMark.visible = false;
+  scene.add(dropMark);
+
   const rise = new THREE.Group();
   rise.position.set(40, 0, -32);
   scene.add(rise);
@@ -434,9 +465,20 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     counter.visible = sim.crane !== "rental";
     counter.scale.set(style.thick, style.thick, style.counter);
     hook.scale.setScalar(style.hook);
-    truck.position.set(sim.truckX, sim.flipped ? 0.2 : 0, sim.truckZ);
+    const origin = sim.rigOrigin();
+    truck.position.set(origin.x, origin.y, origin.z);
     truck.rotation.y = sim.heading;
-    truck.rotation.z = sim.roll;
+    truck.rotation.z = sim.hauling ? 0 : sim.roll;
+    const showHaul = sim.crane === "crawler" && (sim.hauling || sim.crawlerOnSite);
+    lowboy.visible = showHaul;
+    dropMark.visible = sim.hauling;
+    if (sim.hauling) {
+      lowboy.position.set(sim.truckX, 0, sim.truckZ);
+      lowboy.rotation.y = sim.heading;
+    } else if (showHaul) {
+      lowboy.position.set(sim.haulX, 0, sim.haulZ);
+      lowboy.rotation.y = sim.haulH;
+    }
     const spin = (sim.speed * frameDt) / 0.48;
     for (const wheel of wheels) wheel.rotation.x -= spin;
     for (const hub of frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;

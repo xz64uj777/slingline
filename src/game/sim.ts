@@ -26,6 +26,8 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: 40, z: -32, hx: 8, hz: 6.5 },
 ];
 
+export const LOWBOY_DROP = { x: 4, z: 10 };
+
 export const PADS: Pad[] = [
   { x: 0, z: -9 },
   { x: 17, z: -8 },
@@ -141,6 +143,11 @@ export class CraneSim {
   leanSign = 0;
   outrigger = 0;
   stow = 1;
+  hauling = false;
+  crawlerOnSite = false;
+  haulX = 0;
+  haulZ = 0;
+  haulH = 0;
   deployDir = 0;
   lateralG = 0;
   flipped = false;
@@ -230,6 +237,7 @@ export class CraneSim {
     this.reputation = career.reputation;
     this.applyCrane();
     this.stockYard(true);
+    if (this.crane === "crawler") this.beginHaul();
   }
 
   private applyCrane() {
@@ -244,7 +252,40 @@ export class CraneSim {
     this.applyCrane();
     if (this.extension > this.extendMax) this.extension = this.extendMax;
     this.writeCareer();
+    if (id === "crawler" && !this.crawlerOnSite) {
+      this.beginHaul();
+      return;
+    }
+    this.hauling = false;
     this.message = `${CRANES[id].label} ready.`;
+  }
+
+  private beginHaul() {
+    this.hauling = true;
+    this.crawlerOnSite = false;
+    this.state = "driving";
+    this.speed = 0;
+    this.truckX = 0;
+    this.truckZ = 36;
+    this.heading = 0;
+    this.yaw = 0;
+    this.roll = 0;
+    this.outrigger = 0;
+    this.stow = 1;
+    this.extension = 0;
+    this.boomPitch = 0.18;
+    this.message = "Crawler is on the lowboy. Drive to the marked pad, stop, then UNLOAD.";
+  }
+
+  private atDrop() {
+    return Math.hypot(this.truckX - LOWBOY_DROP.x, this.truckZ - LOWBOY_DROP.z) < 7;
+  }
+
+  rigOrigin() {
+    if (!this.hauling) return { x: this.truckX, y: this.flipped ? 0.2 : 0, z: this.truckZ };
+    const fx = -Math.sin(this.heading);
+    const fz = -Math.cos(this.heading);
+    return { x: this.truckX - fx * 8, y: 1.15, z: this.truckZ - fz * 8 };
   }
 
   usesOutriggers() {
@@ -350,10 +391,11 @@ export class CraneSim {
     const sH = Math.sin(this.heading);
     const cR = Math.cos(this.roll);
     const sR = Math.sin(this.roll);
+    const origin = this.rigOrigin();
     return {
-      x: this.truckX + cH * cR * lx - cH * sR * ly + sH * lz,
-      y: sR * lx + cR * ly,
-      z: this.truckZ - sH * cR * lx + sH * sR * ly + cH * lz,
+      x: origin.x + cH * cR * lx - cH * sR * ly + sH * lz,
+      y: origin.y + sR * lx + cR * ly,
+      z: origin.z - sH * cR * lx + sH * sR * ly + cH * lz,
     };
   }
 
@@ -668,6 +710,29 @@ export class CraneSim {
 
   requestDeploy() {
     if (this.flipped) return;
+    if (this.hauling) {
+      if (!this.bStopped()) {
+        this.message = "Stop the lowboy first.";
+        return;
+      }
+      if (!this.atDrop()) {
+        this.message = "The lowboy has to be on the marked pad.";
+        return;
+      }
+      const fx = -Math.sin(this.heading);
+      const fz = -Math.cos(this.heading);
+      this.haulX = this.truckX + fx * 14;
+      this.haulZ = this.truckZ + fz * 14;
+      this.haulH = this.heading;
+      this.truckX = LOWBOY_DROP.x;
+      this.truckZ = LOWBOY_DROP.z;
+      this.hauling = false;
+      this.crawlerOnSite = true;
+      this.speed = 0;
+      this.state = "driving";
+      this.message = "Crawler is on the ground. Stop, then LIFT. The lowboy waits.";
+      return;
+    }
     if (!this.usesOutriggers()) {
       if (this.state === "lifting") {
         this.state = "driving";
@@ -791,7 +856,7 @@ export class CraneSim {
     const pace = PACE_SCALE[this.pace];
 
     if (canDrive) {
-      const maxV = (this.mode === "hard" ? 11 : 9) * pace;
+      const maxV = (this.mode === "hard" ? 11 : 9) * pace * (this.hauling ? 0.62 : 1);
       const target = actions.trolley * maxV;
       const follow = 1 - Math.exp(-dt * (this.pace === "slow" ? 1.4 : this.mode === "easy" ? 2.2 : 1.15));
       this.speed += (target - this.speed) * follow;
@@ -855,7 +920,7 @@ export class CraneSim {
     }
 
     this.refreshGate();
-    const fold = this.state !== "lifting" && this.usesOutriggers();
+    const fold = this.hauling || (this.state !== "lifting" && this.usesOutriggers());
     const want = fold ? 1 : 0;
     this.stow += (want - this.stow) * Math.min(1, dt * 0.55);
     if (fold) {
@@ -864,6 +929,12 @@ export class CraneSim {
     }
     if (this.flipped) return;
     if (this.state === "lifting") return;
+    if (this.hauling) {
+      this.message = this.atDrop()
+        ? "Lowboy is on the pad. UNLOAD."
+        : "Crawler is on the lowboy. Drive to the marked pad.";
+      return;
+    }
     if (!this.usesOutriggers()) this.message = `${this.contractLabel()}. Stop, then LIFT.`;
     else if (this.deployDir > 0) this.message = "Outriggers out, then pads down.";
     else if (this.deployDir < 0) this.message = "Pads coming up. Boom folding over the cab.";
