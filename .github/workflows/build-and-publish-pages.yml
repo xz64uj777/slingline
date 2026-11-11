@@ -87,6 +87,8 @@ jobs:
           writeFileSync(htmlPath, html);
           console.log('Published client bundles:', index, routes);
           NODE
+          # Publish an index-based fallback for direct GitHub Pages refreshes.
+          cp ../site/index.html ../site/404.html
           cd ../site
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
