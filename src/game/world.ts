@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
 import { dressSite } from "@/game/scenery";
+import { applyCraneLook, createCraneModel } from "@/game/rig-model";
 
 export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck";
 
@@ -110,130 +111,24 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(gridPts, 3));
   scene.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x5c6770 })));
 
-  const truck = new THREE.Group();
-  truck.rotation.order = "YZX";
+  const craneModel = createCraneModel();
+  const { truck, slew, boom, tip, mast, wheels, rigs } = craneModel;
   scene.add(truck);
 
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.7, 7.4), steelDark);
-  chassis.position.set(0, 0.75, 1.1);
-  truck.add(chassis);
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(2.35, 1.25, 2.1), steel);
-  nose.position.set(0, 1.55, 3.5);
-  truck.add(nose);
-  const wheels: THREE.Mesh[] = [];
-  const frontHubs: THREE.Group[] = [];
-  const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 10);
-  wheelGeo.rotateZ(Math.PI / 2);
-  for (const [x, z] of [
-    [1.25, 2.7],
-    [-1.25, 2.7],
-    [1.25, -1.5],
-    [-1.25, -1.5],
-  ] as const) {
-    const hub = new THREE.Group();
-    hub.position.set(x, 0.48, z);
-    const wheel = new THREE.Mesh(wheelGeo, steelDark);
-    hub.add(wheel);
-    truck.add(hub);
-    wheels.push(wheel);
-    if (z > 0) frontHubs.push(hub);
-  }
-  const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2e32, metalness: 0.35, roughness: 0.7 });
-  const tracks = new THREE.Group();
-  tracks.visible = false;
-  truck.add(tracks);
-  for (const side of [-1, 1]) {
-    const tread = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.5, 7.6), trackMat);
-    tread.position.set(side * 1.45, 0.32, 0.8);
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.12, 7.8), steelDark);
-    shoe.position.set(side * 1.45, 0.08, 0.8);
-    tracks.add(tread, shoe);
-  }
-  const rigs: { beam: THREE.Mesh; pad: THREE.Mesh; sign: number }[] = [];
-  for (const [x, z] of [
-    [1.15, 2.3],
-    [-1.15, 2.3],
-    [1.15, -1.2],
-    [-1.15, -1.2],
-  ] as const) {
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.12), amber);
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), steel);
-    const sign = Math.sign(x);
-    beam.position.set(x + sign * 0.4, 0.55, z);
-    pad.position.set(x + sign * 0.8, 0.4, z);
-    truck.add(beam, pad);
-    rigs.push({ beam, pad, sign });
-  }
-
-  const mast = new THREE.Group();
-  mast.visible = false;
-  mast.position.set(0, 0, -1.6);
-  truck.add(mast);
-  const postGeo = new THREE.BoxGeometry(0.28, 16, 0.28);
-  for (const [x, z] of [
-    [-0.7, -0.7],
-    [0.7, -0.7],
-    [-0.7, 0.7],
-    [0.7, 0.7],
-  ] as const) {
-    const post = new THREE.Mesh(postGeo, steel);
-    post.position.set(x, 8, z);
-    mast.add(post);
-  }
-  const bandGeo = new THREE.BoxGeometry(1.7, 0.12, 0.12);
-  const bandGeoZ = new THREE.BoxGeometry(0.12, 0.12, 1.7);
-  for (let y = 2; y <= 14; y += 3) {
-    const a = new THREE.Mesh(bandGeo, steelDark);
-    const b = new THREE.Mesh(bandGeo, steelDark);
-    const c = new THREE.Mesh(bandGeoZ, steelDark);
-    const d = new THREE.Mesh(bandGeoZ, steelDark);
-    a.position.set(0, y, -0.7);
-    b.position.set(0, y, 0.7);
-    c.position.set(-0.7, y, 0);
-    d.position.set(0.7, y, 0);
-    mast.add(a, b, c, d);
-  }
-  const base = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.6, 4.2), steelDark);
-  base.position.y = 0.3;
-  mast.add(base);
-
-  const boomMat = new THREE.MeshStandardMaterial({ color: 0xc4a574, metalness: 0.25, roughness: 0.55 });
-  const boomDark = new THREE.MeshStandardMaterial({ color: 0x8d8474, metalness: 0.3, roughness: 0.5 });
-  const counterMat = new THREE.MeshStandardMaterial({ color: 0x2a2e32, metalness: 0.4, roughness: 0.45 });
-  const slew = new THREE.Group();
-  slew.position.set(0, 2.15, -1.6);
-  truck.add(slew);
-  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.85, 0.45, 10), steelDark);
-  pedestal.position.y = 0.2;
-  slew.add(pedestal);
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.5), counterMat);
-  counter.position.set(0, 0.55, 1.15);
-  counter.visible = false;
-  slew.add(counter);
-  const boom = new THREE.Group();
-  slew.add(boom);
-  const mainTube = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 8), boomMat);
-  mainTube.position.set(0, 0.15, -4);
-  boom.add(mainTube);
-  const extension = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 8), boomDark);
-  extension.position.set(0, 0.15, -4);
-  boom.add(extension);
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 8), boomMat);
-  rail.position.set(0.28, 0.34, -4);
-  rail.visible = false;
-  boom.add(rail);
-  const tip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.2, 0.36), amber);
-  boom.add(tip);
-
-  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1, 6), ropeMat);
+  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeMat);
   scene.add(rope);
 
   const hook = new THREE.Group();
-  const block = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.4, 0.55), amber);
-  const throat = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.06, 8, 14, Math.PI), steel);
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.28, 0.36), steelDark);
+  const cheek = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 10), amber);
+  cheek.rotation.z = Math.PI / 2;
+  cheek.position.x = 0.16;
+  const cheek2 = cheek.clone();
+  cheek2.position.x = -0.16;
+  const throat = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.045, 8, 14, Math.PI), steel);
   throat.rotation.z = Math.PI;
-  throat.position.y = -0.22;
-  hook.add(block, throat);
+  throat.position.y = -0.28;
+  hook.add(block, cheek, cheek2, throat);
   hook.scale.setScalar(0.55);
   scene.add(hook);
 
@@ -315,6 +210,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   officeGlass.position.set(-18, 1.6, 26.12);
   scene.add(office, officeGlass);
 
+  const lowboyWheel = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 10);
+  lowboyWheel.rotateZ(Math.PI / 2);
   const lowboy = new THREE.Group();
   lowboy.visible = false;
   scene.add(lowboy);
@@ -337,7 +234,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   ] as const) {
     const hub = new THREE.Group();
     hub.position.set(x, 0.48, z);
-    hub.add(new THREE.Mesh(wheelGeo, steelDark));
+    hub.add(new THREE.Mesh(lowboyWheel, steelDark));
     lowboy.add(hub);
   }
   const dropMark = new THREE.Mesh(new THREE.RingGeometry(5.2, 5.7, 28), ringAmber);
@@ -434,57 +331,15 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
     slew.position.y = mount;
     mast.scale.y = sim.crane === "tower" ? 0.04 + (1 - sim.stow) * 0.96 : 1;
-    const onTracks = sim.crane === "crawler";
-    tracks.visible = onTracks;
-    nose.visible = !onTracks;
-    for (const wheel of wheels) wheel.visible = !onTracks;
-    mast.visible = sim.crane === "tower";
     boom.rotation.x = sim.boomPitch;
-    const style =
-      sim.crane === "crawler"
-        ? { thick: 1.85, color: 0xe3a23a, ext: 0x8a5a12, counter: 2.6, hook: 0.72 }
-        : sim.crane === "tower"
-          ? { thick: 1.15, color: 0xf4efe4, ext: 0xc9a227, counter: 1.3, hook: 0.58 }
-          : sim.crane === "lattice"
-            ? { thick: 0.9, color: 0xe07a2f, ext: 0x8a4e16, counter: 2.2, hook: 0.64 }
-            : sim.crane === "heavy"
-              ? { thick: 1.6, color: 0xb7c0c8, ext: 0x4e565c, counter: 1.5, hook: 0.7 }
-              : sim.crane === "yard"
-                ? { thick: 1.05, color: 0xd7dee6, ext: 0x8d98a4, counter: 0.7, hook: 0.62 }
-                : { thick: 0.7, color: 0xc4a574, ext: 0x8a7d68, counter: 0.2, hook: 0.55 };
-    boomMat.color.setHex(style.color);
-    boomDark.color.setHex(style.ext);
-    const base = sim.baseLen;
-    const lattice = sim.crane === "lattice";
     const packed = sim.state !== "lifting";
-    const shown = packed ? sim.travelLength() : base + sim.extension;
-    const span = packed || !lattice ? (packed ? shown : base) : shown;
-    const overlap = Math.min(3.4, base * 0.5);
+    const shown = packed ? sim.travelLength() : sim.baseLen + sim.extension;
+    const overlap = Math.min(3.4, sim.baseLen * 0.5);
     const slide = packed ? 0.2 : Math.max(0.8, sim.extension + overlap);
-    const spread = lattice ? 0.26 : 0;
-    mainTube.scale.set(style.thick, style.thick, span / 8);
-    mainTube.position.set(lattice ? -spread : 0, 0.15, -span / 2);
-    rail.visible = lattice;
-    rail.scale.set(style.thick, style.thick, shown / 8);
-    rail.position.set(spread, 0.42, -shown / 2);
-    extension.visible = !packed;
-    extension.scale.set(style.thick * 0.72, style.thick * 0.72, slide / 8);
-    extension.position.set(0, 0.15, -shown + slide / 2);
-    tip.scale.set(style.thick, style.thick, style.thick);
-    tip.position.set(0, 0.15, -shown);
-    pedestal.scale.set(style.thick, 0.7 + style.thick * 0.4, style.thick);
-    if (sim.crane === "tower") {
-      pedestal.position.y = 0.1;
-    } else {
-      const deck = 1.12;
-      const gap = Math.max(0.42, sim.mountY - deck);
-      pedestal.scale.y = gap / 0.45;
-      pedestal.position.y = -gap / 2;
-    }
-    counter.visible = sim.crane !== "rental";
-    const travelWeight = packed ? 0.35 : 1;
-    counter.scale.set(style.thick, style.thick * travelWeight, style.counter * travelWeight);
-    hook.scale.setScalar(style.hook);
+    applyCraneLook(craneModel, sim.crane, shown, packed, sim.stow, slide);
+    const hookScale =
+      sim.crane === "crawler" ? 0.72 : sim.crane === "heavy" ? 0.7 : sim.crane === "lattice" ? 0.64 : sim.crane === "yard" ? 0.6 : sim.crane === "tower" ? 0.58 : 0.5;
+    hook.scale.setScalar(hookScale);
     const origin = sim.rigOrigin();
     truck.position.set(origin.x, origin.y, origin.z);
     truck.rotation.y = face;
@@ -501,7 +356,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     }
     const spin = (sim.speed * frameDt) / 0.48;
     for (const wheel of wheels) wheel.rotation.x -= spin;
-    for (const hub of frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;
+    for (const hub of craneModel.frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;
     const showPads = sim.crane !== "crawler";
     const reach = Math.min(1, sim.outrigger / 0.57);
     const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
