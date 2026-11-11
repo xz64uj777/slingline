@@ -51,6 +51,7 @@ export function CraneYard() {
   const hookBtnRef = useRef<HTMLButtonElement>(null);
   const gapRef = useRef<HTMLParagraphElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
+  const swayWrapRef = useRef<HTMLDivElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
   const downRef = useRef<HTMLButtonElement>(null);
@@ -114,7 +115,11 @@ export function CraneYard() {
       if (cashRef.current) cashRef.current.textContent = `${sim.craneLabel()}  $${sim.cash}`;
       if (companyRef.current) companyRef.current.textContent = sim.companyName().toUpperCase();
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
-      if (coachRef.current) coachRef.current.textContent = sim.message;
+      if (coachRef.current) {
+        coachRef.current.textContent = sim.message;
+        const idle = sim.message.startsWith("Hook the crate");
+        coachRef.current.style.display = idle ? "none" : "block";
+      }
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
       if (limitRef.current) {
         const pct = Math.round(sim.limitRatio * 100);
@@ -155,6 +160,10 @@ export function CraneYard() {
         const scale = mag > 2.2 ? 2.2 / mag : 1;
         dot.style.transform = `translate(${sim.side * scale * reach}px, ${-sim.along * scale * reach}px)`;
         dot.dataset.level = sim.swayDeg < 8 ? "ok" : sim.swayDeg < 15 ? "warn" : "hot";
+      }
+      if (swayWrapRef.current) {
+        const show = sim.state === "lifting" && sim.swayDeg > 3;
+        swayWrapRef.current.style.display = show ? "block" : "none";
       }
       const hot = sim.warn ? "hold-hot" : "";
       if (upRef.current) upRef.current.classList.toggle("hold-hot", hot === "hold-hot");
@@ -309,6 +318,22 @@ export function CraneYard() {
           >
             BUY YARD $500
           </button>
+          {playing ? (
+            <div className="mt-2 border-t border-line pt-2 font-display text-sm tracking-wide text-fg">
+              <p>
+                SWAY <span ref={swayNumRef}>0°</span>
+              </p>
+              <p>
+                LIMIT <span ref={limitRef} data-level="ok" className="limit-read">0%</span>
+              </p>
+              <p>
+                <span ref={meterRef}>SPEED</span> <span ref={speedRef}>0.0</span>
+              </p>
+              <div ref={swayWrapRef} className="sway-well ml-auto mt-2" style={{ display: "none" }}>
+                <span ref={dotRef} className="sway-dot" />
+              </div>
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -319,26 +344,16 @@ export function CraneYard() {
       />
 
       {playing ? (
-        <div className="pointer-events-none absolute inset-x-0 top-24 flex flex-col items-center gap-2 px-3">
-          <p ref={coachRef} className="max-w-sm bg-surface px-3 py-2 text-center text-base text-fg">
+        <div className="pointer-events-none absolute left-3 top-28 flex max-w-[16rem] flex-col items-start gap-2">
+          <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Lower the hook onto the crate.
           </p>
           <p
             ref={gapRef}
             style={{ display: "none" }}
-            className="bg-surface px-3 py-2 text-center font-display text-lg tracking-wide text-fg"
+            className="bg-surface px-3 py-2 text-left font-display text-lg tracking-wide text-fg"
           >
             0.0 m
-          </p>
-          <div className="sway-well">
-            <span ref={dotRef} className="sway-dot" />
-          </div>
-          <p className="bg-surface px-3 py-1 font-display text-base tracking-wide text-fg">
-            SWAY <span ref={swayNumRef} className="text-fg">0°</span>
-            <span className="mx-2 text-steel">LIMIT</span>
-            <span ref={limitRef} data-level="ok" className="limit-read text-fg">0%</span>
-            <span className="px-2 text-line">|</span>
-            <span ref={meterRef}>SPEED</span> <span ref={speedRef} className="text-fg">0.0</span>
           </p>
           <button
             type="button"

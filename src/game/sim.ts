@@ -829,6 +829,7 @@ export class CraneSim {
 
   private updateJob(dt: number) {
     this.warn = false;
+    if (!this.attached && !this.flipped) this.shiftRoll(0, dt);
     if (this.phase === "broke" || this.phase === "done") return;
     if (!this.attached) this.updateApproach();
     this.updateChart(dt);
