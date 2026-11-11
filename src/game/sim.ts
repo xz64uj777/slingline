@@ -809,7 +809,7 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      this.hookReady = flat < 1.25 && Math.abs(this.hy - idealY) < 0.55;
+      this.hookReady = flat < 0.35 && Math.abs(this.hy - idealY) < 0.18;
       this.load = piece.kind;
     }
   }
