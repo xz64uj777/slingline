@@ -47,8 +47,29 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth=1 --branch gh-pages https://github.com/xz64uj777/slingline.git ../site
-          test -f ../site/index.html
           test -d .vercel/output/static/assets
+          npx vite preview --host 127.0.0.1 --port 8081 > /tmp/slingline-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+          RENDERED=false
+          for attempt in $(seq 1 30); do
+            for route in /slingline/ /; do
+              if curl -fsS "http://127.0.0.1:8081$route" -o ../site/index.html; then
+                if grep -q "TOUCH SENSITIVITY" ../site/index.html; then
+                  RENDERED=true
+                  break
+                fi
+              fi
+            done
+            if [ "$RENDERED" = true ]; then break; fi
+            sleep 2
+          done
+          if [ "$RENDERED" != true ]; then
+            echo "Fresh SSR HTML did not contain the updated touch controls"
+            cat /tmp/slingline-preview.log
+            exit 1
+          fi
+          echo "Rendered fresh SSR HTML with touch sensitivity controls"
           cp -a .vercel/output/static/. ../site/
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
