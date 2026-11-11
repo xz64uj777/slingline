@@ -43,7 +43,7 @@ jobs:
       - name: Publish fresh client assets into Pages site
         working-directory: source
         env:
-          GITHUB_TOKEN: \${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git clone --depth=1 --branch gh-pages https://github.com/xz64uj777/slingline.git ../site
