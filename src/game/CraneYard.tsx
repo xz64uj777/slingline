@@ -21,6 +21,7 @@ import {
   setTouchAxes,
   setTouchExtend,
   setTouchHoist,
+  setTouchSensitivity,
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
 import { limitAlarm } from "@/game/alarm";
@@ -43,6 +44,7 @@ export function CraneYard() {
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
+  const [sensitivity, setSensitivity] = useState<"low" | "normal" | "high">("normal");
   const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
@@ -610,6 +612,12 @@ export function CraneYard() {
               <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
               <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Yard pace" />
               <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Full travel" />
+            </div>
+            <p className="mt-3 font-display text-xs tracking-widest text-muted">TOUCH SENSITIVITY</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <ModeButton active={sensitivity === "low"} onClick={() => { setSensitivity("low"); setTouchSensitivity(0.75); }} label="Low" detail="Fine movement" />
+              <ModeButton active={sensitivity === "normal"} onClick={() => { setSensitivity("normal"); setTouchSensitivity(1); }} label="Normal" detail="Balanced" />
+              <ModeButton active={sensitivity === "high"} onClick={() => { setSensitivity("high"); setTouchSensitivity(1.3); }} label="High" detail="Faster response" />
             </div>
             <p className="mt-4 font-display text-xs tracking-widest text-muted">PRACTICE A CRANE · NOT SAVED</p>
             <div className="mt-2 grid grid-cols-3 gap-2">
