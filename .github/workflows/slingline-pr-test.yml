@@ -1,0 +1,51 @@
+name: Slingline PR test build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "server/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - ".github/workflows/slingline-pr-test.yml"
+  push:
+    branches: [improve/mobile-pinch-zoom]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slingline-pr-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out PR source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build production bundle
+        run: npm run build
+      - name: Upload production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: slingline-pr3-build
+          path: |
+            .output/**
+            dist/**
+          if-no-files-found: error
+          retention-days: 7
