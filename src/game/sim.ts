@@ -24,7 +24,6 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: -26, z: 12, hx: 1.5, hz: 3.3 },
   { x: -18, z: 24, hx: 3.4, hz: 2.4 },
   { x: 40, z: -32, hx: 8, hz: 6.5 },
-  { x: 28, z: -32, hx: 2.4, hz: 2.4 },
 ];
 
 export const PADS: Pad[] = [
@@ -141,6 +140,7 @@ export class CraneSim {
   rollRate = 0;
   leanSign = 0;
   outrigger = 0;
+  stow = 1;
   deployDir = 0;
   lateralG = 0;
   flipped = false;
@@ -247,6 +247,10 @@ export class CraneSim {
     this.message = `${CRANES[id].label} ready.`;
   }
 
+  usesOutriggers() {
+    return this.crane !== "crawler";
+  }
+
   companyName() {
     if (this.crane === "rental") return "Temp Hire";
     if (this.crane === "lattice") return "Slingline Co";
@@ -328,6 +332,11 @@ export class CraneSim {
     return TUNING[this.mode];
   }
 
+  private liveMount() {
+    if (this.crane !== "tower") return this.mountY;
+    return 1.45 + (this.mountY - 1.45) * (1 - this.stow);
+  }
+
   boom(): Boom {
     const length = this.baseLen + this.extension;
     const pitch = this.boomPitch;
@@ -335,7 +344,7 @@ export class CraneSim {
     const zOnBoom = 0.15 * Math.sin(pitch) - length * Math.cos(pitch);
     const ry = this.yaw - this.heading;
     const lx = zOnBoom * Math.sin(ry);
-    const ly = this.mountY + yOnBoom;
+    const ly = this.liveMount() + yOnBoom;
     const lz = -this.mountBack + zOnBoom * Math.cos(ry);
     const cH = Math.cos(this.heading);
     const sH = Math.sin(this.heading);
@@ -659,11 +668,28 @@ export class CraneSim {
 
   requestDeploy() {
     if (this.flipped) return;
+    if (!this.usesOutriggers()) {
+      if (this.state === "lifting") {
+        this.state = "driving";
+        this.speed = 0;
+        this.message = "Tracks again. The boom stays where you left it.";
+        return;
+      }
+      if (!this.bStopped()) {
+        this.message = "Stop the crawler first.";
+        return;
+      }
+      this.state = "lifting";
+      this.speed = 0;
+      this.yaw = this.heading;
+      this.message = "On the tracks. No outriggers. Boom is live.";
+      return;
+    }
     if (this.state === "lifting" || this.outrigger > 0.5) {
       this.state = "driving";
       this.deployDir = -1;
       this.speed = 0;
-      this.message = "Stowing outriggers.";
+      this.message = "Stowing the pads. The boom folds for travel.";
       return;
     }
     if (!this.bStopped()) {
@@ -671,7 +697,7 @@ export class CraneSim {
       return;
     }
     this.deployDir = 1;
-    this.message = "Deploying outriggers. The boom unlocks when the pads are down.";
+    this.message = "Outriggers out, then pads down.";
   }
 
   requestLift() {
@@ -694,7 +720,7 @@ export class CraneSim {
     this.state = "lifting";
     this.speed = 0;
     this.yaw = this.heading;
-    this.message = "Pads set. Stick pitches the boom. Out and In telescope.";
+    this.message = "Pads set. Boom is live.";
   }
 
   recover() {
@@ -720,6 +746,10 @@ export class CraneSim {
   }
 
   private refreshGate() {
+    if (!this.usesOutriggers()) {
+      this.bCanLift = this.bStopped() && !this.flipped && Math.abs(this.roll) < 0.08;
+      return;
+    }
     const reach = Math.min(1, this.outrigger / 0.57);
     const down = Math.max(0, (this.outrigger - 0.57) / 0.43);
     const stopped = this.bStopped();
@@ -753,10 +783,10 @@ export class CraneSim {
       this.state = "lifting";
       this.speed = 0;
       this.yaw = this.heading;
-      this.message = "Pads set. Stick pitches the boom. Out and In telescope.";
+      this.message = "Pads set. Boom is live.";
     }
 
-    const padsClear = this.outrigger < 0.05;
+    const padsClear = !this.usesOutriggers() || this.outrigger < 0.05;
     const canDrive = this.state === "driving" && padsClear && this.deployDir === 0 && !this.flipped;
     const pace = PACE_SCALE[this.pace];
 
@@ -825,15 +855,19 @@ export class CraneSim {
     }
 
     this.refreshGate();
-    if (this.state !== "lifting") {
-      this.boomPitch += (0.85 - this.boomPitch) * Math.min(1, dt);
-      this.extension += (0 - this.extension) * Math.min(1, dt);
+    const fold = this.state !== "lifting" && this.usesOutriggers();
+    const want = fold ? 1 : 0;
+    this.stow += (want - this.stow) * Math.min(1, dt * 0.55);
+    if (fold) {
+      this.boomPitch += (0.18 - this.boomPitch) * Math.min(1, dt * 0.85);
+      this.extension += (0 - this.extension) * Math.min(1, dt * 0.9);
     }
     if (this.flipped) return;
     if (this.state === "lifting") return;
-    if (this.deployDir > 0) this.message = "Deploying outriggers.";
-    else if (this.deployDir < 0) this.message = "Stowing outriggers.";
-    else if (padsClear) this.message = `${this.contractLabel()}. Stop, then DEPLOY.`;
+    if (!this.usesOutriggers()) this.message = `${this.contractLabel()}. Stop, then LIFT.`;
+    else if (this.deployDir > 0) this.message = "Outriggers out, then pads down.";
+    else if (this.deployDir < 0) this.message = "Pads coming up. Boom folding over the cab.";
+    else if (padsClear) this.message = `${this.contractLabel()}. Boom is stowed. Stop, then DEPLOY.`;
     else this.message = this.gateReason();
   }
 

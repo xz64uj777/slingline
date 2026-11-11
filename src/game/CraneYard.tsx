@@ -143,9 +143,13 @@ export function CraneYard() {
       if (deployRef.current) {
         deployRef.current.textContent = sim.flipped
           ? "RIGHT"
-          : sim.outrigger > 0.5 && sim.deployDir >= 0
-            ? "STOW"
-            : "DEPLOY";
+          : !sim.usesOutriggers()
+            ? sim.state === "lifting"
+              ? "DRIVE"
+              : "LIFT"
+            : sim.outrigger > 0.5 && sim.deployDir >= 0
+              ? "STOW"
+              : "DEPLOY";
       }
       if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
       if (hookBtnRef.current) hookBtnRef.current.style.display = sim.hookReady && !sim.attached ? "block" : "none";

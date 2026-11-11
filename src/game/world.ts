@@ -331,23 +331,6 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     rise.add(slab);
   }
 
-  const fixed = new THREE.Group();
-  fixed.position.set(28, 0, -32);
-  scene.add(fixed);
-  const mastPost = new THREE.Mesh(new THREE.BoxGeometry(1.1, 22, 1.1), steel);
-  mastPost.position.y = 11;
-  const jib = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 16), steel);
-  jib.position.set(0, 21.4, -6);
-  const counterJib = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 4), steelDark);
-  counterJib.position.set(0, 21.3, 3);
-  const weight = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.4), steelDark);
-  weight.position.set(0, 20.6, 4.2);
-  const hang = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 8, 5), ropeMat);
-  hang.position.set(0, 17, -12);
-  const hung = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.4), amber);
-  hung.position.set(0, 12.8, -12);
-  fixed.add(mastPost, jib, counterJib, weight, hang, hung);
-
   const geos = new Set<THREE.BufferGeometry>();
   const mats = new Set<THREE.Material>();
   scene.traverse((obj) => {
@@ -400,7 +383,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function render(sim: CraneSim, frameDt: number) {
     slew.rotation.y = sim.yaw - sim.heading;
-    slew.position.y = sim.mountY;
+    const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
+    slew.position.y = mount;
+    mast.scale.y = sim.crane === "tower" ? 0.22 + (1 - sim.stow) * 0.78 : 1;
     const onTracks = sim.crane === "crawler";
     tracks.visible = onTracks;
     nose.visible = !onTracks;
@@ -455,9 +440,12 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const spin = (sim.speed * frameDt) / 0.48;
     for (const wheel of wheels) wheel.rotation.x -= spin;
     for (const hub of frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;
+    const showPads = sim.crane !== "crawler";
     const reach = Math.min(1, sim.outrigger / 0.57);
     const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
     for (const rig of rigs) {
+      rig.beam.visible = showPads;
+      rig.pad.visible = showPads;
       rig.beam.scale.x = 0.35 + reach * 1.7;
       rig.beam.position.x = rig.sign * (1.15 + reach * 1.15);
       rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
