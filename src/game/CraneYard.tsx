@@ -52,6 +52,7 @@ export function CraneYard() {
   const [books, setBooks] = useState<CareerState>(() => readCareerStore());
   const [practiceId, setPracticeId] = useState<CraneId | null>(null);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
 
@@ -463,8 +464,20 @@ export function CraneYard() {
             YARD MOVE: CRATE · WAGE $315 OF $900
           </p>
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
-            Lower the hook onto the crate.
+            Find the marked load. Lower the hook until it is over the crate, attach it, then carry it to the amber set ring.
           </p>
+          <details className="pointer-events-auto w-full max-w-[13rem] bg-surface px-3 py-2">
+            <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">SHOW JOB MAP</summary>
+            <div className="mt-2 rounded border border-line bg-bg p-2 text-center text-xs">
+              <p className="font-display tracking-widest text-muted">LIFT ROUTE</p>
+              <div className="my-2 flex items-center justify-between gap-1">
+                <span className="rounded border border-primary px-2 py-2 font-display">CRATE</span>
+                <span className="text-primary">→</span>
+                <span className="rounded border border-primary px-2 py-2 font-display">AMBER RING</span>
+              </div>
+              <p className="text-muted">Use the camera views to locate the load and the marked set zone.</p>
+            </div>
+          </details>
           <p
             ref={gapRef}
             style={{ display: "none" }}
@@ -530,8 +543,14 @@ export function CraneYard() {
       {!playing ? (
         <div className="absolute inset-0 overflow-y-auto p-3 pb-8 sm:p-6">
           <section className="mx-auto w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-4 sm:max-w-3xl sm:p-5">
-            <p className="font-display text-sm tracking-widest text-primary">{summary.status}</p>
-            <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">{summary.company}</h2>
+            <p className="font-display text-sm tracking-widest text-primary">SLINGLINE CAREER</p>
+            <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">Ready for work?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted">Run the crane, complete the lift, and build your reputation one job at a time.</p>
+            <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
+              {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
+            </button>
+            <details className="mt-3 border border-line bg-bg p-3">
+              <summary className="cursor-pointer font-display text-base tracking-wide">CAREER DETAILS · {summary.company}</summary>
             <p className="mt-2 text-sm leading-relaxed text-muted">{summary.employer}</p>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <p className="bg-bg px-3 py-2">
@@ -565,13 +584,6 @@ export function CraneYard() {
                 FILE SLINGLINE · {money(ECONOMY.foundFee)}
               </button>
             ) : null}
-            <button
-              type="button"
-              className="mt-3 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg"
-              onClick={startCareer}
-            >
-              {summary.hired ? "Clock in" : "Take the call"}
-            </button>
             {!summary.hired ? (
               <>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -600,7 +612,10 @@ export function CraneYard() {
                 </button>
               </>
             ) : null}
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            </details>
+            <details className="mt-2 border border-line bg-bg p-3">
+              <summary className="cursor-pointer font-display text-base tracking-wide">SETTINGS · CONTROLS &amp; DIFFICULTY</summary>
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Swing dies on its own" />
               <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
             </div>
@@ -638,14 +653,11 @@ export function CraneYard() {
               Stop, deploy the pads, then pitch, telescope, and hook. Drag the yard to look around.
             </p>
             {practiceId ? (
-              <button
-                type="button"
-                className="mt-2 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg"
-                onClick={startPractice}
-              >
+              <button type="button" className="mt-2 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg" onClick={startPractice}>
                 Practice {practiceId}
               </button>
             ) : null}
+            </details>
           </section>
         </div>
       ) : (
