@@ -1013,7 +1013,10 @@ export class CraneSim {
 
   private updateJob(dt: number) {
     this.warn = false;
-    if (!this.attached && !this.flipped) this.shiftRoll(0, dt);
+    if (!this.attached && !this.flipped) {
+      this.leanSign = 0;
+      this.shiftRoll(0, dt);
+    }
     if (this.phase === "broke" || this.phase === "done") return;
     if (!this.attached) this.updateApproach();
     this.updateChart(dt);
@@ -1028,6 +1031,7 @@ export class CraneSim {
       } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
       else if (this.limitState === "near") this.message = "That load is near the limit. Watch the angle and the length.";
       else this.message = this.contractLabel();
+      if (Math.abs(this.roll) > 0.04) this.message = "Load is off. Coming back level.";
       return;
     }
     this.hookReady = false;
@@ -1099,7 +1103,8 @@ export class CraneSim {
 
   private shiftRoll(target: number, dt: number) {
     const before = this.boom();
-    const next = this.roll + (target - this.roll) * Math.min(1, dt * 0.9);
+    const gain = target === 0 ? 4.8 : 0.9;
+    const next = this.roll + (target - this.roll) * Math.min(1, dt * gain);
     if (Math.abs(next - this.roll) < 1e-5) return;
     this.roll = next;
     const after = this.boom();
@@ -1118,6 +1123,7 @@ export class CraneSim {
     this.park(false);
     this.attached = false;
     this.airborne = false;
+    this.leanSign = 0;
     this.phase = "seek";
     this.message = `Wrong pad. Call is ${this.contractLabel()}.`;
   }
@@ -1144,6 +1150,7 @@ export class CraneSim {
       this.message = "Heavy load pulled the crane over.";
       return;
     }
+    this.leanSign = 0;
     this.message = "Wire snapped.";
   }
 
@@ -1174,6 +1181,7 @@ export class CraneSim {
     this.park(true);
     this.attached = false;
     this.airborne = false;
+    this.leanSign = 0;
     this.phase = "done";
     this.deliverFlash = 1.15;
     this.message = matched
@@ -1190,6 +1198,7 @@ export class CraneSim {
     this.park(false);
     this.attached = false;
     this.airborne = false;
+    this.leanSign = 0;
     this.phase = "broke";
     this.breakFlash = 1.35;
     this.impulse = 0.45;
