@@ -750,7 +750,9 @@ export class CraneSim {
     this.yawRate = 0;
     this.pitchRate = 0;
     this.extendRate = 0;
-    this.warn = true;
+    // A 44° boom-angle safety interlock is not a load-chart overload.
+    // Keep the interlock active, but do not light the overload warning.
+    this.warn = false;
     this.message = "Safety stop at 44°. Tap SAFETY to move again.";
   }
 
