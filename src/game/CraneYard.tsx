@@ -37,7 +37,8 @@ export function CraneYard() {
   const paceRef = useRef<Pace>("steady");
   const simRef = useRef<CraneSim | null>(null);
   const yardRef = useRef<ReturnType<typeof createYard> | null>(null);
-  const camDrag = useRef<{ id: number; x: number; y: number } | null>(null);
+  const camPointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchDistance = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
@@ -349,21 +350,33 @@ export function CraneYard() {
 
   const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
-    camDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
+    camPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (camPointers.current.size === 2) {
+      const points = [...camPointers.current.values()];
+      pinchDistance.current = Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y);
+    }
   };
 
   const onCamMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const drag = camDrag.current;
-    if (!drag || drag.id !== e.pointerId) return;
-    yardRef.current?.nudge(e.clientX - drag.x, e.clientY - drag.y);
-    drag.x = e.clientX;
-    drag.y = e.clientY;
+    const previous = camPointers.current.get(e.pointerId);
+    if (!previous) return;
+    const next = { x: e.clientX, y: e.clientY };
+    camPointers.current.set(e.pointerId, next);
+    if (camPointers.current.size >= 2) {
+      const points = [...camPointers.current.values()];
+      const distance = Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y);
+      const before = pinchDistance.current;
+      if (before && distance > 0) yardRef.current?.zoomBy(distance / before);
+      pinchDistance.current = distance;
+      return;
+    }
+    yardRef.current?.nudge(next.x - previous.x, next.y - previous.y);
   };
 
   const onCamEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (camDrag.current?.id !== e.pointerId) return;
-    camDrag.current = null;
+    camPointers.current.delete(e.pointerId);
+    if (camPointers.current.size < 2) pinchDistance.current = null;
   };
 
   return (
