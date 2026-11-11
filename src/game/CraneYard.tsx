@@ -21,6 +21,7 @@ import {
   setTouchAxes,
   setTouchExtend,
   setTouchHoist,
+  setTouchSensitivity,
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
 import { limitAlarm } from "@/game/alarm";
@@ -37,11 +38,13 @@ export function CraneYard() {
   const paceRef = useRef<Pace>("steady");
   const simRef = useRef<CraneSim | null>(null);
   const yardRef = useRef<ReturnType<typeof createYard> | null>(null);
-  const camDrag = useRef<{ id: number; x: number; y: number } | null>(null);
+  const camPointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchDistance = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
+  const [sensitivity, setSensitivity] = useState<"low" | "normal" | "high">("normal");
   const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
@@ -349,21 +352,33 @@ export function CraneYard() {
 
   const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
-    camDrag.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
     e.currentTarget.setPointerCapture(e.pointerId);
+    camPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (camPointers.current.size === 2) {
+      const points = [...camPointers.current.values()];
+      pinchDistance.current = Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y);
+    }
   };
 
   const onCamMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const drag = camDrag.current;
-    if (!drag || drag.id !== e.pointerId) return;
-    yardRef.current?.nudge(e.clientX - drag.x, e.clientY - drag.y);
-    drag.x = e.clientX;
-    drag.y = e.clientY;
+    const previous = camPointers.current.get(e.pointerId);
+    if (!previous) return;
+    const next = { x: e.clientX, y: e.clientY };
+    camPointers.current.set(e.pointerId, next);
+    if (camPointers.current.size >= 2) {
+      const points = [...camPointers.current.values()];
+      const distance = Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y);
+      const before = pinchDistance.current;
+      if (before && distance > 0) yardRef.current?.zoomBy(distance / before);
+      pinchDistance.current = distance;
+      return;
+    }
+    yardRef.current?.nudge(next.x - previous.x, next.y - previous.y);
   };
 
   const onCamEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (camDrag.current?.id !== e.pointerId) return;
-    camDrag.current = null;
+    camPointers.current.delete(e.pointerId);
+    if (camPointers.current.size < 2) pinchDistance.current = null;
   };
 
   return (
@@ -597,6 +612,12 @@ export function CraneYard() {
               <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
               <ModeButton active={pace === "steady"} onClick={() => setPace("steady")} label="Steady" detail="Yard pace" />
               <ModeButton active={pace === "fast"} onClick={() => setPace("fast")} label="Fast" detail="Full travel" />
+            </div>
+            <p className="mt-3 font-display text-xs tracking-widest text-muted">TOUCH SENSITIVITY</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <ModeButton active={sensitivity === "low"} onClick={() => { setSensitivity("low"); setTouchSensitivity(0.75); }} label="Low" detail="Fine movement" />
+              <ModeButton active={sensitivity === "normal"} onClick={() => { setSensitivity("normal"); setTouchSensitivity(1); }} label="Normal" detail="Balanced" />
+              <ModeButton active={sensitivity === "high"} onClick={() => { setSensitivity("high"); setTouchSensitivity(1.3); }} label="High" detail="Faster response" />
             </div>
             <p className="mt-4 font-display text-xs tracking-widest text-muted">PRACTICE A CRANE · NOT SAVED</p>
             <div className="mt-2 grid grid-cols-3 gap-2">

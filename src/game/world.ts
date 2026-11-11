@@ -12,6 +12,7 @@ export type Yard = {
   dispose: () => void;
   setView: (view: CamView) => void;
   nudge: (dx: number, dy: number) => void;
+  zoomBy: (factor: number) => void;
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -296,6 +297,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function setView(next: CamView) {
     view = next;
+    camera.zoom = 1;
+    camera.updateProjectionMatrix();
     orbit = next === "wide" ? 0.6 : 0;
     pitch = next === "wide" ? 24 : 0;
   }
@@ -305,6 +308,11 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     orbit -= dx * (wide ? 0.012 : 0.006);
     if (wide) pitch = Math.max(8, Math.min(56, pitch - dy * 0.07));
     else pitch = Math.max(-8, Math.min(16, pitch - dy * 0.035));
+  }
+
+  function zoomBy(factor: number) {
+    camera.zoom = THREE.MathUtils.clamp(camera.zoom * factor, 0.72, 2.4);
+    camera.updateProjectionMatrix();
   }
 
   function resize() {
@@ -468,5 +476,5 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     for (const m of mats) m.dispose();
   }
 
-  return { renderer, render, resize, dispose, setView, nudge };
+  return { renderer, render, resize, dispose, setView, nudge, zoomBy };
 }
