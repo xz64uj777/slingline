@@ -52,7 +52,6 @@ export function CraneYard() {
   const [books, setBooks] = useState<CareerState>(() => readCareerStore());
   const [practiceId, setPracticeId] = useState<CraneId | null>(null);
   const [boardOpen, setBoardOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
 
