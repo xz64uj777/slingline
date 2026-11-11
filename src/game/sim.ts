@@ -1086,6 +1086,15 @@ export class CraneSim {
   }
 
   private updateChart(dt: number) {
+    // Deployment and boom movement with an empty hook must never inherit a
+    // previous load-chart alarm. No suspended cargo means zero demand.
+    if (!this.attached) {
+      this.limitRatio = 0;
+      this.limitState = "ok";
+      this.limitHold = 0;
+      this.warn = false;
+      return;
+    }
     const capacity = Math.max(0.35, this.chartCapacity());
     this.limitRatio = this.loadDemand() / capacity;
     if (this.limitRatio > 1) {
@@ -1101,6 +1110,7 @@ export class CraneSim {
       return;
     }
     this.limitState = "ok";
+    this.warn = false;
   }
 
   private updateJob(dt: number) {
