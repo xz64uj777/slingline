@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
+import { dressSite } from "@/game/scenery";
 
 export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck";
 
@@ -85,7 +86,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     roughness: 0.3,
   });
 
-  scene.add(new THREE.HemisphereLight(0xf2f7fb, 0xd9d3c6, 1.35));
+  const hemi = new THREE.HemisphereLight(0xf2f7fb, 0xd9d3c6, 1.35);
+  scene.add(hemi);
   const moon = new THREE.DirectionalLight(0xfffaf2, 1.25);
   moon.position.set(24, 40, 12);
   scene.add(moon);
@@ -362,6 +364,16 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     rise.add(slab);
   }
 
+  const site = dressSite(scene, {
+    renderer,
+    hemi,
+    sun: moon,
+    lampA,
+    lampB,
+    fog: scene.fog as THREE.FogExp2,
+    ground: concrete,
+  });
+
   const geos = new Set<THREE.BufferGeometry>();
   const mats = new Set<THREE.Material>();
   scene.traverse((obj) => {
@@ -380,6 +392,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const dir = new THREE.Vector3();
   const mid = new THREE.Vector3();
   let shake = 0;
+  let nightMix = 0;
   let view: CamView = "chase";
   let orbit = 0;
   let pitch = 0;
@@ -413,6 +426,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
+    const wantNight = sim.career.job === "night" ? 1 : 0;
+    nightMix += (wantNight - nightMix) * Math.min(1, frameDt * 1.4);
+    site.applyNight(nightMix);
     const face = sim.bodyHeading();
     slew.rotation.y = sim.yaw - face;
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;

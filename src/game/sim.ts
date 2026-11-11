@@ -47,6 +47,10 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: -26, z: 12, hx: 1.5, hz: 3.3 },
   { x: -18, z: 24, hx: 3.4, hz: 2.4 },
   { x: 40, z: -32, hx: 8, hz: 6.5 },
+  // Laydown and the parked flatbed in scenery.ts. Kept off the pads, the loads, and the lowboy ring.
+  { x: -38, z: -30, hx: 3.4, hz: 4.2 },
+  { x: 38, z: 40, hx: 2.4, hz: 4.6 },
+  { x: 22, z: -42, hx: 1.8, hz: 2.8 },
 ];
 
 export const LOWBOY_DROP = { x: 4, z: 10 };
