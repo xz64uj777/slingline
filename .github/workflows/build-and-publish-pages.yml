@@ -27,7 +27,7 @@ jobs:
         with:
           ref: gh-pages
           path: site
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: \${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -58,11 +58,11 @@ jobs:
           const htmlPath = '../site/index.html';
           let html = readFileSync(htmlPath, 'utf8');
           const assets = readdirSync('.vercel/output/static/assets');
-          const index = assets.find((name) => /^index-.*\\.js$/.test(name));
-          const routes = assets.find((name) => /^routes-.*\\.js$/.test(name));
+          const index = assets.find((name) => /^index-.*\.js$/.test(name));
+          const routes = assets.find((name) => /^routes-.*\.js$/.test(name));
           if (!index || !routes) throw new Error('Fresh client entry bundles were not found');
-          html = html.replace(/\\/slingline\\/assets\\/index-[A-Za-z0-9_-]+\\.js/g, '/slingline/assets/' + index);
-          html = html.replace(/\\/slingline\\/assets\\/routes-[A-Za-z0-9_-]+\\.js/g, '/slingline/assets/' + routes);
+          html = html.replace(/\/slingline\/assets\/index-[A-Za-z0-9_-]+\.js/g, '/slingline/assets/' + index);
+          html = html.replace(/\/slingline\/assets\/routes-[A-Za-z0-9_-]+\.js/g, '/slingline/assets/' + routes);
           if (!html.includes('/slingline/assets/' + index) || !html.includes('/slingline/assets/' + routes)) {
             throw new Error('Could not update both client bundle references in the existing Pages HTML');
           }
