@@ -46,7 +46,7 @@ export function CraneYard() {
   const [trainingStep, setTrainingStep] = useState(0);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
-  const [scheme, setScheme] = useState<Scheme>("stick");
+  const [scheme, setScheme] = useState<Scheme>("arrows");
   const [sensitivity, setSensitivity] = useState<"low" | "normal" | "high">("normal");
   const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
@@ -486,10 +486,10 @@ export function CraneYard() {
             <p className="mt-2 text-sm leading-relaxed text-fg">
               {[
                 "Stop the carrier in the work area. If this crane has outriggers, press DEPLOY and wait for the pads to set before lifting.",
-                "Use the left/right joystick movement to slew. Use the joystick forward/back to move the trolley. Use Out and In to telescope the boom. Change camera view if you need a better sightline.",
+                "Use the directional arrows to slew and move the trolley. Use Out and In to telescope the boom. The joystick is an optional alternative in Settings.",
                 "Lower the hook with DOWN. Use the HOOK view to line it up. Get close to the load and press HOOK when the prompt appears. The load should remain supported by the ground until you start lifting.",
                 "Use UP gently to take up slack and lift clear. Watch the load-limit percentage and sway meter. If the warning rises, stop and bring the boom in or lower the load.",
-                "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
+                "Use small directional-arrow inputs to move the load. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
                 "Lower with DOWN until the load is resting in the marked set zone, then press RELEASE LOAD. A clean, controlled placement completes the job.",
               ][trainingStep]}
             </p>
@@ -592,8 +592,8 @@ export function CraneYard() {
               </div>
               <p className="mt-3 font-display text-xs tracking-widest text-muted">CONTROL METHOD</p>
               <div className="mt-1 grid grid-cols-2 gap-2">
-                <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Stick" detail="Thumb control" />
-                <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Directional buttons" />
+                <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Joystick" detail="Optional thumb control" />
+                <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Recommended directional buttons" />
               </div>
               <p className="mt-3 font-display text-xs tracking-widest text-muted">MOVEMENT SPEED</p>
               <div className="mt-1 grid grid-cols-3 gap-2">
@@ -719,8 +719,8 @@ export function CraneYard() {
               <ModeButton active={mode === "hard"} onClick={() => setMode("hard")} label="Hard" detail="Raw swing and wind" />
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Stick" detail="Thumb, eased" />
-              <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Hold a direction" />
+              <ModeButton active={scheme === "stick"} onClick={() => pickScheme("stick")} label="Joystick" detail="Optional thumb control" />
+              <ModeButton active={scheme === "arrows"} onClick={() => pickScheme("arrows")} label="Arrows" detail="Recommended hold a direction" />
             </div>
             <div className="mt-2 grid grid-cols-3 gap-2">
               <ModeButton active={pace === "slow"} onClick={() => setPace("slow")} label="Slow" detail="Careful" />
