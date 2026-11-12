@@ -576,7 +576,16 @@ export class CraneSim {
       this.safetyLock = false;
       this.safetyBypass = false;
     }
-    if (this.safetyLock) {
+    if (this.safetyLock && trolley > 0.05) {
+      // No separate SAFETY button: raising the boom clears the low-angle
+      // interlock, while all other commands remain stopped until then.
+      this.safetyLock = false;
+      this.safetyBypass = true;
+      this.yawRate = 0;
+      this.pitchRate = 0;
+      this.extendRate = 0;
+      this.message = "Safety clear. Raise the boom.";
+    } else if (this.safetyLock) {
       steer = 0;
       trolley = 0;
       extend = 0;
@@ -724,7 +733,7 @@ export class CraneSim {
     this.side = ox * rx + oz * rz;
 
     this.updateJob(dt);
-    if (this.safetyLock) this.message = "Safety stop at 44°. Tap SAFETY to move again.";
+    if (this.safetyLock) this.message = "Safety stop at 44°. Raise the boom to continue.";
 
     if (this.phase === "broke") {
       this.breakFlash -= dt;
@@ -754,7 +763,7 @@ export class CraneSim {
     // A 44° boom-angle safety interlock is not a load-chart overload.
     // Keep the interlock active, but do not light the overload warning.
     this.warn = false;
-    this.message = "Safety stop at 44°. Tap SAFETY to move again.";
+    this.message = "Safety stop at 44°. Raise the boom to continue.";
   }
 
   requestHook() {
