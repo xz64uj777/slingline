@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { amberRingMessage, isPickupAligned, pickupAlignmentMessage, PICKUP_TOLERANCE_METERS } from "./handling.ts";
+import {
+  amberRingMessage,
+  approachGuidanceText,
+  isPickupAligned,
+  pickupAlignmentMessage,
+  PICKUP_TOLERANCE_METERS,
+} from "./handling.ts";
 
 describe("pickup alignment", () => {
   it("accepts a small, deliberate horizontal and vertical tolerance", () => {
@@ -25,5 +31,25 @@ describe("amber ring guidance", () => {
       amberRingMessage(3.26),
       "Amber ring 3.3 m away. Move the load over it before lowering.",
     );
+  });
+});
+
+describe("directional approach guidance", () => {
+  it("maps positive offsets to right, out, and up corrections", () => {
+    assert.equal(
+      approachGuidanceText(1, 3, 0.6),
+      "SLEW RIGHT 18° · BOOM OUT 3.0 m · HOOK UP 0.6 m",
+    );
+  });
+
+  it("maps negative offsets to left, in, and down corrections", () => {
+    assert.equal(
+      approachGuidanceText(-1, -2, -0.5),
+      "SLEW LEFT 153° · BOOM IN 2.0 m · HOOK DOWN 0.5 m",
+    );
+  });
+
+  it("suppresses corrections inside the pickup window", () => {
+    assert.equal(approachGuidanceText(0.1, -0.2, 0.29), "TARGET CENTERED");
   });
 });

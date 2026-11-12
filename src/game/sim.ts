@@ -191,6 +191,9 @@ export class CraneSim {
   hookGap = 99;
   hookReady = false;
   hookLabel = "";
+  approachSide = 0;
+  approachAlong = 0;
+  approachVertical = 0;
   private latch: number | null = null;
 
   baseLen = 5.5;
@@ -814,6 +817,9 @@ export class CraneSim {
     this.hookGap = 99;
     this.hookReady = false;
     this.hookLabel = "";
+    this.approachSide = 0;
+    this.approachAlong = 0;
+    this.approachVertical = 0;
     this.latch = null;
     let best = 99;
     for (let i = 0; i < this.pieces.length; i++) {
@@ -829,6 +835,15 @@ export class CraneSim {
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
       this.hookReady = isPickupAligned(flat, idealY - this.hy);
+      const targetX = piece.x - this.hx;
+      const targetZ = piece.z - this.hz;
+      const fx = -Math.sin(this.yaw);
+      const fz = -Math.cos(this.yaw);
+      const rx = Math.cos(this.yaw);
+      const rz = -Math.sin(this.yaw);
+      this.approachAlong = targetX * fx + targetZ * fz;
+      this.approachSide = targetX * rx + targetZ * rz;
+      this.approachVertical = idealY - this.hy;
       this.load = piece.kind;
     }
   }

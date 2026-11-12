@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
+import { approachGuidanceText } from "@/game/handling";
 import {
   ECONOMY,
   canFound,
@@ -67,6 +68,7 @@ export function CraneYard() {
   const jobsRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const callRef = useRef<HTMLParagraphElement>(null);
+  const approachRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -221,6 +223,15 @@ export function CraneYard() {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
         if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(sim.hookGap < 1.6 ? 2 : 1)} m`;
+      }
+      if (approachRef.current) {
+        const show = !sim.attached && sim.hookGap < 12 && sim.hookLabel.length > 0;
+        approachRef.current.style.display = show ? "block" : "none";
+        if (show) {
+          approachRef.current.textContent = sim.hookReady
+            ? "TARGET CENTERED · HOOK READY"
+            : `AIM · ${approachGuidanceText(sim.approachSide, sim.approachAlong, sim.approachVertical)}`;
+        }
       }
       const dot = dotRef.current;
       if (dot) {
@@ -492,6 +503,13 @@ export function CraneYard() {
             className="bg-surface px-3 py-2 text-left font-display text-lg tracking-wide text-fg"
           >
             0.0 m
+          </p>
+          <p
+            ref={approachRef}
+            style={{ display: "none" }}
+            className="max-w-[12rem] border border-primary bg-surface px-3 py-2 text-left font-display text-xs leading-relaxed tracking-wide text-primary"
+          >
+            AIM · SLEW LEFT · BOOM OUT · HOOK DOWN
           </p>
           <div className="pointer-events-auto flex flex-wrap gap-1">
             <button
