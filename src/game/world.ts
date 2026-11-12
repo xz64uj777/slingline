@@ -174,6 +174,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   }
   const sourceRing = ring(ringSteel);
   const targetRing = ring(ringAmber);
+  targetRing.scale.setScalar(1.3);
   const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), beaconMat);
   scene.add(beacon);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 6), steelDark);
@@ -464,8 +465,11 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const pz = deck ? deck.z : dst.z;
     const py = deck ? deck.y : 0;
     pole.position.set(px, py + 1.6, pz);
-    beacon.position.set(px, py + 3.5, pz);
+    beacon.position.set(px, py + 3.5 + Math.sin(performance.now() * 0.002) * 0.28, pz);
     beacon.rotation.y += frameDt * 0.8;
+    targetRing.visible = true;
+    beacon.visible = true;
+    pole.visible = true;
 
     const fx = -Math.sin(sim.yaw);
     const fz = -Math.cos(sim.yaw);
