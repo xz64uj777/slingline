@@ -995,10 +995,10 @@ export class CraneSim {
 
     if (canDrive) {
       const maxV = (this.mode === "hard" ? 11 : 9) * pace * (this.hauling ? 0.62 : 1);
-      const target = actions.trolley * maxV;
+      const target = -actions.trolley * maxV;
       const follow = 1 - Math.exp(-dt * (this.pace === "slow" ? 1.4 : this.mode === "easy" ? 2.2 : 1.15));
       this.speed += (target - this.speed) * follow;
-      this.driveSteer += (actions.steer - this.driveSteer) * Math.min(1, dt * 6);
+      this.driveSteer += (-actions.steer - this.driveSteer) * Math.min(1, dt * 6);
       const moving = Math.abs(this.speed) > 0.08;
       if (moving) {
         const tightness = 0.95 / (1 + Math.abs(this.speed) * 0.16);
