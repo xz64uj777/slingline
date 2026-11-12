@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
-import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
+import { CraneSim, CRANE_CHOICES, PADS, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   ECONOMY,
+  activeOffer,
   canFound,
   careerSummary,
   jobBoard,
@@ -46,7 +47,8 @@ export function CraneYard() {
   const [trainingStep, setTrainingStep] = useState(0);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
-  const [scheme, setScheme] = useState<Scheme>("arrows");
+  const [scheme, setScheme] = useState<Scheme>("stick");
+  const schemeRef = useRef<Scheme>("stick");
   const [sensitivity, setSensitivity] = useState<"low" | "normal" | "high">("normal");
   const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
@@ -69,6 +71,7 @@ export function CraneYard() {
   const jobsRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const callRef = useRef<HTMLParagraphElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -158,6 +161,36 @@ export function CraneYard() {
       }
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (callRef.current) callRef.current.textContent = sim.contractLabel();
+      if (progressRef.current) {
+        const offer = activeOffer(sim.career);
+        const loadName = offer.kind === "beam" ? "STEEL BEAM" : offer.kind === "heavy" ? "HEAVY BLOCK" : "CRATE";
+        const destination = sim.roofActive ? "BUILDING SET ZONE" : "AMBER RING";
+        const doubleLeg = offer.id === "double" ? (sim.career.leg === 0 ? "DELIVERY 1 OF 2" : "DELIVERY 2 OF 2") : "SINGLE DELIVERY";
+        let step = "TRAVEL TO WORK AREA · STOP AND DEPLOY";
+        if (sim.hauling) step = "TRANSPORT CRANE · REACH THE UNLOAD PAD";
+        else if (sim.phase === "done") step = "DELIVERY COMPLETE";
+        else if (sim.phase === "broke") step = "JOB STOPPED · CHECK THE LOAD";
+        else if (sim.attached && sim.landed) step = "LANDED · PRESS RELEASE LOAD";
+        else if (sim.attached && sim.airborne) step = `CARRY ${loadName} TO ${destination}`;
+        else if (sim.attached) step = "HOOKED · TAKE THE WEIGHT SLOWLY";
+        else if (sim.state === "lifting" && sim.hookReady) step = "HOOK READY · CONNECT THE LOAD";
+        else if (sim.state === "lifting") step = `POSITION HOOK OVER ${loadName}`;
+        const target = PADS[offer.pad];
+        const destinationText = sim.roofActive ? "Building deck" : target ? `Set zone ${target.x.toFixed(0)}, ${target.z.toFixed(0)}` : "Marked set zone";
+        progressRef.current.innerHTML = "";
+        const lines = [
+          doubleLeg,
+          `LOAD: ${loadName}`,
+          `DESTINATION: ${destinationText}`,
+          `PAY: ${money(offer.take)} ${offer.wage ? "WAGE" : "CONTRACT"}`,
+          step,
+        ];
+        for (const line of lines) {
+          const row = document.createElement("p");
+          row.textContent = line;
+          progressRef.current.appendChild(row);
+        }
+      }
       if (soloRef.current) {
         const show = !sim.practicing && sim.career.status === "hired" && canFound(sim.career).ok;
         soloRef.current.style.display = show ? "block" : "none";
@@ -195,6 +228,13 @@ export function CraneYard() {
               : `${Math.abs(sim.speed).toFixed(1)} m/s`;
       }
       if (meterRef.current) meterRef.current.textContent = sim.state === "lifting" ? "HOOK" : sim.mode === "hard" ? "LAT G" : "SPEED";
+      const automaticScheme: Scheme = sim.state === "driving" ? "stick" : "arrows";
+      if (automaticScheme !== schemeRef.current) {
+        schemeRef.current = automaticScheme;
+        setScheme(automaticScheme);
+        releaseArrows();
+        setTouchAxes(0, 0);
+      }
       if (deployRef.current) {
         deployRef.current.textContent = sim.flipped
           ? "RIGHT"
@@ -209,7 +249,7 @@ export function CraneYard() {
                 : "DEPLOY";
       }
       if (hookBtnRef.current) {
-        hookBtnRef.current.style.display = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0) ? "block" : "none";
+        hookBtnRef.current.style.display = sim.attached || sim.hookReady ? "block" : "none";
         hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : "HOOK";
       }
       if (gapRef.current) {
@@ -301,6 +341,7 @@ export function CraneYard() {
   const pickScheme = (next: Scheme) => {
     releaseArrows();
     setTouchAxes(0, 0);
+    schemeRef.current = next;
     setScheme(next);
   };
 
@@ -507,6 +548,13 @@ export function CraneYard() {
           <p ref={callRef} className="bg-surface px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">
             YARD MOVE: CRATE · WAGE $315 OF $900
           </p>
+          <div ref={progressRef} className="w-full border-l-2 border-primary bg-surface/95 px-3 py-2 font-display text-[11px] leading-snug tracking-wide text-fg">
+            <p>SINGLE DELIVERY</p>
+            <p>LOAD: CRATE</p>
+            <p>DESTINATION: AMBER RING</p>
+            <p>PAY: $315 WAGE</p>
+            <p>TRAVEL TO WORK AREA · STOP AND DEPLOY</p>
+          </div>
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Find the marked load. Lower the hook until it is over the crate, attach it, then carry it to the amber set ring.
           </p>
