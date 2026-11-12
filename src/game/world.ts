@@ -407,7 +407,10 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     dir.multiplyScalar(-1);
     hook.quaternion.setFromUnitVectors(UP, dir);
 
-    const carried = sim.attached ? sim.pieces[sim.carry] : undefined;
+    // Keep lifting slings and shackles stowed during travel and setup.
+    const carried = sim.attached && sim.state === "lifting" && !sim.hauling
+      ? sim.pieces[sim.carry]
+      : undefined;
     slings.visible = Boolean(carried);
     shackles.forEach((shackle) => { shackle.visible = Boolean(carried); });
     if (carried) {
