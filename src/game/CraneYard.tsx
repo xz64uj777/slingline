@@ -42,6 +42,8 @@ export function CraneYard() {
   const pinchDistance = useRef<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [trainingOpen, setTrainingOpen] = useState(false);
+  const [trainingStep, setTrainingStep] = useState(0);
   const [mode, setMode] = useState<Mode>("easy");
   const [pace, setPace] = useState<Pace>("steady");
   const [scheme, setScheme] = useState<Scheme>("stick");
@@ -332,6 +334,8 @@ export function CraneYard() {
     refreshBooks();
     playingRef.current = true;
     unlockAudio();
+    setTrainingStep(0);
+    setTrainingOpen(true);
     setPlaying(true);
   };
 
@@ -461,6 +465,45 @@ export function CraneYard() {
         className="banner pointer-events-none absolute inset-x-0 top-16 px-4 text-center font-display text-2xl tracking-wide"
       />
 
+      {playing && trainingOpen ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-bg/75 p-4">
+          <section className="w-full max-w-sm border border-primary border-t-4 bg-surface p-4 shadow-2xl">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-display text-xs tracking-widest text-primary">SLINGLINE OPERATOR SCHOOL</p>
+              <p className="font-display text-xs text-muted">{trainingStep + 1} / 6</p>
+            </div>
+            <div className="mt-3 h-1.5 bg-line">
+              <div className="h-full bg-primary" style={{ width: `${((trainingStep + 1) / 6) * 100}%` }} />
+            </div>
+            <h2 className="mt-4 font-display text-2xl leading-tight text-fg">
+              {[
+                "1. Set up the crane",
+                "2. Position the boom",
+                "3. Make the connection",
+                "4. Take the weight slowly",
+                "5. Control the swing",
+                "6. Land the load",
+              ][trainingStep]}
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-fg">
+              {[
+                "Stop the carrier in the work area. If this crane has outriggers, press DEPLOY and wait for the pads to set before lifting.",
+                "Use the left/right joystick movement to slew. Use the joystick forward/back to move the trolley. Use Out and In to telescope the boom. Change camera view if you need a better sightline.",
+                "Lower the hook with DOWN. Use the HOOK view to line it up. Get close to the load and press HOOK when the prompt appears. The load should remain supported by the ground until you start lifting.",
+                "Use UP gently to take up slack and lift clear. Watch the load-limit percentage and sway meter. If the warning rises, stop and bring the boom in or lower the load.",
+                "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
+                "Lower with DOWN until the load is resting in the marked set zone, then press RELEASE LOAD. A clean, controlled placement completes the job.",
+              ][trainingStep]}
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setTrainingOpen(false)} className="min-h-11 flex-1 border border-line bg-bg px-3 font-display text-sm tracking-wide text-fg">CLOSE GUIDE</button>
+              {trainingStep > 0 ? <button type="button" onClick={() => setTrainingStep((step) => Math.max(0, step - 1))} className="min-h-11 border border-line bg-bg px-3 font-display text-sm text-fg">BACK</button> : null}
+              <button type="button" onClick={() => { if (trainingStep === 5) setTrainingOpen(false); else setTrainingStep((step) => Math.min(5, step + 1)); }} className="min-h-11 flex-1 bg-primary px-3 font-display text-sm tracking-wide text-bg">{trainingStep === 5 ? "START LIFTING" : "NEXT"}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {playing ? (
         <div className="pointer-events-none absolute left-3 top-36 flex max-w-[11.5rem] flex-col items-start gap-2 sm:max-w-xs">
           <p ref={callRef} className="bg-surface px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">
@@ -543,6 +586,7 @@ export function CraneYard() {
                 <button type="button" onClick={() => setSettingsOpen(false)} className="min-h-10 border border-line px-3 font-display text-sm">CLOSE</button>
               </div>
               <button ref={jobsRef} type="button" onClick={() => setBoardOpen(true)} className="mt-2 min-h-9 w-full border border-primary bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-fg">JOBS &amp; CONTRACTS</button>
+              <button type="button" onClick={() => { setTrainingStep(0); setTrainingOpen(true); setSettingsOpen(false); }} className="mt-2 min-h-9 w-full border border-line bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-fg">OPERATOR TRAINING</button>
               <p className="mt-2 font-display text-[10px] tracking-widest text-muted">DIFFICULTY</p>
               <div className="mt-1 grid grid-cols-2 gap-2">
                 <ModeButton active={mode === "easy"} onClick={() => setMode("easy")} label="Easy" detail="Assisted swing" />
