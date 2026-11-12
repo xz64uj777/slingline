@@ -503,10 +503,12 @@ export class CraneSim {
       homeZ: home.z,
     }));
     this.carry = null;
-    this.load = "crate";
-    this.cx = homes[0]!.x;
-    this.cz = homes[0]!.z;
-    this.cy = this.restY("crate");
+    const assignedKind = activeOffer(this.career).kind;
+    const assignedPiece = homes.find((home) => home.kind === assignedKind) ?? homes[0]!;
+    this.load = assignedPiece.kind;
+    this.cx = assignedPiece.x;
+    this.cz = assignedPiece.z;
+    this.cy = this.restY(assignedPiece.kind);
     this.from = 0;
     this.applyContract();
     this.attached = false;
@@ -515,8 +517,8 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    // The initial assignment is the crate; aim at that load, not the adjacent beam.
-    const p = homes[0]!;
+    // Aim at the load required by the active contract (the first DOUBLE RUN leg is the crate).
+    const p = assignedPiece;
     const dist = Math.hypot(p.x, p.z);
     this.yaw = Math.atan2(-p.x, -p.z);
     this.heading = this.yaw;
@@ -842,8 +844,11 @@ export class CraneSim {
     this.hookLabel = "";
     this.latch = null;
     let best = 99;
+    const requiredKind = activeOffer(this.career).kind;
     for (let i = 0; i < this.pieces.length; i++) {
       const piece = this.pieces[i]!;
+      // Nearby loads are not interchangeable: only the contract's assigned kind may be hooked.
+      if (piece.kind !== requiredKind) continue;
       const dx = this.hx - piece.x;
       const dz = this.hz - piece.z;
       const flat = Math.hypot(dx, dz);
