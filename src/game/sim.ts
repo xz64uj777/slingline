@@ -1122,7 +1122,9 @@ export class CraneSim {
   private updateChart(dt: number) {
     // Deployment and boom movement with an empty hook must never inherit a
     // previous load-chart alarm. No suspended cargo means zero demand.
-    if (!this.attached) {
+    // A connected hook is not yet a suspended load. Keep the chart and
+    // stability response clear until the cargo actually leaves the ground.
+    if (!this.attached || !this.airborne) {
       this.limitRatio = 0;
       this.limitState = "ok";
       this.limitHold = 0;
@@ -1212,7 +1214,11 @@ export class CraneSim {
       return;
     }
 
-    this.applyTilt(dt);
+    if (this.airborne) this.applyTilt(dt);
+    else {
+      this.leanSign = 0;
+      this.shiftRoll(0, dt);
+    }
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
       this.message = this.roofActive
         ? this.roofDeck().y > 10
