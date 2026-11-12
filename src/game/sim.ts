@@ -196,7 +196,7 @@ export class CraneSim {
   extendMax = 6;
   readonly mountBack = 1.6;
   mountY = 2.15;
-  readonly cableMin = 2.2;
+  readonly cableMin = 0.55; // Allow the hook to reach ground-level pickup points beneath the boom.
   readonly cableMax = 14.7;
   readonly hang = 0.95;
   readonly cargoHalf = 0.8;
@@ -824,8 +824,7 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      // A small auto-centering allowance: about 3 inches horizontally
-      // and vertically, not a large invisible pickup radius.
+      // Keep pickup alignment tight; the cable must be able to reach this exact point.
       this.hookReady = flat < 0.18 && Math.abs(this.hy - idealY) < 0.18;
       this.load = piece.kind;
     }
