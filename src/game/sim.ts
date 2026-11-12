@@ -148,6 +148,7 @@ export class CraneSim {
 
   attached = false;
   airborne = false;
+  landed = false;
   phase: JobPhase = "seek";
   load: LoadKind = "crate";
   from = 0;
@@ -795,6 +796,7 @@ export class CraneSim {
     this.cy = piece.y;
     this.attached = true;
     this.airborne = false;
+    this.landed = false;
     this.hookReady = false;
     this.phase = "carry";
     const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
@@ -803,9 +805,22 @@ export class CraneSim {
 
   requestRelease() {
     if (!this.attached) return;
+    if (!this.landed) {
+      this.message = "Lower the load fully into the amber set zone before releasing.";
+      return;
+    }
+    const carried = this.carry != null ? this.pieces[this.carry] : undefined;
+    const target = this.roofActive ? this.roofDeck() : PADS[this.to]!;
+    const radius = this.roofActive ? 3.6 : 2.4;
+    const onTarget = Math.hypot(this.hx - target.x, this.hz - target.z) < radius;
+    if (onTarget) {
+      this.succeed();
+      return;
+    }
     this.park(false);
     this.attached = false;
     this.airborne = false;
+    this.landed = false;
     this.leanSign = 0;
     this.phase = "seek";
     this.limitRatio = 0;
@@ -813,7 +828,11 @@ export class CraneSim {
     this.limitHold = 0;
     this.warn = false;
     this.shiftRoll(0, 0.35);
-    this.message = "Load released on the ground. Shorten the boom or reposition before hooking again.";
+    this.message = "Load released outside the amber ring. No payment. Reposition and try again.";
+    if (carried) {
+      carried.x = this.hx;
+      carried.z = this.hz;
+    }
   }
 
   private updateApproach() {
@@ -1211,8 +1230,12 @@ export class CraneSim {
       const deck = this.roofDeck();
       const flat = Math.hypot(this.hx - deck.x, this.hz - deck.z);
       if (flat < 3.6 && bottom < deck.y + 0.45 && bottom > deck.y - 1.1) {
-        if (!gentle && this.hookSpeed > limit) this.fail();
-        else this.succeed();
+        if (!gentle && this.hookSpeed > limit) {
+          this.fail();
+        } else {
+          this.landed = true;
+          this.message = "Load is resting on the building set zone. Press RELEASE LOAD to complete the delivery.";
+        }
         return;
       }
     }
@@ -1220,9 +1243,14 @@ export class CraneSim {
     if (this.airborne && bottom <= 0.08) {
       const pad = PADS[this.to]!;
       const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < 2.4;
-      if (!gentle && this.hookSpeed > limit) this.fail();
-      else if (onTarget) this.succeed();
-      else this.setAside();
+      if (!gentle && this.hookSpeed > limit) {
+        this.fail();
+      } else {
+        this.landed = true;
+        this.message = onTarget
+          ? "Load is inside the amber ring. Press RELEASE LOAD to complete this delivery."
+          : "Load is on the ground but outside the amber ring. Move it into the target before releasing.";
+      }
       return;
     }
 
@@ -1291,6 +1319,7 @@ export class CraneSim {
     this.park(false);
     this.attached = false;
     this.airborne = false;
+    this.landed = false;
     this.leanSign = 0;
     this.phase = "seek";
     this.message = `Wrong pad. Call is ${this.contractLabel()}.`;
@@ -1332,6 +1361,7 @@ export class CraneSim {
       this.park(true);
       this.attached = false;
       this.airborne = false;
+      this.landed = false;
       this.leanSign = 0;
       this.phase = "done";
       this.deliverFlash = 1.4;
@@ -1355,6 +1385,7 @@ export class CraneSim {
     this.park(true);
     this.attached = false;
     this.airborne = false;
+    this.landed = false;
     this.leanSign = 0;
     this.phase = "done";
     this.deliverFlash = result.matched ? 2.3 : 2;
