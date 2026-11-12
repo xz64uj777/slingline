@@ -696,7 +696,8 @@ export class CraneSim {
     this.vz -= dirz * radial;
 
     if (this.attached && !this.airborne) {
-      const floorHook = this.hang + this.cargoHalf;
+      // Keep the hook at the correct ground-contact height for this cargo.
+      const floorHook = this.hang + this.restY(this.load);
       if (this.hy < floorHook) {
         this.hy = floorHook;
         if (this.vy < 0) this.vy = 0;
@@ -1181,8 +1182,10 @@ export class CraneSim {
       carried.y = this.hy - this.hang;
     }
 
-    const bottom = this.hy - this.hang - this.cargoHalf;
-    // Treat the load as airborne as soon as its bottom clears the ground.
+    // Measure clearance from each load's actual resting height. Crates, beams,
+    // and heavy blocks have different geometry; a shared half-height made some
+    // loads appear airborne while they were still sitting on the ground.
+    const bottom = carried ? carried.y - this.restY(carried.kind) : 0;
     if (bottom > 0.08) this.airborne = true;
 
     const gentle = this.pace === "slow";
