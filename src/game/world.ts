@@ -133,6 +133,21 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   hook.scale.setScalar(0.55);
   scene.add(hook);
 
+  // Four-leg lifting slings and corner shackles. These are separate from the
+  // hoist rope so the rigging remains visible while the load is being carried.
+  const slingMaterial = new THREE.LineBasicMaterial({ color: 0x303943 });
+  const slingGeometry = new THREE.BufferGeometry();
+  slingGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(24), 3));
+  const slings = new THREE.LineSegments(slingGeometry, slingMaterial);
+  slings.frustumCulled = false;
+  scene.add(slings);
+  const shackleMaterial = new THREE.MeshStandardMaterial({ color: 0x9aa6b1, metalness: 0.72, roughness: 0.32 });
+  const shackles = Array.from({ length: 4 }, () => {
+    const shackle = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6), shackleMaterial);
+    scene.add(shackle);
+    return shackle;
+  });
+
   const loads = (["crate", "beam", "heavy"] as const).map(() => {
     const mat = crateMat.clone();
     const group = new THREE.Group();
@@ -391,6 +406,33 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     hook.position.set(sim.hx, sim.hy, sim.hz);
     dir.multiplyScalar(-1);
     hook.quaternion.setFromUnitVectors(UP, dir);
+
+    const carried = sim.attached ? sim.pieces[sim.carry] : undefined;
+    slings.visible = Boolean(carried);
+    shackles.forEach((shackle) => { shackle.visible = Boolean(carried); });
+    if (carried) {
+      const heavyLoad = carried.kind === "heavy";
+      const beamLoad = carried.kind === "beam";
+      const halfSpan = heavyLoad ? 1.12 : beamLoad ? 0.13 : 0.62;
+      const halfLength = heavyLoad ? 1.12 : beamLoad ? 2.15 : 0.62;
+      const attachY = carried.y + (beamLoad ? 0.18 : 0.55);
+      const apex = new THREE.Vector3(sim.hx, sim.hy - 0.18, sim.hz);
+      const positions = slingGeometry.getAttribute("position") as THREE.BufferAttribute;
+      for (let i = 0; i < 4; i += 1) {
+        const xSign = i % 2 === 0 ? -1 : 1;
+        const zSign = i < 2 ? -1 : 1;
+        const end = new THREE.Vector3(
+          carried.x + xSign * halfSpan,
+          attachY,
+          carried.z + zSign * halfLength,
+        );
+        positions.setXYZ(i * 2, apex.x, apex.y, apex.z);
+        positions.setXYZ(i * 2 + 1, end.x, end.y, end.z);
+        shackles[i]!.position.copy(end);
+      }
+      positions.needsUpdate = true;
+      slingGeometry.computeBoundingSphere();
+    }
 
     sim.pieces.forEach((piece, i) => {
       const view = loads[i];
