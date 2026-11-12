@@ -824,8 +824,9 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      // Keep pickup alignment tight; the cable must be able to reach this exact point.
-      this.hookReady = flat < 0.18 && Math.abs(this.hy - idealY) < 0.18;
+      // Allow a little practical positioning tolerance without making the hook magnetic.
+      // The hook must be within about 30 cm horizontally and 25 cm vertically.
+      this.hookReady = flat < 0.3 && Math.abs(this.hy - idealY) < 0.25;
       this.load = piece.kind;
     }
   }
