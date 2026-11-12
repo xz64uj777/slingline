@@ -62,7 +62,7 @@ function boot(audio: AudioContext) {
   for (let i = 0; i < samples; i++) {
     const white = Math.random() * 2 - 1;
     last = last * 0.96 + white * 0.04;
-    data[i] = last * 3.2;
+    data[i] = last * 0.55;
   }
   engineFilter = audio.createBiquadFilter();
   engineFilter.type = "lowpass";
@@ -79,7 +79,7 @@ function boot(audio: AudioContext) {
   engineNoise.start();
 
   thump = audio.createOscillator();
-  thump.type = "sawtooth";
+  thump.type = "triangle";
   thump.frequency.value = 40;
   thumpGain = audio.createGain();
   thumpGain.gain.value = 0;
@@ -88,7 +88,7 @@ function boot(audio: AudioContext) {
   thump.start();
 
   hyd = audio.createOscillator();
-  hyd.type = "sawtooth";
+  hyd.type = "triangle";
   hyd.frequency.value = 240;
   hydGain = audio.createGain();
   hydGain.gain.value = 0;
@@ -116,7 +116,7 @@ function tone(audio: AudioContext, freq: number, ms: number, volume: number, typ
   osc.type = type;
   osc.frequency.value = freq;
   const t = audio.currentTime;
-  gain.gain.setValueAtTime(volume, t);
+  gain.gain.setValueAtTime(Math.min(volume, 0.018), t);
   gain.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000);
   osc.connect(gain);
   gain.connect(audio.destination);
@@ -163,9 +163,9 @@ export function rigAudio(sim: CraneSim, now: number) {
   if (voice.power === "diesel") {
     const rpm = voice.idle + (voice.rev - voice.idle) * Math.max(drive, work * 0.65);
     engineFilter.frequency.setTargetAtTime(90 + rpm * 1.6, t, 0.12);
-    engineGain.gain.setTargetAtTime(alive * voice.body * (0.03 + drive * 0.035 + work * 0.02), t, 0.1);
+    engineGain.gain.setTargetAtTime(alive * voice.body * (0.012 + drive * 0.014 + work * 0.008), t, 0.1);
     thump.frequency.setTargetAtTime(rpm * 0.5, t, 0.1);
-    thumpGain.gain.setTargetAtTime(alive * voice.body * 0.012, t, 0.1);
+    thumpGain.gain.setTargetAtTime(alive * voice.body * 0.0035, t, 0.1);
     humGain.gain.setTargetAtTime(0, t, 0.1);
   } else {
     engineGain.gain.setTargetAtTime(0, t, 0.15);
@@ -176,7 +176,7 @@ export function rigAudio(sim: CraneSim, now: number) {
 
   const hydOn = voice.hyd > 0 && (work > 0.04 || sim.deployDir !== 0);
   hyd.frequency.setTargetAtTime(voice.hyd + work * 90 + hoist * 40, t, 0.08);
-  hydGain.gain.setTargetAtTime(hydOn ? alive * 0.018 * voice.body : 0, t, 0.08);
+  hydGain.gain.setTargetAtTime(hydOn ? alive * 0.0055 * voice.body : 0, t, 0.08);
 
   if (voice.backup && sim.state === "driving" && sim.speed < -0.35 && now - lastBeep > 720) {
     lastBeep = now;
@@ -195,12 +195,12 @@ export function rigAudio(sim: CraneSim, now: number) {
 
   if (voice.tracks && drive > 0.04 && now - lastClank > Math.max(120, 460 - drive * 300)) {
     lastClank = now;
-    clank(audio, 0.05 * voice.body);
+    clank(audio, 0.012 * voice.body);
   }
 
   if (voice.winch && hoist > 0.08 && now - lastWinch > Math.max(80, 260 - hoist * 140)) {
     lastWinch = now;
-    clank(audio, 0.03);
+    clank(audio, 0.009);
     if (voice.power === "electric") tone(audio, 210, 70, 0.02, "sine");
   }
 }
