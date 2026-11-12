@@ -826,7 +826,7 @@ export class CraneSim {
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
       // A small auto-centering allowance: about 3 inches horizontally
       // and vertically, not a large invisible pickup radius.
-      this.hookReady = flat < 0.08 && Math.abs(this.hy - idealY) < 0.08;
+      this.hookReady = flat < 0.18 && Math.abs(this.hy - idealY) < 0.18;
       this.load = piece.kind;
     }
   }
