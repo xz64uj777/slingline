@@ -297,8 +297,7 @@ export class CraneSim {
   }
 
   rigOrigin() {
-    if (!this.hauling) return { x: this.truckX, y: this.flipped ? 0.2 : 0, z: this.truckZ };
-    const h = this.heading;
+    if (!this.hauling) return { x: this.truckX, y: this.flipped ? 0.2 : 0, z: this.truckZ };    const h = this.heading;
     return { x: this.truckX + Math.sin(h) * 4.6, y: 0.98, z: this.truckZ + Math.cos(h) * 4.6 };
   }
 
@@ -597,8 +596,7 @@ export class CraneSim {
       this.yawRate = 0;
       this.pitchRate = 0;
       this.extendRate = 0;
-    } else if (
-      this.mode === "easy" &&
+    } else if (      this.mode === "easy" &&
       !this.safetyBypass &&
       this.boomPitch <= STOP_PITCH + 0.012 &&
       (trolley < -0.05 || extend > 0.05)
@@ -712,10 +710,13 @@ export class CraneSim {
       // Keep the hook at the correct ground-contact height for this cargo.
       const floorHook = this.hang + this.restY(this.load);
       if (this.hy < floorHook) {
+        // Hard ground contact: keep the cargo exactly on its resting plane.
+        // Exponential friction is frame-rate independent and prevents ground skating.
         this.hy = floorHook;
         if (this.vy < 0) this.vy = 0;
-        this.vx *= 0.9;
-        this.vz *= 0.9;
+        const groundFriction = Math.exp(-10 * dt);
+        this.vx *= groundFriction;
+        this.vz *= groundFriction;
       }
     }
 
@@ -897,8 +898,7 @@ export class CraneSim {
     }
     if (!this.usesOutriggers()) {
       if (this.state === "lifting") {
-        this.state = "driving";
-        this.speed = 0;
+        this.state = "driving";        this.speed = 0;
         this.message = "Tracks again. The boom folds down for the move.";
         return;
       }
@@ -1197,8 +1197,7 @@ export class CraneSim {
     if (!this.attached) {
       const chart =
         this.limitState === "over" ? " Over the chart for this load." : this.limitState === "near" ? " Near the limit." : "";
-      if (this.hookGap < 12) {
-        this.message = this.hookReady
+      if (this.hookGap < 12) {        this.message = this.hookReady
           ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m.${chart} Tap HOOK.`
           : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
       } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
