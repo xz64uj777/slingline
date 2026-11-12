@@ -38,6 +38,8 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Run public game tests
+        run: npm test
       - name: Build production bundle
         run: npm run build
       - name: Upload production build
