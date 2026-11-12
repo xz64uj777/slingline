@@ -1,6 +1,6 @@
 import type { Actions } from "@/game/input";
 import { CRANES } from "@/game/cranes";
-import { amberRingMessage, isPickupAligned, pickupAlignmentMessage } from "@/game/handling";
+import { isPickupAligned, pickupAlignmentMessage, setdownGuidance } from "@/game/handling";
 import {
   acceptJob as acceptCareerJob,
   activeOffer,
@@ -1217,7 +1217,12 @@ export class CraneSim {
     }
 
     const limit = this.load === "heavy" ? this.tuning().impact / 1.6 : this.tuning().impact;
-    if (!gentle && this.airborne && bottom < 3.4 && !this.roofActive && this.hookSpeed > limit * 0.72) this.warn = true;
+    const warningSpeed = limit * 0.72;
+    const roofDeck = this.roofActive ? this.roofDeck() : null;
+    const roofDistance = roofDeck ? Math.hypot(this.hx - roofDeck.x, this.hz - roofDeck.z) : Infinity;
+    const nearRoofSet = roofDeck !== null && roofDistance < 8 && Math.abs(bottom - roofDeck.y) < 5.5;
+    const nearGroundSet = !this.roofActive && bottom < 5.5;
+    if (!gentle && this.airborne && (nearGroundSet || nearRoofSet) && this.hookSpeed > warningSpeed) this.warn = true;
 
     if (this.roofActive && this.airborne) {
       const deck = this.roofDeck();
@@ -1244,9 +1249,23 @@ export class CraneSim {
       this.shiftRoll(0, dt);
     }
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
-      if (!this.roofActive && bottom < 3.4) {
+      if (!this.roofActive && bottom < 5.5) {
         const pad = PADS[this.to]!;
-        this.message = amberRingMessage(Math.hypot(this.hx - pad.x, this.hz - pad.z));
+        this.message = setdownGuidance(
+          "amber ring",
+          Math.hypot(this.hx - pad.x, this.hz - pad.z),
+          this.hookSpeed,
+          gentle ? Infinity : warningSpeed,
+        );
+      } else if (roofDeck && nearRoofSet) {
+        const target = roofDeck.y > 10 ? "roof ring" : "floor ring";
+        this.message = setdownGuidance(
+          target,
+          roofDistance,
+          this.hookSpeed,
+          gentle ? Infinity : warningSpeed,
+          3.6,
+        );
       } else {
         this.message = this.roofActive
           ? this.roofDeck().y > 10

@@ -6,6 +6,7 @@ import {
   isPickupAligned,
   pickupAlignmentMessage,
   PICKUP_TOLERANCE_METERS,
+  setdownGuidance,
 } from "./handling.ts";
 
 describe("pickup alignment", () => {
@@ -51,5 +52,22 @@ describe("directional approach guidance", () => {
 
   it("suppresses corrections inside the pickup window", () => {
     assert.equal(approachGuidanceText(0.1, -0.2, 0.29), "TARGET CENTERED");
+  });
+});
+
+describe("set-down guidance", () => {
+  it("keeps ring placement guidance when the hook is at a safe speed", () => {
+    assert.equal(setdownGuidance("amber ring", 3.26, 2, 3.6), "amber ring 3.3 m away. Move the load over it.");
+  });
+
+  it("warns early and says how to arrest a fast descent", () => {
+    assert.equal(
+      setdownGuidance("amber ring", 3.26, 4.1, 3.6),
+      "SLOW HOOK · HOLD UP TO BRAKE · amber ring 3.3 m away. Move the load over it.",
+    );
+  });
+
+  it("uses the larger landing zone radius for roof and floor rings", () => {
+    assert.equal(setdownGuidance("roof ring", 3, 2, 3.6, 3.6), "Inside roof ring. Lower carefully.");
   });
 });

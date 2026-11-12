@@ -34,3 +34,17 @@ export function amberRingMessage(distanceMeters: number, radiusMeters = 2.4) {
     ? "Inside amber ring. Lower carefully."
     : `Amber ring ${distanceMeters.toFixed(1)} m away. Move the load over it before lowering.`;
 }
+
+export function setdownGuidance(
+  targetLabel: string,
+  distanceMeters: number,
+  hookSpeed: number,
+  warningSpeed: number,
+  targetRadius = 2.4,
+) {
+  const target =
+    distanceMeters < targetRadius
+      ? `Inside ${targetLabel}. Lower carefully.`
+      : `${targetLabel} ${distanceMeters.toFixed(1)} m away. Move the load over it.`;
+  return hookSpeed > warningSpeed ? `SLOW HOOK · HOLD UP TO BRAKE · ${target}` : target;
+}
