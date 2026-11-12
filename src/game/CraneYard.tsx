@@ -209,7 +209,7 @@ export function CraneYard() {
       }
       if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
       if (hookBtnRef.current) {
-        hookBtnRef.current.style.display = sim.attached || sim.hookReady ? "block" : "none";
+        hookBtnRef.current.style.display = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0) ? "block" : "none";
         hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : "HOOK";
       }
       if (gapRef.current) {
