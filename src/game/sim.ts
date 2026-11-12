@@ -763,6 +763,21 @@ export class CraneSim {
     }
     const piece = this.pieces[this.latch];
     if (!piece) return;
+    // Center the hook on the ground-level pickup point when the player
+    // latches within a few inches. Match cable length to that point so the
+    // load starts supported by the ground instead of being snatched upward.
+    const pickupY = piece.y + this.hang;
+    const boom = this.boom();
+    this.hx = piece.x;
+    this.hy = pickupY;
+    this.hz = piece.z;
+    this.cable = Math.max(this.cableMin, Math.hypot(boom.x - this.hx, boom.y - this.hy, boom.z - this.hz));
+    this.vx = 0;
+    this.vy = 0;
+    this.vz = 0;
+    this.prevBx = boom.x;
+    this.prevBy = boom.y;
+    this.prevBz = boom.z;
     this.carry = this.latch;
     this.load = piece.kind;
     this.cx = piece.x;
@@ -809,7 +824,9 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      this.hookReady = flat < 0.35 && Math.abs(this.hy - idealY) < 0.18;
+      // A small auto-centering allowance: about 3 inches horizontally
+      // and vertically, not a large invisible pickup radius.
+      this.hookReady = flat < 0.08 && Math.abs(this.hy - idealY) < 0.08;
       this.load = piece.kind;
     }
   }
@@ -1163,7 +1180,8 @@ export class CraneSim {
     }
 
     const bottom = this.hy - this.hang - this.cargoHalf;
-    if (bottom > 1.35) this.airborne = true;
+    // Treat the load as airborne as soon as its bottom clears the ground.
+    if (bottom > 0.08) this.airborne = true;
 
     const gentle = this.pace === "slow";
     const fast = this.hookSpeed > (this.mode === "easy" ? 6.4 : 3.6);
