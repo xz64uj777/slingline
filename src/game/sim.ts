@@ -515,7 +515,8 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    const p = homes[1]!;
+    // The initial assignment is the crate; aim at that load, not the adjacent beam.
+    const p = homes[0]!;
     const dist = Math.hypot(p.x, p.z);
     this.yaw = Math.atan2(-p.x, -p.z);
     this.heading = this.yaw;
