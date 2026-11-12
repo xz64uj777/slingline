@@ -1,5 +1,6 @@
 import type { Actions } from "@/game/input";
 import { CRANES } from "@/game/cranes";
+import { amberRingMessage, isPickupAligned, pickupAlignmentMessage } from "@/game/handling";
 import {
   acceptJob as acceptCareerJob,
   activeOffer,
@@ -514,7 +515,8 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    const p = homes[1]!;
+    const targetKind = activeOffer(this.career).kind;
+    const p = homes.find((home) => home.kind === targetKind) ?? homes[0]!;
     const dist = Math.hypot(p.x, p.z);
     this.yaw = Math.atan2(-p.x, -p.z);
     this.heading = this.yaw;
@@ -606,7 +608,9 @@ export class CraneSim {
     if (this.mode === "easy" && !this.safetyLock && !this.safetyBypass && this.boomPitch < STOP_PITCH) {
       this.boomPitch = STOP_PITCH;
       this.pitchRate = 0;
-      this.armSafety();
+      // A boom folded for travel starts below the operating floor. Bring it
+      // up to the floor normally; reserve the lock for an operator command
+      // that tries to move into the limit (handled above).
     }
     if (this.mode === "easy" && this.safetyBypass && this.boomPitch > STOP_PITCH + 0.07) {
       this.safetyBypass = false;
@@ -824,8 +828,7 @@ export class CraneSim {
       this.latch = i;
       this.hookGap = gap;
       this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
-      // Keep pickup alignment tight; the cable must be able to reach this exact point.
-      this.hookReady = flat < 0.18 && Math.abs(this.hy - idealY) < 0.18;
+      this.hookReady = isPickupAligned(flat, idealY - this.hy);
       this.load = piece.kind;
     }
   }
@@ -1162,9 +1165,16 @@ export class CraneSim {
       const chart =
         this.limitState === "over" ? " Over the chart for this load." : this.limitState === "near" ? " Near the limit." : "";
       if (this.hookGap < 12) {
-        this.message = this.hookReady
-          ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m.${chart} Tap HOOK.`
-          : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
+        if (this.hookReady) {
+          this.message = `${this.hookLabel} aligned. Tap HOOK.${chart}`;
+        } else if (this.hookGap < 1.6 && this.latch != null) {
+          const piece = this.pieces[this.latch]!;
+          const horizontal = Math.hypot(this.hx - piece.x, this.hz - piece.z);
+          const vertical = piece.y + this.hang - this.hy;
+          this.message = `${pickupAlignmentMessage(this.hookLabel, horizontal, vertical)}${chart}`;
+        } else {
+          this.message = `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
+        }
       } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
       else if (this.limitState === "near") this.message = "That load is near the limit. Watch the angle and the length.";
       else this.message = this.contractLabel();
@@ -1219,11 +1229,16 @@ export class CraneSim {
       this.shiftRoll(0, dt);
     }
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
-      this.message = this.roofActive
-        ? this.roofDeck().y > 10
-          ? "Set the beam on the roof ring."
-          : "Set the beam on the floor ring."
-        : "Set it inside the amber ring.";
+      if (!this.roofActive && bottom < 3.4) {
+        const pad = PADS[this.to]!;
+        this.message = amberRingMessage(Math.hypot(this.hx - pad.x, this.hz - pad.z));
+      } else {
+        this.message = this.roofActive
+          ? this.roofDeck().y > 10
+            ? "Set the beam on the roof ring."
+            : "Set the beam on the floor ring."
+          : "Set it inside the amber ring.";
+      }
     }
   }
 

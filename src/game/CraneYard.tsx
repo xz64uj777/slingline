@@ -210,12 +210,17 @@ export function CraneYard() {
       if (safetyRef.current) safetyRef.current.style.display = sim.safetyLock ? "block" : "none";
       if (hookBtnRef.current) {
         hookBtnRef.current.style.display = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0) ? "block" : "none";
-        hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : "HOOK";
+        hookBtnRef.current.disabled = !sim.attached && !sim.hookReady;
+        hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : sim.hookReady ? "HOOK" : "ALIGN HOOK";
+        hookBtnRef.current.setAttribute(
+          "aria-label",
+          sim.attached ? "Release load" : sim.hookReady ? "Attach load" : "Align hook with the load before attaching",
+        );
       }
       if (gapRef.current) {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
-        if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(1)} m`;
+        if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(sim.hookGap < 1.6 ? 2 : 1)} m`;
       }
       const dot = dotRef.current;
       if (dot) {
@@ -593,7 +598,7 @@ export function CraneYard() {
           else sim.requestHook();
         }}
         style={{ display: "none" }}
-        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-12 min-w-24 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg"
+        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-12 min-w-24 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg disabled:cursor-not-allowed disabled:opacity-50"
       >
         HOOK
       </button>
