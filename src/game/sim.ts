@@ -627,7 +627,8 @@ export class CraneSim {
     // Do not let continued DOWN input tension a load against the ground.
     if (this.attached && this.landed && hoist > 0) {
       const floorHook = this.hang + this.restY(this.load);
-      const supportedLength = Math.hypot(b.x - this.hx, b.y - floorHook, b.z - this.hz);
+      const groundBoom = this.boom();
+      const supportedLength = Math.hypot(groundBoom.x - this.hx, groundBoom.y - floorHook, groundBoom.z - this.hz);
       this.cable = Math.max(requestedCable, supportedLength);
       this.vx = 0;
       this.vy = 0;
