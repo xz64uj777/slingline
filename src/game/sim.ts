@@ -922,6 +922,8 @@ export class CraneSim {
       this.state = "lifting";
       this.speed = 0;
       this.yaw = this.heading;
+      this.boomPitch = Math.max(this.boomPitch, STOP_PITCH + 0.08);
+      this.pitchRate = 0;
       this.message = "On the tracks. No outriggers. Boom is live.";
       return;
     }
@@ -960,6 +962,8 @@ export class CraneSim {
     this.state = "lifting";
     this.speed = 0;
     this.yaw = this.heading;
+      this.boomPitch = Math.max(this.boomPitch, STOP_PITCH + 0.08);
+      this.pitchRate = 0;
     this.message = "Pads set. Boom is live.";
   }
 
@@ -1024,6 +1028,8 @@ export class CraneSim {
       this.state = "lifting";
       this.speed = 0;
       this.yaw = this.heading;
+      this.boomPitch = Math.max(this.boomPitch, STOP_PITCH + 0.08);
+      this.pitchRate = 0;
       this.message = "Pads set. Boom is live.";
     }
 
