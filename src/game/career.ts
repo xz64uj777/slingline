@@ -559,7 +559,10 @@ export function resolveSet(state: CareerState, load: LoadKind): CareerResult {
       message = `${activeOffer(next).title} is next. You banked ${money(banked)}.`;
     } else {
       next.leg = 0;
-      if (offer.id === "double") message = `DOUBLE RUN complete. All four sets delivered. You banked ${money(banked)} on the final set.`;
+      if (offer.id === "double") {
+        next.job = "yard";
+        message = `DOUBLE RUN complete. All four sets delivered. You banked ${money(banked)} on the final set. The next call is a yard move.`;
+      }
     }
     if (offer.id === "floor" || offer.id === "roof") next.roofDone = true;
     next.roofActive = roofFor(next.job);
