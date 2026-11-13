@@ -1,8 +1,8 @@
 /**
- * Dev/preview (Vite) half of the platform PWA chrome: serves the ?install=1
- * tutorial and the per-app manifest, and injects missing PWA head tags into
- * app documents. The deployed-app half lives in server/middleware/grok-pwa.ts;
- * both share scripts/grok-pwa-shared.mjs.
+ * Platform PWA chrome. Dev and preview serve the ?install=1 tutorial and the
+ * per-app manifest from request handlers and inject missing head tags into app
+ * documents; the published build is static, so generateBundle also emits the
+ * manifest and icon as files. Everything shares scripts/grok-pwa-shared.mjs.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -13,10 +13,17 @@ import {
   injectGrokPwaHead,
   isDocumentPath,
   isInstallQuery,
+  readOgSite,
   renderInstallPageHtml,
   renderWebManifest,
   snapshotOgIdentity,
 } from "./grok-pwa-shared.mjs";
+import {
+  ICON_FILE,
+  MANIFEST_FILE,
+  renderIconPng,
+  renderStaticManifest,
+} from "./grok-pwa-assets.mjs";
 
 export const GROK_OG_IDENTITY_ID = "virtual:grok-og-identity";
 
@@ -42,7 +49,7 @@ function sendHtml(res, html) {
   res.end(body);
 }
 
-function serveGrokPwa(middlewares) {
+function serveGrokPwa(middlewares, base = "/") {
   middlewares.use((req, res, next) => {
     const rawUrl = req.url ?? "";
     const pathOnly = rawUrl.split("?", 1)[0] ?? "";
@@ -53,7 +60,7 @@ function serveGrokPwa(middlewares) {
     }
 
     if (pathOnly === "/__grok/manifest.webmanifest" || pathOnly === "/__grok/manifest.json") {
-      const body = Buffer.from(renderWebManifest(requestHost(req)), "utf8");
+      const body = Buffer.from(renderWebManifest(requestHost(req), base), "utf8");
       res.statusCode = 200;
       res.setHeader("content-type", "application/manifest+json; charset=utf-8");
       res.setHeader("cache-control", "no-cache");
@@ -153,10 +160,13 @@ function wrapHtmlResponses(middlewares, cwd) {
 
 export function grokPwaPlugin() {
   let root = process.cwd();
+  // Vite's base, so every emitted URL survives a subpath deploy (/slingline/).
+  let base = "/";
   return {
     name: "app-builder:grok-pwa",
     configResolved(config) {
       root = config.root;
+      base = config.base || "/";
     },
     resolveId(id) {
       if (id === GROK_OG_IDENTITY_ID) return `\0${GROK_OG_IDENTITY_ID}`;
@@ -169,16 +179,28 @@ export function grokPwaPlugin() {
       return injectGrokPwaHead(html, {
         host: process.env.VITE_PUBLIC_HOSTNAME ?? "",
         cwd: root,
+        base,
       });
     },
     configureServer(server) {
       // Registered directly (not in a returned post-hook) so both run BEFORE
       // TanStack Start's SSR middleware, like the auth-popup plugin.
-      serveGrokPwa(server.middlewares);
+      serveGrokPwa(server.middlewares, base);
       wrapHtmlResponses(server.middlewares, root);
     },
+    // The published output is static, so the dev/preview handlers above cannot
+    // answer /__grok/* there. Emit the same two URLs as real files instead.
+    generateBundle() {
+      if (this.environment?.name !== "client") return;
+      this.emitFile({
+        type: "asset",
+        fileName: MANIFEST_FILE,
+        source: renderStaticManifest(readOgSite(root), base),
+      });
+      this.emitFile({ type: "asset", fileName: ICON_FILE, source: renderIconPng() });
+    },
     configurePreviewServer(server) {
-      serveGrokPwa(server.middlewares);
+      serveGrokPwa(server.middlewares, base);
       // Post-hook: preview registers compression between the direct hooks and
       // the post-hooks, and the injector must wrap AFTER compression so it
       // sees plaintext HTML (compression then compresses the injected output).

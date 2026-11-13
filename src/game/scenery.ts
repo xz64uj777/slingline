@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { acesFilmic } from "./tonemap.ts";
 
 /**
  * Static job-site dressing. Props sit in the corners, on the high-rise, and
@@ -38,6 +39,17 @@ const CITY: readonly [number, number, number, number, number][] = [
   [42, 64, 11, 11, 21],
 ];
 
+/**
+ * Static yard props are casters too. The sun's frustum is tight around the
+ * crane, so meshes far outside the work area cost nothing in the shadow pass.
+ */
+function castShadows(root: THREE.Object3D) {
+  root.traverse((part) => {
+    const mesh = part as THREE.Mesh;
+    if (mesh.isMesh) mesh.castShadow = true;
+  });
+}
+
 export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   const dirt = new THREE.MeshStandardMaterial({ color: 0x8d7b62, roughness: 0.96, metalness: 0 });
   const gravel = new THREE.MeshStandardMaterial({ color: 0x6e675c, roughness: 0.94, metalness: 0.02 });
@@ -56,6 +68,17 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
     metalness: 0.1,
   });
   const coneMat = new THREE.MeshStandardMaterial({ color: 0xe07a2f, roughness: 0.7 });
+  const windowMat = new THREE.MeshStandardMaterial({
+    color: 0x16222e,
+    roughness: 0.16,
+    metalness: 0.55,
+  });
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0xf7e7c0,
+    emissive: 0xffe1a8,
+    emissiveIntensity: 0.2,
+    roughness: 0.4,
+  });
   const cityMat = new THREE.MeshStandardMaterial({ color: 0x8e96a0, roughness: 0.82, metalness: 0.04 });
 
   const box = new THREE.BoxGeometry(1, 1, 1);
@@ -166,8 +189,8 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   addBeams(scene, box, steel, -38, -30);
   addSpools(scene, cyl, rust, -34, -36);
   addPlates(scene, box, steel, 28.6, 13.4);
-  addTruck(scene, box, cyl, cabMat, dark, steel, 38, 40, 0.4);
-  addMixer(scene, box, cyl, mixerMat, dark, 22, -42, 0.8);
+  addTruck(scene, box, cyl, cabMat, dark, steel, lampMat, windowMat, 38, 40, 0.4);
+  addMixer(scene, box, cyl, mixerMat, dark, lampMat, windowMat, 22, -42, 0.8);
 
   const coneCount = 6;
   const cones = new THREE.InstancedMesh(coneGeo, coneMat, coneCount);
@@ -187,8 +210,8 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   cones.instanceMatrix.needsUpdate = true;
   scene.add(cones);
 
-  const towerA = lightTower(box, dark, paint, -27.2, -24.5);
-  const towerB = lightTower(box, dark, paint, 25.2, 16.2);
+  const towerA = lightTower(box, dark, paint, lampMat, -27.2, -24.5);
+  const towerB = lightTower(box, dark, paint, lampMat, 25.2, 16.2);
   scene.add(towerA, towerB);
   const floodA = new THREE.PointLight(0xffe1a8, 6, 28, 2);
   floodA.position.set(-27.2, 6.2, -24.5);
@@ -220,12 +243,25 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   const nightCity = new THREE.Color(0x4a5560);
   const sky = new THREE.Color();
 
+  const clearSky = new THREE.Color();
   return {
     applyNight(amount: number) {
       const t = THREE.MathUtils.clamp(amount, 0, 1);
       sky.copy(daySky).lerp(nightSky, t);
-      lights.renderer.setClearColor(sky, 1);
       lights.fog.color.copy(sky);
+      // Fog is tone-mapped in the shader; the clear colour is not. Hand the
+      // clear the curve's output — still linear, because the renderer
+      // sRGB-encodes the clear itself — so the horizon meets the sky exactly.
+      if (lights.renderer.toneMapping === THREE.ACESFilmicToneMapping) {
+        const [r, g, b] = acesFilmic(
+          [sky.r, sky.g, sky.b],
+          lights.renderer.toneMappingExposure,
+        );
+        clearSky.setRGB(r, g, b, THREE.LinearSRGBColorSpace);
+        lights.renderer.setClearColor(clearSky, 1);
+      } else {
+        lights.renderer.setClearColor(sky, 1);
+      }
       lights.fog.density = 0.004 + t * 0.0035;
       lights.hemi.color.copy(dayHemi).lerp(nightHemi, t);
       lights.hemi.groundColor.copy(dayGround).lerp(nightGround, t);
@@ -238,6 +274,12 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       floodB.intensity = 6 + t * 24;
       riseLamp.intensity = 4 + t * 18;
       glass.emissiveIntensity = 0.05 + t * 0.9;
+      lampMat.emissiveIntensity = 0.2 + t * 2.6;
+      // The environment map is a day sky; fade it with the night mix so machines
+      // do not keep reflecting daylight after the sun goes down.
+      if (scene.environment) {
+        scene.environmentIntensity = 0.28 * (1 - t * 0.65);
+      }
       moonMat.opacity = t;
       cityMat.color.copy(dayCity).lerp(nightCity, t);
       lights.ground.color.copy(daySlab).lerp(nightSlab, t * 0.55);
@@ -248,6 +290,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
 function addBeams(scene: THREE.Scene, box: THREE.BoxGeometry, mat: THREE.Material, x: number, z: number) {
   for (let i = 0; i < 4; i += 1) {
     const beam = new THREE.Mesh(box, mat);
+    beam.castShadow = true;
     beam.scale.set(0.28, 0.22, 7.2);
     beam.position.set(x - 1.2 + i * 0.42, 0.2 + i * 0.18, z);
     scene.add(beam);
@@ -260,6 +303,7 @@ function addSpools(scene: THREE.Scene, cyl: THREE.CylinderGeometry, mat: THREE.M
     [1.3, 0.4],
   ] as const) {
     const spool = new THREE.Mesh(cyl, mat);
+    spool.castShadow = true;
     spool.scale.set(0.9, 0.7, 0.9);
     spool.rotation.z = Math.PI / 2;
     spool.position.set(x + dx, 0.45, z + dz);
@@ -270,6 +314,7 @@ function addSpools(scene: THREE.Scene, cyl: THREE.CylinderGeometry, mat: THREE.M
 function addPlates(scene: THREE.Scene, box: THREE.BoxGeometry, mat: THREE.Material, x: number, z: number) {
   for (let i = 0; i < 3; i += 1) {
     const plate = new THREE.Mesh(box, mat);
+    plate.castShadow = true;
     plate.scale.set(1.6, 0.12, 2.4);
     plate.position.set(x, 0.12 + i * 0.14, z);
     scene.add(plate);
@@ -283,6 +328,8 @@ function addTruck(
   cabMat: THREE.Material,
   dark: THREE.Material,
   steel: THREE.Material,
+  lampMat: THREE.Material,
+  windowMat: THREE.Material,
   x: number,
   z: number,
   rot: number,
@@ -297,6 +344,21 @@ function addTruck(
   bed.scale.set(2.4, 0.35, 6.4);
   bed.position.set(0, 1.05, 1.1);
   truck.add(cab, bed);
+  const windshield = new THREE.Mesh(box, windowMat);
+  windshield.scale.set(1.9, 0.6, 0.06);
+  windshield.position.set(0, 1.72, -4.18);
+  const sideWindowL = new THREE.Mesh(box, windowMat);
+  sideWindowL.scale.set(0.06, 0.55, 1.2);
+  sideWindowL.position.set(1.16, 1.72, -3.1);
+  const sideWindowR = sideWindowL.clone();
+  sideWindowR.position.x = -1.16;
+  truck.add(windshield, sideWindowL, sideWindowR);
+  for (const lx of [-0.72, 0.72]) {
+    const lamp = new THREE.Mesh(box, lampMat);
+    lamp.scale.set(0.34, 0.2, 0.08);
+    lamp.position.set(lx, 0.95, -4.22);
+    truck.add(lamp);
+  }
   for (let i = 0; i < 3; i += 1) {
     const stick = new THREE.Mesh(box, steel);
     stick.scale.set(0.22, 0.18, 5.6);
@@ -315,8 +377,13 @@ function addTruck(
     wheel.scale.set(0.72, 0.4, 0.72);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(wx, 0.36, wz);
-    truck.add(wheel);
+    const hub = new THREE.Mesh(cyl, steel);
+    hub.scale.set(0.3, 0.07, 0.3);
+    hub.rotation.z = Math.PI / 2;
+    hub.position.set(wx + Math.sign(wx) * 0.22, 0.36, wz);
+    truck.add(wheel, hub);
   }
+  castShadows(truck);
   scene.add(truck);
 }
 
@@ -326,6 +393,8 @@ function addMixer(
   cyl: THREE.CylinderGeometry,
   body: THREE.Material,
   dark: THREE.Material,
+  lampMat: THREE.Material,
+  windowMat: THREE.Material,
   x: number,
   z: number,
   rot: number,
@@ -333,39 +402,82 @@ function addMixer(
   const truck = new THREE.Group();
   truck.position.set(x, 0, z);
   truck.rotation.y = rot;
+  // Frame first: every other part sits on it, so nothing floats.
+  const frame = new THREE.Mesh(box, dark);
+  frame.scale.set(1.7, 0.3, 5.4);
+  frame.position.set(0, 0.82, 0);
   const cab = new THREE.Mesh(box, body);
   cab.scale.set(2.2, 1.7, 2);
-  cab.position.set(0, 1.3, -2.6);
-  const drum = new THREE.Mesh(cyl, dark);
-  drum.scale.set(1.5, 3.4, 1.5);
-  drum.rotation.x = Math.PI / 2.4;
-  drum.position.set(0, 1.7, 0.8);
-  truck.add(cab, drum);
+  cab.position.set(0, 1.85, -2.7);
+  // Tapered bowl: wide at the mouth, narrow at the discharge end.
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.62, 1, 12), dark);
+  drum.scale.set(1.15, 2.8, 1.15);
+  drum.rotation.x = Math.PI / 2 - 0.14;
+  drum.position.set(0, 1.62, 0.55);
+  const hopper = new THREE.Mesh(box, dark);
+  hopper.scale.set(1.1, 0.5, 0.8);
+  hopper.position.set(0, 2.2, -1.05);
+  truck.add(frame, cab, drum, hopper);
+  const windshield = new THREE.Mesh(box, windowMat);
+  windshield.scale.set(1.85, 0.55, 0.06);
+  windshield.position.set(0, 1.95, -3.72);
+  const sideWindowL = new THREE.Mesh(box, windowMat);
+  sideWindowL.scale.set(0.06, 0.5, 1.1);
+  sideWindowL.position.set(1.12, 1.95, -2.7);
+  const sideWindowR = sideWindowL.clone();
+  sideWindowR.position.x = -1.12;
+  const chute = new THREE.Mesh(box, dark);
+  chute.scale.set(0.5, 0.18, 2.3);
+  chute.position.set(0, 1.15, 2.6);
+  chute.rotation.x = 0.34;
+  const chuteLamp = new THREE.Mesh(box, lampMat);
+  chuteLamp.scale.set(0.36, 0.14, 0.06);
+  chuteLamp.position.set(0, 1.55, -3.74);
+  truck.add(windshield, sideWindowL, sideWindowR, chute, chuteLamp);
   for (const [wx, wz] of [
-    [1.1, -2.6],
-    [-1.1, -2.6],
-    [1.1, 1.6],
-    [-1.1, 1.6],
+    [1.05, -2.7],
+    [-1.05, -2.7],
+    [1.05, 1.7],
+    [-1.05, 1.7],
   ] as const) {
     const wheel = new THREE.Mesh(cyl, dark);
     wheel.scale.set(0.7, 0.38, 0.7);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(wx, 0.35, wz);
-    truck.add(wheel);
+    const hub = new THREE.Mesh(cyl, body);
+    hub.scale.set(0.28, 0.06, 0.28);
+    hub.rotation.z = Math.PI / 2;
+    hub.position.set(wx + Math.sign(wx) * 0.21, 0.35, wz);
+    truck.add(wheel, hub);
   }
+  castShadows(truck);
   scene.add(truck);
 }
 
-function lightTower(box: THREE.BoxGeometry, dark: THREE.Material, paint: THREE.Material, x: number, z: number) {
+function lightTower(
+  box: THREE.BoxGeometry,
+  dark: THREE.Material,
+  paint: THREE.Material,
+  lampMat: THREE.Material,
+  x: number,
+  z: number,
+) {
   const tower = new THREE.Group();
   tower.position.set(x, 0, z);
+  const base = new THREE.Mesh(box, dark);
+  base.scale.set(1.2, 0.24, 1.6);
+  base.position.y = 0.12;
   const mast = new THREE.Mesh(box, dark);
   mast.scale.set(0.18, 6.2, 0.18);
   mast.position.y = 3.1;
   const head = new THREE.Mesh(box, paint);
   head.scale.set(1.4, 0.28, 0.35);
   head.position.y = 6.15;
-  tower.add(mast, head);
+  const glare = new THREE.Mesh(box, lampMat);
+  glare.scale.set(1.26, 0.2, 0.06);
+  glare.position.set(0, 6.0, 0.16);
+  tower.add(base, mast, head, glare);
+  castShadows(tower);
   return tower;
 }
 
@@ -414,5 +526,6 @@ function dressRise(
   tarp.scale.set(8, 2.4, 0.08);
   tarp.position.set(0, 8.2, 5.15);
   rise.add(hoist, cage, tarp);
+  castShadows(rise);
   scene.add(rise);
 }

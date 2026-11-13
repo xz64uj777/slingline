@@ -101,6 +101,30 @@
   color: var(--color-danger);
 }
 
+.wind-row {
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.wind-arrow {
+  width: 0.72rem;
+  height: 0.72rem;
+  color: var(--color-primary);
+  transition: transform 600ms ease;
+}
+
+.wind-level[data-level="light"] {
+  color: var(--color-ok);
+}
+
+.wind-level[data-level="steady"] {
+  color: var(--color-primary);
+}
+
+.wind-level[data-level="gusty"] {
+  color: var(--color-danger);
+}
+
 .hold-hot {
   color: var(--color-danger);
   border-color: var(--color-danger);

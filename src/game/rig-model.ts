@@ -75,6 +75,8 @@ const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.36, 12);
 wheelGeo.rotateZ(Math.PI / 2);
 const drumGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 10);
 drumGeo.rotateZ(Math.PI / 2);
+const hubGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.05, 10);
+hubGeo.rotateZ(Math.PI / 2);
 
 function paint(color: number, rough = 0.55, metal = 0.25) {
   return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
@@ -93,6 +95,9 @@ export function createCraneModel(): CraneModel {
   const carrierMat = paint(0x3e454c, 0.62, 0.3);
   const accentMat = paint(0xe3a23a, 0.45, 0.15);
   const rubber = paint(0x1a1c1e, 0.9, 0.05);
+  // Mirror housings keep their own chrome: the cab colour is repainted per
+  // crane, and a cab-coloured mirror vanishes on the black yard cab.
+  const mirrorMat = paint(0xc8d0d8, 0.3, 0.55);
   const glass = new THREE.MeshStandardMaterial({
     color: 0xc5d0d8,
     roughness: 0.08,
@@ -102,6 +107,18 @@ export function createCraneModel(): CraneModel {
     depthWrite: false,
   });
   const trackMat = paint(0x2a2e32, 0.72, 0.35);
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0xfff6dc,
+    emissive: 0xffe1a8,
+    emissiveIntensity: 0.8,
+    roughness: 0.35,
+  });
+  const beaconMat = new THREE.MeshStandardMaterial({
+    color: 0xf4b942,
+    emissive: 0xff8a1f,
+    emissiveIntensity: 0.9,
+    roughness: 0.4,
+  });
 
   const truck = new THREE.Group();
   truck.rotation.order = "YZX";
@@ -115,6 +132,32 @@ export function createCraneModel(): CraneModel {
   const stack = new THREE.Mesh(unit, carrierMat);
   truck.add(chassis, frame, deck, nose, noseGlass, bumper, stack);
 
+  // Cab fittings: headlights at the nose face and mirror heads on stalks.
+  const fittings = new THREE.Group();
+  fittings.visible = false;
+  for (const x of [-0.46, 0.46]) {
+    const lamp = new THREE.Mesh(unit, lampMat);
+    lamp.scale.set(0.3, 0.18, 0.08);
+    lamp.position.set(x, 0, 0);
+    fittings.add(lamp);
+  }
+  truck.add(fittings);
+  // Mirror housings are cab-coloured and carried on short arms, so they read
+  // against the dark nose instead of vanishing into it.
+  const mirrorL = new THREE.Mesh(unit, mirrorMat);
+  const mirrorR = new THREE.Mesh(unit, mirrorMat);
+  const mirrorArmL = new THREE.Mesh(unit, carrierMat);
+  const mirrorArmR = new THREE.Mesh(unit, carrierMat);
+  for (const mirror of [mirrorL, mirrorR]) {
+    mirror.scale.set(0.09, 0.44, 0.28);
+    mirror.visible = false;
+    truck.add(mirror);
+  }
+  for (const arm of [mirrorArmL, mirrorArmR]) {
+    arm.visible = false;
+    truck.add(arm);
+  }
+
   const wheels: THREE.Mesh[] = [];
   const frontHubs: THREE.Group[] = [];
   const hubs: { hub: THREE.Group; steer: boolean; mesh: THREE.Mesh }[] = [];
@@ -123,7 +166,8 @@ export function createCraneModel(): CraneModel {
     const mesh = new THREE.Mesh(wheelGeo, rubber);
     const rim = new THREE.Mesh(unit, carrierMat);
     rim.scale.set(0.18, 0.5, 0.5);
-    hub.add(mesh, rim);
+    const cap = new THREE.Mesh(hubGeo, accentMat);
+    hub.add(mesh, rim, cap);
     truck.add(hub);
     wheels.push(mesh);
     hubs.push({ hub, steer: false, mesh });
@@ -223,7 +267,7 @@ export function createCraneModel(): CraneModel {
   const houseGlass = new THREE.Mesh(unit, glass);
   const counter = new THREE.Mesh(unit, carrierMat);
   const ballast = new THREE.Mesh(unit, accentMat);
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.22, 6), accentMat);
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.22, 6), beaconMat);
   const winch = new THREE.Mesh(drumGeo, carrierMat);
   const winch2 = new THREE.Mesh(drumGeo, carrierMat);
   slew.add(pedestal, house, houseCab, houseGlass, counter, ballast, beacon, winch, winch2);
@@ -281,6 +325,7 @@ export function createCraneModel(): CraneModel {
   const parts = {
     bodyMat, boomMat, cabMat, carrierMat, accentMat,
     chassis, frame, nose, noseGlass, deck, bumper, stack,
+    fittings, mirrorL, mirrorR, mirrorArmL, mirrorArmR,
     hubs, house, houseCab, houseGlass, counter, ballast, beacon, winch, winch2,
     pedestal, aLeft, aRight, counterJib, tele, teleMid, teleIn, ram, rings, head, sheave, truss, jib,
   };
@@ -321,6 +366,11 @@ type Parts = ReturnType<typeof createCraneModel> extends infer _T
       deck: THREE.Mesh;
       bumper: THREE.Mesh;
       stack: THREE.Mesh;
+      fittings: THREE.Group;
+      mirrorL: THREE.Mesh;
+      mirrorR: THREE.Mesh;
+      mirrorArmL: THREE.Mesh;
+      mirrorArmR: THREE.Mesh;
       hubs: { hub: THREE.Group; steer: boolean; mesh: THREE.Mesh }[];
       house: THREE.Mesh;
       houseCab: THREE.Mesh;
@@ -392,6 +442,18 @@ function showTruss(truss: Truss, shown: number, halfX: number, rise: number, y0:
   }
 }
 
+/**
+ * Roof beacon glow. Steady and dim by day; a slow amber pulse once the night
+ * mix comes up, so the crane reads as working under lights rather than parked
+ * with a lit button. `night` is 0 (day) to 1 (night), `time` is seconds.
+ */
+export function setBeaconPulse(model: CraneModel, night: number, time: number) {
+  const material = partsOf(model).beacon.material;
+  if (!(material instanceof THREE.MeshStandardMaterial)) return;
+  const beat = 0.5 + 0.5 * Math.sin(time * 2.2);
+  material.emissiveIntensity = 0.25 + Math.max(0, Math.min(1, night)) * (0.15 + 1.15 * beat);
+}
+
 export function applyCraneLook(model: CraneModel, crane: CraneId, shown: number, packed: boolean, stow: number, slide: number) {
   const look = LOOK[crane];
   const p = partsOf(model);
@@ -455,6 +517,36 @@ export function applyCraneLook(model: CraneModel, crane: CraneId, shown: number,
     put(p.stack, 0.85, 1.55, 0.9, 0.16, 0.7, 0.16);
   }
 
+  // Cab fittings ride the nose wherever this look placed it. Fixed sizes, so a
+  // wide carrier cab does not stretch the lamps into slabs.
+  p.fittings.visible = p.nose.visible;
+  p.mirrorL.visible = p.nose.visible;
+  p.mirrorR.visible = p.nose.visible;
+  p.mirrorArmL.visible = p.nose.visible;
+  p.mirrorArmR.visible = p.nose.visible;
+  if (p.nose.visible) {
+    const n = p.nose;
+    p.fittings.position.set(
+      n.position.x,
+      n.position.y - n.scale.y * 0.3,
+      n.position.z + n.scale.z * 0.52,
+    );
+    const cabSide = n.scale.x * 0.5;
+    const halfW = cabSide + 0.16;
+    const mirrorY = n.position.y + n.scale.y * 0.34;
+    // On the front corners, not the doors: that is where they read as mirrors
+    // from a three-quarter view instead of disappearing into the cab side.
+    const mirrorZ = n.position.z + n.scale.z * 0.5 + 0.02;
+    p.mirrorL.position.set(n.position.x - halfW, mirrorY, mirrorZ);
+    p.mirrorR.position.set(n.position.x + halfW, mirrorY, mirrorZ);
+    const armLength = halfW - cabSide + 0.05;
+    const armX = cabSide + (halfW - cabSide) * 0.5;
+    p.mirrorArmL.scale.set(armLength, 0.06, 0.06);
+    p.mirrorArmL.position.set(n.position.x - armX, mirrorY, mirrorZ);
+    p.mirrorArmR.scale.set(armLength, 0.06, 0.06);
+    p.mirrorArmR.position.set(n.position.x + armX, mirrorY, mirrorZ);
+  }
+
   const axles = AXLES[crane];
   p.hubs.forEach((slot, i) => {
     const axle = axles[Math.floor(i / 2)];
@@ -469,6 +561,12 @@ export function applyCraneLook(model: CraneModel, crane: CraneId, shown: number,
     const rim = slot.hub.children[1] as THREE.Mesh;
     rim.visible = true;
     rim.position.set(side * -0.02, 0, 0);
+    // The tyre is scaled per crane while the cap mesh is not, so its offset and
+    // size have to follow the same scale or a big wheel swallows it whole.
+    const cap = slot.hub.children[2] as THREE.Mesh;
+    cap.visible = true;
+    cap.scale.setScalar(axle.scale);
+    cap.position.set(side * (0.18 * axle.scale + 0.03), 0, 0);
   });
   model.frontHubs.length = 0;
   for (const slot of p.hubs) if (slot.steer && slot.hub.visible) model.frontHubs.push(slot.hub);

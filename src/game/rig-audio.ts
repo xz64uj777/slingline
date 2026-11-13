@@ -22,6 +22,8 @@ const VOICE: Record<CraneId, Voice> = {
 };
 
 let ctx: AudioContext | null = null;
+let master: GainNode | null = null;
+let volume = 1;
 let noise: AudioBuffer | null = null;
 let engineNoise: AudioBufferSourceNode | null = null;
 let engineFilter: BiquadFilterNode | null = null;
@@ -52,9 +54,27 @@ export function unlockAudio() {
   boot(audio);
 }
 
+/** Master output level, 0 to 1. Muting is volume 0. */
+export function setAudioVolume(next: number) {
+  volume = Math.max(0, Math.min(1, next));
+  if (master) master.gain.setTargetAtTime(volume, master.context.currentTime, 0.02);
+}
+
+export function audioVolume() {
+  return volume;
+}
+
+/** Everything that makes noise routes through here so one gain mutes it all. */
+export function audioOutput(): AudioNode | null {
+  return master;
+}
+
 function boot(audio: AudioContext) {
   if (started) return;
   started = true;
+  master = audio.createGain();
+  master.gain.value = volume;
+  master.connect(audio.destination);
   const samples = audio.sampleRate * 2;
   noise = audio.createBuffer(1, samples, audio.sampleRate);
   const data = noise.getChannelData(0);
@@ -75,7 +95,7 @@ function boot(audio: AudioContext) {
   engineNoise.loop = true;
   engineNoise.connect(engineFilter);
   engineFilter.connect(engineGain);
-  engineGain.connect(audio.destination);
+  engineGain.connect(master);
   engineNoise.start();
 
   thump = audio.createOscillator();
@@ -84,7 +104,7 @@ function boot(audio: AudioContext) {
   thumpGain = audio.createGain();
   thumpGain.gain.value = 0;
   thump.connect(thumpGain);
-  thumpGain.connect(audio.destination);
+  thumpGain.connect(master);
   thump.start();
 
   hyd = audio.createOscillator();
@@ -97,7 +117,7 @@ function boot(audio: AudioContext) {
   hydFilter.frequency.value = 900;
   hyd.connect(hydFilter);
   hydFilter.connect(hydGain);
-  hydGain.connect(audio.destination);
+  hydGain.connect(master);
   hyd.start();
 
   hum = audio.createOscillator();
@@ -106,7 +126,7 @@ function boot(audio: AudioContext) {
   humGain = audio.createGain();
   humGain.gain.value = 0;
   hum.connect(humGain);
-  humGain.connect(audio.destination);
+  humGain.connect(master);
   hum.start();
 }
 
@@ -119,7 +139,7 @@ function tone(audio: AudioContext, freq: number, ms: number, volume: number, typ
   gain.gain.setValueAtTime(Math.min(volume, 0.018), t);
   gain.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000);
   osc.connect(gain);
-  gain.connect(audio.destination);
+  gain.connect(master ?? audio.destination);
   osc.start();
   osc.stop(t + ms / 1000 + 0.02);
 }
@@ -138,7 +158,7 @@ function clank(audio: AudioContext, volume: number) {
   gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
   src.connect(filter);
   filter.connect(gain);
-  gain.connect(audio.destination);
+  gain.connect(master ?? audio.destination);
   src.start();
   src.stop(t + 0.08);
 }

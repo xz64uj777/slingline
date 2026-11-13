@@ -1,5 +1,5 @@
-import type { Actions } from "@/game/input";
-import { CRANES } from "@/game/cranes";
+import type { Actions } from "./input.ts";
+import { CRANES } from "./cranes.ts";
 import {
   acceptJob as acceptCareerJob,
   activeOffer,
@@ -10,6 +10,7 @@ import {
   contractLabel as careerContractLabel,
   employerLine,
   foundCompany as foundCareer,
+  freshCareer,
   readCareerStore,
   resolveFailure,
   resolveSet,
@@ -19,10 +20,13 @@ import {
   type CraneId,
   type JobId,
   type LoadKind,
-} from "@/game/career";
+} from "./career.ts";
 
-export type { CraneId, JobId, LoadKind } from "@/game/career";
-export { CRANE_CHOICES } from "@/game/cranes";
+export type { CraneId, JobId, LoadKind } from "./career.ts";
+export { CRANE_CHOICES } from "./cranes.ts";
+
+/** Source of randomness. Inject a seeded generator to make a run repeatable. */
+export type Random = () => number;
 
 export type Mode = "easy" | "hard";
 export type Pace = "slow" | "steady" | "fast";
@@ -198,10 +202,12 @@ export class CraneSim {
   mountY = 2.15;
   readonly cableMin = 0.55; // Allow the hook to reach ground-level pickup points beneath the boom.
   readonly cableMax = 14.7;
+  readonly rng: Random;
   readonly hang = 0.95;
   readonly cargoHalf = 0.8;
 
-  constructor() {
+  constructor(rng: Random = Math.random) {
+    this.rng = rng;
     this.best = readBest();
     this.career = readCareerStore();
     this.crane = this.career.crane;
@@ -383,6 +389,48 @@ export class CraneSim {
 
   dismissBeat() {
     this.careerBeat = null;
+  }
+
+  /** Wipe the career save and put the yard back to a brand-new hire. */
+  resetCareer() {
+    this.practicing = false;
+    this.career = freshCareer();
+    this.crane = this.career.crane;
+    this.crawlerOnSite = this.career.crawlerOnSite;
+    this.applyCrane();
+    this.state = "driving";
+    this.speed = 0;
+    this.driveSteer = 0;
+    this.heading = 0;
+    this.truckX = 0;
+    this.truckZ = 0;
+    this.hauling = false;
+    this.outrigger = 0;
+    this.stow = 1;
+    this.deployDir = 0;
+    this.flipped = false;
+    this.flipBilled = false;
+    this.roll = 0;
+    this.rollRate = 0;
+    this.leanSign = 0;
+    this.attached = false;
+    this.airborne = false;
+    this.phase = "seek";
+    this.carry = null;
+    this.careerBeat = null;
+    this.toast = "";
+    this.toastLeft = 0;
+    this.ready = false;
+    this.extension = 0;
+    this.boomPitch = 0.85;
+    this.pitchRate = 0;
+    this.yawRate = 0;
+    this.score = 0;
+    this.limitRatio = 0;
+    this.limitState = "ok";
+    this.warn = false;
+    this.stockYard(true);
+    this.writeCareer();
   }
 
   acceptJob(id: JobId) {
@@ -651,8 +699,8 @@ export class CraneSim {
       this.gust += dt;
       if (this.gust > 4) {
         this.gust = 0;
-        const ang = Math.random() * Math.PI * 2;
-        this.windAmp = 0.55 + Math.random() * 0.85;
+        const ang = this.rng() * Math.PI * 2;
+        this.windAmp = 0.55 + this.rng() * 0.85;
         this.windX = Math.cos(ang);
         this.windZ = Math.sin(ang);
       }

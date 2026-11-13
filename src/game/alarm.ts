@@ -1,4 +1,4 @@
-import { audioContext } from "@/game/rig-audio";
+import { audioContext, audioOutput } from "@/game/rig-audio";
 
 let last = 0;
 
@@ -17,7 +17,7 @@ export function limitAlarm(level: "ok" | "near" | "over", now: number) {
   gain.gain.setValueAtTime(0.05, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
   tone.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(audioOutput() ?? ctx.destination);
   tone.start();
   tone.stop(ctx.currentTime + 0.12);
 }

@@ -1,9 +1,18 @@
 import * as THREE from "three";
 import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
 import { dressSite } from "@/game/scenery";
-import { applyCraneLook, createCraneModel } from "@/game/rig-model";
+import { applyCraneLook, createCraneModel, setBeaconPulse } from "@/game/rig-model";
+import { placeSling } from "@/game/sling";
+import { detectShadowQuality, SHADOW_MAP_SIZE } from "./shadow-quality.ts";
 
 export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck";
+
+export type YardHandlers = {
+  /** The GPU dropped the WebGL context; the caller should pause and say so. */
+  onContextLost?: () => void;
+  /** The context came back and the yard can be drawn again. */
+  onContextRestored?: () => void;
+};
 
 export type Yard = {
   renderer: THREE.WebGLRenderer;
@@ -17,7 +26,81 @@ export type Yard = {
 
 const UP = new THREE.Vector3(0, 1, 0);
 
-export function createYard(canvas: HTMLCanvasElement): Yard {
+/** Half-size of the sun's orthographic shadow box, in world units. */
+const SHADOW_EXTENT = 24;
+/** Sun direction. The shadow camera rides this offset above its focus point. */
+const SUN_OFFSET = new THREE.Vector3(30, 42, 15);
+
+/**
+ * Prefiltered sky for image-based lighting.
+ *
+ * One sun and a hemisphere light leave paint, chrome and glass with nothing to
+ * reflect but the lamps, so the machines read as flat plastic. This builds a
+ * tiny equirectangular sky — zenith, horizon band, ground and one HDR sun blob
+ * aimed along the sun direction — and runs it through PMREM, so rough surfaces
+ * get blurred reflections and polished ones get a highlight. Day colours only;
+ * applyNight dims the whole environment alongside the night mix.
+ */
+function buildSkyEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture | null {
+  try {
+    const width = 128;
+    const height = 64;
+    const data = new Uint16Array(width * height * 4);
+    const zenith = new THREE.Color(0x7fa7cc);
+    const horizon = new THREE.Color(0xeaf0f4);
+    const ground = new THREE.Color(0x5f5647);
+    const sun = new THREE.Color(0xfff2d2);
+    const sunDir = SUN_OFFSET.clone().normalize();
+    const dir = new THREE.Vector3();
+    const sky = new THREE.Color();
+    const half = THREE.DataUtils.toHalfFloat;
+
+    for (let y = 0; y < height; y += 1) {
+      const sinLat = Math.sin(((y + 0.5) / height - 0.5) * Math.PI);
+      const cosLat = Math.cos(((y + 0.5) / height - 0.5) * Math.PI);
+      for (let x = 0; x < width; x += 1) {
+        const lon = ((x + 0.5) / width - 0.5) * Math.PI * 2;
+        dir.set(Math.sin(lon) * cosLat, sinLat, Math.cos(lon) * cosLat);
+        if (sinLat >= 0) sky.copy(horizon).lerp(zenith, Math.pow(sinLat, 0.55));
+        else sky.copy(horizon).lerp(ground, Math.pow(-sinLat, 0.5));
+        // HDR sun: the tight lobe is the specular highlight, the wide one haze.
+        const d = Math.max(0, dir.dot(sunDir));
+        const glow = Math.pow(d, 220) * 6 + Math.pow(d, 8) * 0.3;
+        const i = (y * width + x) * 4;
+        data[i] = half(sky.r + sun.r * glow);
+        data[i + 1] = half(sky.g + sun.g * glow);
+        data[i + 2] = half(sky.b + sun.b * glow);
+        data[i + 3] = half(1);
+      }
+    }
+
+    const equirect = new THREE.DataTexture(
+      data,
+      width,
+      height,
+      THREE.RGBAFormat,
+      THREE.HalfFloatType,
+    );
+    equirect.mapping = THREE.EquirectangularReflectionMapping;
+    equirect.colorSpace = THREE.LinearSRGBColorSpace;
+    equirect.minFilter = THREE.LinearFilter;
+    equirect.magFilter = THREE.LinearFilter;
+    equirect.needsUpdate = true;
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    const target = pmrem.fromEquirectangular(equirect);
+    pmrem.dispose();
+    equirect.dispose();
+    return target.texture;
+  } catch (error) {
+    // No half-float filtering: keep rendering, just without reflections.
+    console.warn("[yard] sky environment unavailable", error);
+    return null;
+  }
+}
+
+export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {}): Yard {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -25,10 +108,38 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     alpha: false,
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Filmic curve: highlights roll off instead of clipping, which is what made
+  // the bare primitives read as flat. Exposure is the single knob to taste.
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  const shadowQuality = detectShadowQuality();
+  const shadowsOn = shadowQuality !== "off";
+  const shadowMapSize = shadowQuality === "off" ? 0 : SHADOW_MAP_SIZE[shadowQuality];
+  renderer.shadowMap.enabled = shadowsOn;
+  renderer.shadowMap.type =
+    shadowQuality === "high" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   renderer.setClearColor(0xd7e3ec, 1);
+
+  const handleContextLost = (event: Event) => {
+    // Without preventDefault the browser will not attempt a restore.
+    event.preventDefault();
+    handlers.onContextLost?.();
+  };
+  const handleContextRestored = () => {
+    resize();
+    handlers.onContextRestored?.();
+  };
+  canvas.addEventListener("webglcontextlost", handleContextLost, false);
+  canvas.addEventListener("webglcontextrestored", handleContextRestored, false);
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0xd7e3ec, 0.004);
+  const environment = buildSkyEnvironment(renderer);
+  if (environment) {
+    scene.environment = environment;
+    // Subtle: reflections sit under the sun's key light, they do not replace it.
+    scene.environmentIntensity = 0.28;
+  }
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 180);
 
   const steel = new THREE.MeshStandardMaterial({
@@ -91,8 +202,22 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const hemi = new THREE.HemisphereLight(0xf2f7fb, 0xd9d3c6, 1.35);
   scene.add(hemi);
   const moon = new THREE.DirectionalLight(0xfffaf2, 1.25);
-  moon.position.set(24, 40, 12);
-  scene.add(moon);
+  moon.position.copy(SUN_OFFSET);
+  moon.castShadow = shadowsOn;
+  if (shadowsOn) {
+    moon.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+    moon.shadow.bias = -0.0002;
+    moon.shadow.normalBias = 0.04;
+  }
+  const shadowCamera = moon.shadow.camera;
+  shadowCamera.left = -SHADOW_EXTENT;
+  shadowCamera.right = SHADOW_EXTENT;
+  shadowCamera.top = SHADOW_EXTENT;
+  shadowCamera.bottom = -SHADOW_EXTENT;
+  shadowCamera.near = 1;
+  shadowCamera.far = 140;
+  shadowCamera.updateProjectionMatrix();
+  scene.add(moon, moon.target);
   const lampA = new THREE.PointLight(0xe3a23a, 28, 48, 2);
   lampA.position.set(-10, 8, -8);
   scene.add(lampA);
@@ -102,6 +227,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   const ground = new THREE.Mesh(new THREE.CircleGeometry(70, 40), concrete);
   ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
   scene.add(ground);
 
   const gridPts: number[] = [];
@@ -135,12 +261,20 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   // Four-leg lifting slings and corner shackles. These are separate from the
   // hoist rope so the rigging remains visible while the load is being carried.
-  const slingMaterial = new THREE.LineBasicMaterial({ color: 0x303943 });
-  const slingGeometry = new THREE.BufferGeometry();
-  slingGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(24), 3));
-  const slings = new THREE.LineSegments(slingGeometry, slingMaterial);
-  slings.frustumCulled = false;
-  scene.add(slings);
+  // Thin cylinders rather than lines: a 1 px line aliases badly and vanishes
+  // with distance, while a mesh keeps a real silhouette at any range.
+  const slingMaterial = new THREE.MeshStandardMaterial({
+    color: 0x303943,
+    metalness: 0.55,
+    roughness: 0.42,
+  });
+  const slingGeometry = new THREE.CylinderGeometry(0.026, 0.026, 1, 6, 1);
+  const slingLegs = Array.from({ length: 4 }, () => {
+    const leg = new THREE.Mesh(slingGeometry, slingMaterial);
+    leg.visible = false;
+    scene.add(leg);
+    return leg;
+  });
   const shackleMaterial = new THREE.MeshStandardMaterial({ color: 0x9aa6b1, metalness: 0.72, roughness: 0.32 });
   const shackles = Array.from({ length: 4 }, () => {
     const shackle = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 6), shackleMaterial);
@@ -155,14 +289,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.18, 1.62), stripe);
     group.add(mesh, band);
     scene.add(group);
-    const shade = new THREE.Mesh(
-      new THREE.CircleGeometry(1.1, 16),
-      new THREE.MeshBasicMaterial({ color: 0x050607, transparent: true, opacity: 0.4, depthWrite: false }),
-    );
-    shade.rotation.x = -Math.PI / 2;
-    shade.position.y = 0.03;
-    scene.add(shade);
-    return { group, mat, shade };
+    return { group, mat };
   });
 
   function ring(material: THREE.Material) {
@@ -179,6 +306,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 6), steelDark);
   scene.add(pole);
 
+  const containers: THREE.Mesh[] = [];
   for (const [x, y, z, h] of [
     [-24, 1.3, -20, 2.6],
     [26, 1.3, 8, 2.6],
@@ -189,6 +317,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     const can = new THREE.Mesh(new THREE.BoxGeometry(2.4, h, 6), y > 2 ? steelDark : steel);
     can.position.set(x, y, z);
     scene.add(can);
+    containers.push(can);
   }
 
   const roadMat = new THREE.MeshStandardMaterial({ color: 0x3e4650, roughness: 0.92, metalness: 0.02 });
@@ -287,6 +416,29 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     ground: concrete,
   });
 
+  // One sun casts; every surface catches it. The rig, the loads, the carrier
+  // and the solid yard furniture all throw shadows (scenery props set their own
+  // flags at build time).
+  scene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh) mesh.receiveShadow = true;
+  });
+  const casters: THREE.Object3D[] = [
+    truck,
+    lowboy,
+    hook,
+    office,
+    rise,
+    ...containers,
+    ...loads.map((load) => load.group),
+  ];
+  for (const caster of casters) {
+    caster.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) mesh.castShadow = true;
+    });
+  }
+
   const geos = new Set<THREE.BufferGeometry>();
   const mats = new Set<THREE.Material>();
   scene.traverse((obj) => {
@@ -306,6 +458,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   const mid = new THREE.Vector3();
   let shake = 0;
   let nightMix = 0;
+  let elapsed = 0;
   let view: CamView = "chase";
   let orbit = 0;
   let pitch = 0;
@@ -348,7 +501,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
   function render(sim: CraneSim, frameDt: number) {
     const wantNight = sim.career.job === "night" ? 1 : 0;
     nightMix += (wantNight - nightMix) * Math.min(1, frameDt * 1.4);
+    elapsed += frameDt;
     site.applyNight(nightMix);
+    setBeaconPulse(craneModel, nightMix, elapsed);
     const face = sim.bodyHeading();
     slew.rotation.y = sim.yaw - face;
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
@@ -389,7 +544,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       rig.beam.scale.x = 0.35 + reach * 1.7;
       rig.beam.position.x = rig.sign * (1.15 + reach * 1.15);
       rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
-      rig.pad.position.y = 0.42 - down * 0.38;
+      // Stowed pads tuck up under the deck instead of hanging beside the tyres.
+      rig.pad.position.y = 0.6 - down * 0.56;
     }
     truck.updateWorldMatrix(true, true);
     tip.getWorldPosition(mid);
@@ -408,10 +564,10 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     hook.quaternion.setFromUnitVectors(UP, dir);
 
     // Keep lifting slings and shackles stowed during travel and setup.
-    const carried = sim.attached && sim.state === "lifting" && !sim.hauling
+    const carried = sim.attached && sim.carry != null && sim.state === "lifting" && !sim.hauling
       ? sim.pieces[sim.carry]
       : undefined;
-    slings.visible = Boolean(carried);
+    slingLegs.forEach((leg) => { leg.visible = Boolean(carried); });
     shackles.forEach((shackle) => { shackle.visible = Boolean(carried); });
     if (carried) {
       const heavyLoad = carried.kind === "heavy";
@@ -420,7 +576,6 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       const halfLength = heavyLoad ? 1.12 : beamLoad ? 2.15 : 0.62;
       const attachY = carried.y + (beamLoad ? 0.18 : 0.55);
       const apex = new THREE.Vector3(sim.hx, sim.hy - 0.18, sim.hz);
-      const positions = slingGeometry.getAttribute("position") as THREE.BufferAttribute;
       for (let i = 0; i < 4; i += 1) {
         const xSign = i % 2 === 0 ? -1 : 1;
         const zSign = i < 2 ? -1 : 1;
@@ -429,12 +584,9 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
           attachY,
           carried.z + zSign * halfLength,
         );
-        positions.setXYZ(i * 2, apex.x, apex.y, apex.z);
-        positions.setXYZ(i * 2 + 1, end.x, end.y, end.z);
+        placeSling(slingLegs[i]!, apex, end);
         shackles[i]!.position.copy(end);
       }
-      positions.needsUpdate = true;
-      slingGeometry.computeBoundingSphere();
     }
 
     sim.pieces.forEach((piece, i) => {
@@ -445,12 +597,21 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
       const beam = piece.kind === "beam";
       view.group.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
       view.mat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
-      view.shade.position.x = piece.x;
-      view.shade.position.z = piece.z;
-      const lift = Math.max(0, piece.y - (heavy ? 1.25 : beam ? 0.32 : sim.cargoHalf));
-      (view.shade.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(0.45 - lift * 0.03, 0.12, 0.45);
-      view.shade.scale.setScalar(THREE.MathUtils.clamp(1 + lift * 0.04, 1, 1.6));
     });
+
+    // Keep the one tight sun frustum over the crane and whatever it is carrying,
+    // snapped to whole shadow texels so the edges do not crawl while driving.
+    // With the pass switched off there is nothing to track.
+    if (shadowsOn) {
+      const focusX = (sim.truckX + sim.hx) * 0.5;
+      const focusZ = (sim.truckZ + sim.hz) * 0.5;
+      const texel = (SHADOW_EXTENT * 2) / shadowMapSize;
+      const snapX = Math.round(focusX / texel) * texel;
+      const snapZ = Math.round(focusZ / texel) * texel;
+      moon.target.position.set(snapX, 0, snapZ);
+      moon.position.set(snapX + SUN_OFFSET.x, SUN_OFFSET.y, snapZ + SUN_OFFSET.z);
+      moon.target.updateMatrixWorld();
+    }
 
     const src = PADS[sim.from]!;
     const deck = sim.roofActive ? sim.roofDeck() : null;
@@ -516,6 +677,8 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
 
   function dispose() {
     observer.disconnect();
+    canvas.removeEventListener("webglcontextlost", handleContextLost, false);
+    canvas.removeEventListener("webglcontextrestored", handleContextRestored, false);
     renderer.dispose();
     for (const g of geos) g.dispose();
     for (const m of mats) m.dispose();

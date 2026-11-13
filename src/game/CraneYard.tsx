@@ -25,11 +25,22 @@ import {
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
 import { limitAlarm } from "@/game/alarm";
-import { rigAudio, unlockAudio } from "@/game/rig-audio";
+import { rigAudio, setAudioVolume, unlockAudio } from "@/game/rig-audio";
+import {
+  readSettingsStore,
+  sensitivityScale,
+  writeSettingsStore,
+  type Scheme,
+  type Sensitivity,
+} from "@/game/settings";
 
 const STEP = 1 / 60;
 
-type Scheme = "stick" | "arrows";
+const VOLUME_STEPS = [
+  { label: "Off", detail: "Muted", value: 0 },
+  { label: "Low", detail: "Quiet", value: 0.4 },
+  { label: "Full", detail: "Loud", value: 1 },
+] as const;
 
 export function CraneYard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,14 +51,18 @@ export function CraneYard() {
   const yardRef = useRef<ReturnType<typeof createYard> | null>(null);
   const camPointers = useRef(new Map<number, { x: number; y: number }>());
   const pinchDistance = useRef<number | null>(null);
+  const [storedSettings] = useState(readSettingsStore);
   const [playing, setPlaying] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [trainingOpen, setTrainingOpen] = useState(false);
   const [trainingStep, setTrainingStep] = useState(0);
-  const [mode, setMode] = useState<Mode>("easy");
-  const [pace, setPace] = useState<Pace>("steady");
-  const [scheme, setScheme] = useState<Scheme>("stick");
-  const [sensitivity, setSensitivity] = useState<"low" | "normal" | "high">("normal");
+  const [mode, setMode] = useState<Mode>(storedSettings.mode);
+  const [pace, setPace] = useState<Pace>(storedSettings.pace);
+  const [scheme, setScheme] = useState<Scheme>(storedSettings.scheme);
+  const [sensitivity, setSensitivity] = useState<Sensitivity>(storedSettings.sensitivity);
+  const [volume, setVolume] = useState(storedSettings.volume);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
   const [crane, setCrane] = useState<CraneId>("rental");
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
@@ -81,6 +96,9 @@ export function CraneYard() {
   const bannerRef = useRef<HTMLDivElement>(null);
   const upRef = useRef<HTMLButtonElement>(null);
   const downRef = useRef<HTMLButtonElement>(null);
+  const windWrapRef = useRef<HTMLParagraphElement>(null);
+  const windArrowRef = useRef<SVGSVGElement>(null);
+  const windLevelRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -91,6 +109,18 @@ export function CraneYard() {
     paceRef.current = pace;
     if (simRef.current) simRef.current.pace = pace;
   }, [pace]);
+
+  useEffect(() => {
+    setTouchSensitivity(sensitivityScale(sensitivity));
+  }, [sensitivity]);
+
+  useEffect(() => {
+    setAudioVolume(volume);
+  }, [volume]);
+
+  useEffect(() => {
+    writeSettingsStore({ mode, pace, scheme, sensitivity, volume });
+  }, [mode, pace, scheme, sensitivity, volume]);
 
   const shownBest = useRef(0);
   const beatShown = useRef<string | null>(null);
@@ -120,9 +150,19 @@ export function CraneYard() {
     setCrane(sim.crane);
     setBooks({ ...sim.career });
 
+    let contextLostNow = false;
     let yard: ReturnType<typeof createYard>;
     try {
-      yard = createYard(canvas);
+      yard = createYard(canvas, {
+        onContextLost: () => {
+          contextLostNow = true;
+          setContextLost(true);
+        },
+        onContextRestored: () => {
+          contextLostNow = false;
+          setContextLost(false);
+        },
+      });
       yardRef.current = yard;
     } catch (err) {
       setGlError(err instanceof Error ? err.message : "The yard couldn't start.");
@@ -134,12 +174,14 @@ export function CraneYard() {
     let acc = 0;
     let prevMode = false;
 
-    window.__controlsTest = {
-      getYaw: () => sim.yaw,
-      getSpeed: () => sim.trolleySpeed,
-      setKeys: (codes) => setQaKeys(codes),
-      setSteer: (v) => setSteerOverride(v),
-    };
+    if (import.meta.env.DEV) {
+      window.__controlsTest = {
+        getYaw: () => sim.yaw,
+        getSpeed: () => sim.trolleySpeed,
+        setKeys: (codes) => setQaKeys(codes),
+        setSteer: (v) => setSteerOverride(v),
+      };
+    }
 
     const paintHud = () => {
       if (scoreRef.current) scoreRef.current.textContent = String(sim.score);
@@ -195,6 +237,23 @@ export function CraneYard() {
               : `${Math.abs(sim.speed).toFixed(1)} m/s`;
       }
       if (meterRef.current) meterRef.current.textContent = sim.state === "lifting" ? "HOOK" : sim.mode === "hard" ? "LAT G" : "SPEED";
+      if (windWrapRef.current) {
+        const show = sim.mode === "hard" && sim.state === "lifting" && !sim.flipped;
+        windWrapRef.current.style.display = show ? "flex" : "none";
+        if (show) {
+          const bearing = (Math.atan2(sim.windX, -sim.windZ) * 180) / Math.PI;
+          if (windArrowRef.current) {
+            windArrowRef.current.style.transform = `rotate(${bearing.toFixed(0)}deg)`;
+          }
+          if (windLevelRef.current) {
+            const level = sim.windAmp < 0.8 ? "light" : sim.windAmp < 1.15 ? "steady" : "gusty";
+            if (windLevelRef.current.dataset.level !== level) {
+              windLevelRef.current.dataset.level = level;
+              windLevelRef.current.textContent = level.toUpperCase();
+            }
+          }
+        }
+      }
       if (deployRef.current) {
         deployRef.current.textContent = sim.flipped
           ? "RIGHT"
@@ -260,6 +319,10 @@ export function CraneYard() {
     };
 
     yard.renderer.setAnimationLoop((now) => {
+      if (contextLostNow) {
+        last = now;
+        return;
+      }
       const frameDt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       acc += frameDt;
@@ -294,7 +357,7 @@ export function CraneYard() {
       yard.dispose();
       yardRef.current = null;
       removeInput();
-      delete window.__controlsTest;
+      if (import.meta.env.DEV) delete window.__controlsTest;
     };
   }, []);
 
@@ -313,6 +376,21 @@ export function CraneYard() {
     const sim = simRef.current;
     if (!sim) return;
     setBooks({ ...sim.career });
+  };
+
+  const resetCareer = () => {
+    simRef.current?.resetCareer();
+    setPracticeId(null);
+    setCrane("rental");
+    setBeat(null);
+    beatShown.current = null;
+    setBoardOpen(false);
+    setSettingsOpen(false);
+    setConfirmReset(false);
+    setTrainingOpen(false);
+    playingRef.current = false;
+    setPlaying(false);
+    refreshBooks();
   };
 
   const fileCompany = () => {
@@ -445,6 +523,20 @@ export function CraneYard() {
               </p>
               <p>
                 LIMIT <span ref={limitRef} data-level="ok" className="limit-read">0%</span>
+              </p>
+              <p ref={windWrapRef} className="wind-row" style={{ display: "none" }}>
+                <span>WIND</span>
+                <svg
+                  ref={windArrowRef}
+                  viewBox="0 0 10 10"
+                  className="wind-arrow"
+                  aria-hidden="true"
+                >
+                  <path d="M5 0.6 L8.8 9 L5 6.6 L1.2 9 Z" fill="currentColor" />
+                </svg>
+                <span ref={windLevelRef} className="wind-level" data-level="light">
+                  LIGHT
+                </span>
               </p>
               <p>
                 <span ref={meterRef}>SPEED</span> <span ref={speedRef}>0.0</span>
@@ -616,9 +708,31 @@ export function CraneYard() {
                 ))}
               </div>
               <button type="button" onClick={() => yardRef.current?.setView(cam)} className="mt-2 min-h-10 w-full border border-line bg-bg px-3 font-display text-sm">RESET CAMERA VIEW</button>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">SOUND</p>
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {VOLUME_STEPS.map((step) => (
+                  <ModeButton
+                    key={step.label}
+                    active={volume === step.value}
+                    onClick={() => setVolume(step.value)}
+                    label={step.label}
+                    detail={step.detail}
+                  />
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setConfirmReset(true);
+                }}
+                className="mt-3 min-h-10 w-full border border-danger bg-bg px-3 font-display text-sm tracking-wide text-danger"
+              >
+                RESET CAREER
+              </button>
               <details className="mt-3 border border-line bg-bg p-2">
                 <summary className="cursor-pointer font-display text-sm tracking-wide">OPERATING HELP</summary>
-                <p className="mt-2 text-sm leading-relaxed text-muted">Stop the carrier and deploy the stabilizer pads before lifting. Use the joystick or arrows to position the crane, Out/In to telescope, and Up/Down to raise or lower the hook. Drag the yard to look around; use two fingers to zoom.</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted">Stop the carrier and deploy the stabilizer pads before lifting. Use the joystick or arrows to position the crane, Out/In to telescope, and Up/Down to raise or lower the hook. Drag the yard to look around; use two fingers to zoom. Hard mode adds a shifting wind: the arrow beside the sway meter shows which way it pushes the load.</p>
               </details>
             </section>
           ) : null}
@@ -745,6 +859,25 @@ export function CraneYard() {
                 />
               ))}
             </div>
+            <p className="mt-4 font-display text-xs tracking-widest text-muted">SOUND</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {VOLUME_STEPS.map((step) => (
+                <ModeButton
+                  key={step.label}
+                  active={volume === step.value}
+                  onClick={() => setVolume(step.value)}
+                  label={step.label}
+                  detail={step.detail}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirmReset(true)}
+              className="mt-3 min-h-10 w-full border border-danger bg-bg px-3 font-display text-sm tracking-wide text-danger"
+            >
+              RESET CAREER
+            </button>
             <p className="mt-3 hidden text-xs text-steel sm:block">
               A D slew · W S trolley · Q up · E down · H flips mode
             </p>
@@ -838,6 +971,53 @@ export function CraneYard() {
           }}
           onClose={() => setBoardOpen(false)}
         />
+      ) : null}
+      {confirmReset ? (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg/85 p-4">
+          <section className="w-full max-w-sm border border-danger border-t-4 bg-surface p-4">
+            <p className="font-display text-xs tracking-widest text-danger">RESET CAREER</p>
+            <h2 className="mt-1 font-display text-3xl leading-none">Start over?</h2>
+            <p className="mt-2 text-sm leading-relaxed text-fg">
+              This erases the career save: cash, standing, jobs done, the crane you own, and
+              any note. Your best set count stays.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="min-h-11 flex-1 border border-line bg-bg px-3 font-display text-sm tracking-wide text-fg"
+              >
+                KEEP PLAYING
+              </button>
+              <button
+                type="button"
+                onClick={resetCareer}
+                className="min-h-11 flex-1 bg-danger px-3 font-display text-sm tracking-wide text-bg"
+              >
+                RESET
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {contextLost ? (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg/85 p-4">
+          <section className="w-full max-w-sm border border-primary border-t-4 bg-surface p-4 text-center">
+            <p className="font-display text-xs tracking-widest text-primary">YARD PAUSED</p>
+            <h2 className="mt-1 font-display text-3xl leading-none">Graphics lost</h2>
+            <p className="mt-2 text-sm leading-relaxed text-fg">
+              The browser dropped the graphics context. The yard pauses and picks up again as
+              soon as the GPU comes back.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 min-h-11 w-full bg-primary px-3 font-display text-sm tracking-wide text-bg"
+            >
+              RELOAD THE YARD
+            </button>
+          </section>
+        </div>
       ) : null}
       {beat ? (
         <div className="absolute inset-0 z-30 flex items-end justify-center bg-bg/80 p-4 sm:items-center">
@@ -1130,7 +1310,7 @@ function ExtendHold({ label, dir }: { label: string; dir: 1 | -1 }) {
         telescope[key] = true;
         syncExtend();
       }}
-      onPointerUp={(e) => {
+      onPointerUp={() => {
         telescope[key] = false;
         syncExtend();
       }}

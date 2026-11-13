@@ -5,14 +5,13 @@ on:
     branches: [main]
     paths:
       - "src/**"
-      - "server/**"
       - "scripts/**"
       - "package.json"
       - "package-lock.json"
+      - "tsconfig.json"
+      - "eslint.config.mjs"
       - "vite.config.ts"
       - ".github/workflows/slingline-pr-test.yml"
-  push:
-    branches: [improve/mobile-pinch-zoom]
   workflow_dispatch:
 
 permissions:
@@ -38,12 +37,16 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
       - name: Build production bundle
         run: npm run build
       - name: Upload production build
         uses: actions/upload-artifact@v4
         with:
-          name: slingline-pr3-build
+          name: slingline-pr-build
           path: .vercel/output/**
           if-no-files-found: error
           retention-days: 7
