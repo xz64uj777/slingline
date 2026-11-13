@@ -414,14 +414,25 @@ describe("operating costs", () => {
     assert.match(result.message, /Note/);
   });
 
-  it("runs a double as two paid legs", () => {
+  it("runs DOUBLE RUN as two crate sets followed by two beam sets", () => {
     const state = owner({ reputation: 8, crane: "heavy", job: "double", cash: 0 });
-    const first = resolveSet(state, "crate");
-    assert.equal(first.state.leg, 1);
-    assert.match(first.message, /First half/);
-    const second = resolveSet(first.state, "beam");
-    assert.equal(second.matched, true);
-    assert.equal(second.state.leg, 0);
-    assert.ok(second.banked > first.banked);
+    const firstCrate = resolveSet(state, "crate");
+    assert.equal(firstCrate.state.leg, 1);
+    assert.match(activeOffer(firstCrate.state).title, /CRATE 2 OF 2/);
+
+    const secondCrate = resolveSet(firstCrate.state, "crate");
+    assert.equal(secondCrate.state.leg, 2);
+    assert.match(activeOffer(secondCrate.state).title, /STEEL BEAM 1 OF 2/);
+
+    const firstBeam = resolveSet(secondCrate.state, "beam");
+    assert.equal(firstBeam.state.leg, 3);
+    assert.match(activeOffer(firstBeam.state).title, /STEEL BEAM 2 OF 2/);
+
+    const secondBeam = resolveSet(firstBeam.state, "beam");
+    assert.equal(secondBeam.matched, true);
+    assert.equal(secondBeam.state.leg, 0);
+    assert.equal(secondBeam.state.job, "yard");
+    assert.ok(secondBeam.banked > firstCrate.banked);
+    assert.match(secondBeam.message, /All four sets delivered/);
   });
 });
