@@ -706,15 +706,16 @@ export class CraneSim {
     this.vy -= diry * radial;
     this.vz -= dirz * radial;
 
-    if (this.attached && !this.airborne) {
-      // Keep the hook at the correct ground-contact height for this cargo.
+    if (this.attached) {
+      // Enforce the cargo's floor plane after the cable-length projection.
+      // The previous pre-projection clamp could be undone by the tether constraint,
+      // allowing the crate mesh to penetrate the ground on the same frame.
       const floorHook = this.hang + this.restY(this.load);
-      if (this.hy < floorHook) {
-        // Hard ground contact: keep the cargo exactly on its resting plane.
-        // Exponential friction is frame-rate independent and prevents ground skating.
+      const cargoBottom = this.hy - this.hang - this.restY(this.load);
+      if (cargoBottom < 0) {
         this.hy = floorHook;
         if (this.vy < 0) this.vy = 0;
-        const groundFriction = Math.exp(-10 * dt);
+        const groundFriction = Math.exp(-14 * dt);
         this.vx *= groundFriction;
         this.vz *= groundFriction;
       }
@@ -1245,7 +1246,11 @@ export class CraneSim {
       }
     }
 
-    if (this.airborne && bottom <= 0.08) {
+    if (this.airborne && bottom <= 0.02) {
+      // Snap the load to its exact resting height before enabling RELEASE LOAD.
+      if (carried) carried.y = this.restY(carried.kind);
+      this.hy = this.hang + this.restY(this.load);
+      this.vy = 0;
       const pad = PADS[this.to]!;
       const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < 2.4;
       if (!gentle && this.hookSpeed > limit) {
