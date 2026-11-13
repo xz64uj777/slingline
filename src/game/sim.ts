@@ -639,6 +639,27 @@ export class CraneSim {
     }
 
     const b = this.boom();
+    // Once cargo is resting on the ground, the hoist must not simulate a taut
+    // pendulum. Keep the hook fixed over the supported load and let cable length
+    // follow the boom; continued DOWN input cannot create horizontal drag.
+    if (this.attached && this.landed) {
+      const floorHook = this.hang + this.restY(this.load);
+      this.hy = floorHook;
+      this.cable = Math.max(
+        this.cableMin,
+        Math.hypot(b.x - this.hx, b.y - floorHook, b.z - this.hz),
+      );
+      this.vx = 0;
+      this.vy = 0;
+      this.vz = 0;
+      this.prevBx = b.x;
+      this.prevBy = b.y;
+      this.prevBz = b.z;
+      this.swayDeg = 0;
+      this.hookSpeed = 0;
+      this.updateJob(dt);
+      return;
+    }
     if (!this.ready) {
       this.prevBx = b.x;
       this.prevBy = b.y;
