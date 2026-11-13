@@ -623,7 +623,19 @@ export class CraneSim {
       this.safetyBypass = false;
     }
     const drop = Math.max(this.cableMin, this.boom().y - 0.35);
-    this.cable = clamp(this.cable - hoist * 2.4 * pace * dt, this.cableMin, drop);
+    const requestedCable = clamp(this.cable - hoist * 2.4 * pace * dt, this.cableMin, drop);
+    // Do not let continued DOWN input tension a load against the ground.
+    if (this.attached && this.landed && hoist > 0) {
+      const floorHook = this.hang + this.restY(this.load);
+      const supportedLength = Math.hypot(b.x - this.hx, b.y - floorHook, b.z - this.hz);
+      this.cable = Math.max(requestedCable, supportedLength);
+      this.vx = 0;
+      this.vy = 0;
+      this.vz = 0;
+      this.hy = floorHook;
+    } else {
+      this.cable = requestedCable;
+    }
 
     const b = this.boom();
     if (!this.ready) {
