@@ -624,25 +624,12 @@ export class CraneSim {
     }
     const drop = Math.max(this.cableMin, this.boom().y - 0.35);
     const requestedCable = clamp(this.cable - hoist * 2.4 * pace * dt, this.cableMin, drop);
-    // Do not let continued DOWN input tension a load against the ground.
-    if (this.attached && this.landed && hoist > 0) {
-      const floorHook = this.hang + this.restY(this.load);
-      const groundBoom = this.boom();
-      const supportedLength = Math.hypot(groundBoom.x - this.hx, groundBoom.y - floorHook, groundBoom.z - this.hz);
-      this.cable = Math.max(requestedCable, supportedLength);
-      this.vx = 0;
-      this.vy = 0;
-      this.vz = 0;
-      this.hy = floorHook;
-    } else {
-      this.cable = requestedCable;
-    }
-
     const b = this.boom();
-    // Once cargo is resting on the ground, the hoist must not simulate a taut
-    // pendulum. Keep the hook fixed over the supported load and let cable length
-    // follow the boom; continued DOWN input cannot create horizontal drag.
-    if (this.attached && this.landed) {
+    // A landed load is supported by the ground while the operator pays out cable
+    // (DOWN). Do not let a taut cable drag it sideways. A deliberate hoist-up
+    // command must release the ground hold and resume the normal suspended-load
+    // constraint so the load can be picked back up without moving the boom.
+    if (this.attached && this.landed && hoist <= 0.02) {
       const floorHook = this.hang + this.restY(this.load);
       this.hy = floorHook;
       this.cable = Math.max(
@@ -660,6 +647,18 @@ export class CraneSim {
       this.updateJob(dt);
       return;
     }
+    if (this.attached && this.landed && hoist > 0.02) {
+      // The operator is intentionally lifting again. Keep the cargo at its
+      // resting plane for this transition frame, then let cable shortening
+      // raise it on subsequent frames.
+      this.landed = false;
+      this.hy = this.hang + this.restY(this.load);
+      this.vx = 0;
+      this.vy = 0;
+      this.vz = 0;
+      this.airborne = true;
+    }
+    this.cable = requestedCable;
     if (!this.ready) {
       this.prevBx = b.x;
       this.prevBy = b.y;
