@@ -298,7 +298,7 @@ export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reaso
 
 function grossFor(state: CareerState, job: JobId, leg: number) {
   const def = JOBS[job];
-  const base = leg === 1 && def.follow ? def.follow.pay : def.pay;
+  const base = leg >= 2 && def.follow ? def.follow.pay : def.pay;
   let gross = base + veteranBump(state);
   if (job === "yard" && callersWary(state)) gross = Math.round(gross * ECONOMY.waryShare);
   return gross;
@@ -314,14 +314,18 @@ function takeFor(state: CareerState, gross: number) {
 export function activeOffer(state: CareerState): JobOffer {
   const id = state.status === "hired" ? assignedJob(state) : state.job;
   const def = JOBS[id] ?? JOBS.yard;
-  const leg = id === "double" ? state.leg : 0;
-  const follow = leg === 1 && def.follow ? def.follow : null;
+  const leg = id === "double" ? Math.max(0, Math.min(3, state.leg)) : 0;
+  // DOUBLE RUN is four separate sets: crate twice, then beam twice.
+  const follow = id === "double" && leg >= 2 && def.follow ? def.follow : null;
+  const stageTitle = id === "double"
+    ? leg < 2 ? `DOUBLE RUN · CRATE ${leg + 1} OF 2` : `DOUBLE RUN · STEEL BEAM ${leg - 1} OF 2`
+    : null;
   const gate = isUnlocked(state, id);
   const gross = grossFor(state, id, leg);
   const wage = state.status === "hired";
   return {
     id,
-    title: follow ? follow.title : def.title,
+    title: stageTitle ?? (follow ? follow.title : def.title),
     kind: follow ? follow.kind : def.kind,
     pad: follow ? follow.pad : def.pad,
     gross,
@@ -550,11 +554,12 @@ export function resolveSet(state: CareerState, load: LoadKind): CareerResult {
     if (gate.ok) message += " You can file Slingline.";
   } else {
     next.reputation += JOBS[offer.id].repGain;
-    if (offer.id === "double" && state.leg === 0) {
-      next.leg = 1;
-      message = `First half set. You banked ${money(banked)}. Now ${activeOffer(next).title}.`;
+    if (offer.id === "double" && state.leg < 3) {
+      next.leg = state.leg + 1;
+      message = `${activeOffer(next).title} is next. You banked ${money(banked)}.`;
     } else {
       next.leg = 0;
+      if (offer.id === "double") message = `DOUBLE RUN complete. All four sets delivered. You banked ${money(banked)} on the final set.`;
     }
     if (offer.id === "floor" || offer.id === "roof") next.roofDone = true;
     next.roofActive = roofFor(next.job);
