@@ -170,6 +170,41 @@ describe("going independent", () => {
     assert.match(canFound({ ...rich, standing: ECONOMY.foundStanding, downtime: 1 }).reason, /downtime/i);
   });
 
+  it("keeps four rental lessons and reaches the starter crane after two owner yard calls", () => {
+    let state = freshCareer();
+    const rentalTitles: string[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const offer = activeOffer(state);
+      rentalTitles.push(offer.title);
+      state = resolveSet(state, offer.kind, "B").state;
+    }
+    assert.deepEqual(rentalTitles, ["YARD MOVE", "PIPE DROP", "WAREHOUSE SET", "TRUSS PICK"]);
+    assert.equal(canFound(state).ok, true);
+
+    const filed = foundCompany(state);
+    assert.equal(filed.ok, true);
+    state = filed.state;
+    assert.equal(state.status, "independent");
+    assert.equal(state.crane, "rental");
+    assert.equal(isUnlocked(state, "steel").ok, false);
+
+    let ownerYardShifts = 0;
+    while (state.cash < downPayment("yard") && ownerYardShifts < 10) {
+      const offer = activeOffer(state);
+      assert.equal(offer.title, "YARD MOVE");
+      state = resolveSet(state, offer.kind, "B").state;
+      ownerYardShifts += 1;
+    }
+    assert.equal(ownerYardShifts, 2);
+
+    const bought = buyCrane(state);
+    assert.equal(bought.ok, true);
+    state = bought.state;
+    assert.equal(state.crane, "yard");
+    assert.equal(isUnlocked(state, "steel").ok, true);
+    assert.equal(isUnlocked(state, "spa").ok, true);
+  });
+
   it("files Slingline as a paid beat and then keeps the contract", () => {
     let state = freshCareer();
     let steps = 0;
@@ -441,7 +476,7 @@ describe("operating costs", () => {
     assert.match(result.message, /Note/);
   });
 
-  it("runs the rooftop spa as a paid deck-kit lift followed by a hot-tub set", () => {
+  it("runs the backyard spa as a paid deck-kit lift followed by a hot-tub set", () => {
     const state = owner({ reputation: 3, crane: "yard", job: "spa" });
     const deck = activeOffer(state);
     assert.equal(deck.no, 6);
