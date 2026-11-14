@@ -23,7 +23,7 @@ export const SETTINGS_KEY = "slingline-settings";
 export const DEFAULT_SETTINGS: Settings = {
   mode: "easy",
   pace: "steady",
-  scheme: "stick",
+  scheme: "arrows",
   sensitivity: "normal",
   volume: 1,
   night: false,
@@ -54,7 +54,7 @@ export function loadSettings(raw: unknown): Settings {
   const mode: Mode = record.mode === "hard" ? "hard" : "easy";
   const pace: Pace =
     record.pace === "slow" ? "slow" : record.pace === "fast" ? "fast" : "steady";
-  const scheme: Scheme = record.scheme === "arrows" ? "arrows" : "stick";
+  const scheme: Scheme = record.scheme === "stick" ? "stick" : "arrows";
   const sensitivity: Sensitivity =
     record.sensitivity === "low"
       ? "low"

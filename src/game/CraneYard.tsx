@@ -340,7 +340,7 @@ export function CraneYard() {
             ? "SETUP · Stop the lowboy on its marked pad, then unload."
             : "SETUP · Stop in the work area, then deploy the pads.";
         } else if (sim.attached && sim.landed) {
-          objective = "SET · Load is resting in the zone. Press RELEASE LOAD to finish.";
+          objective = "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
         } else if (sim.attached) {
           objective = `DELIVER · Carry the ${liveCargo} into the amber ring; slow down and let it settle.`;
         } else if (sim.hookReady) {
@@ -652,11 +652,11 @@ export function CraneYard() {
       ) : null}
 
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-        <div className="bg-surface px-3 py-2">
-          <p ref={companyRef} className="font-display text-sm tracking-widest text-primary">
+        <div className="bg-surface px-2 py-1.5 sm:px-3 sm:py-2">
+          <p ref={companyRef} className="font-display text-xs tracking-widest text-primary sm:text-sm">
             TEMP HIRE
           </p>
-          <h1 className="font-display text-3xl leading-none text-fg sm:text-4xl">SLINGLINE</h1>
+          <h1 className="font-display text-2xl leading-none text-fg sm:text-4xl">SLINGLINE</h1>
           <p ref={statusRef} className="mt-1 font-display text-xs tracking-widest text-muted">
             FOR HARGROVE
           </p>
@@ -755,7 +755,7 @@ export function CraneYard() {
                 "Lower with DOWN or E/F. Use the HOOK view and live alignment cue. HOOK only connects when centered: within 0.3 m horizontally and 0.25 m vertically.",
                 "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
-                "Lower with DOWN until the load is resting in the marked set zone, then press RELEASE LOAD. A clean, controlled placement completes the job.",
+                "Lower with DOWN until the load is resting in the marked amber ring. A clean placement inside the ring completes the job; if you set it down outside, hoist it and lower it again inside.",
               ][trainingStep]}
             </p>
             <div className="mt-4 flex gap-2">
@@ -826,28 +826,6 @@ export function CraneYard() {
             >
               FILE SLINGLINE
             </button>
-            <details className="pointer-events-auto relative">
-              <summary className="cursor-pointer bg-surface px-2 py-1 font-display text-base tracking-wide text-fg">
-                VIEW · {cam === "operator" ? "SEAT" : cam.toUpperCase()}
-              </summary>
-              <div className="absolute left-0 top-full z-20 mt-1 grid grid-cols-2 gap-1 border border-line bg-surface p-1">
-                {(["chase", "wide", "truck", "cab", "hook", "high", "operator"] as CamView[]).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={(event) => {
-                      setCam(id);
-                      yardRef.current?.setView(id);
-                      const box = event.currentTarget.closest<HTMLDetailsElement>("details");
-                      if (box) box.open = false;
-                    }}
-                    className={`px-2 py-1 font-display text-sm tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-bg text-fg"}`}
-                  >
-                    {id === "operator" ? "SEAT" : id.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </details>
           </div>
         </div>
       ) : null}
@@ -870,6 +848,28 @@ export function CraneYard() {
           >
             <Lightbulb size={20} />
           </button>
+          <details className="pointer-events-auto relative">
+            <summary className="cursor-pointer border border-line bg-surface px-2 py-1.5 font-display text-xs tracking-widest text-fg shadow-lg">
+              CAM · {cam === "operator" ? "SEAT" : cam.toUpperCase()}
+            </summary>
+            <div className="absolute right-0 top-full z-20 mt-1 grid grid-cols-2 gap-1 border border-line bg-surface p-1">
+              {(["chase", "wide", "truck", "cab", "hook", "high", "operator"] as CamView[]).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={(event) => {
+                    setCam(id);
+                    yardRef.current?.setView(id);
+                    const box = event.currentTarget.closest<HTMLDetailsElement>("details");
+                    if (box) box.open = false;
+                  }}
+                  className={`px-2 py-1 font-display text-sm tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-bg text-fg"}`}
+                >
+                  {id === "operator" ? "SEAT" : id.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </details>
           <button
             type="button"
             aria-label="Open game settings"

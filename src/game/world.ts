@@ -171,11 +171,11 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     roughness: 0.86,
     metalness: 0,
   });
-  const ringAmber = new THREE.MeshStandardMaterial({
-    color: 0xe3a23a,
-    emissive: 0xe3a23a,
-    emissiveIntensity: 0.65,
-    roughness: 0.35,
+  // Unlit so the set ring stays a clear amber at night and in every theme.
+  const ringAmber = new THREE.MeshBasicMaterial({
+    color: 0xffb02e,
+    toneMapped: false,
+    side: THREE.DoubleSide,
   });
   const ringSteel = new THREE.MeshStandardMaterial({
     color: 0x9aa3ad,
@@ -391,7 +391,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   const targetRing = ring(ringAmber);
   const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), beaconMat);
   scene.add(beacon);
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 6), steelDark);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2, 6), ringAmber);
   scene.add(pole);
 
   const containers: THREE.Mesh[] = [];
@@ -720,14 +720,15 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     targetRing.position.set(deck ? deck.x : dst.x, deck ? deck.y + 0.08 : 0.04, deck ? deck.z : dst.z);
     // The amber ring is the landing tolerance: draw it at the job's radius so
     // precision work visibly asks for a smaller target than a yard move.
-    targetRing.scale.setScalar(sim.setTolerance / 2.15);
+    const pulse = 1 + Math.sin(performance.now() * 0.003) * 0.045;
+    targetRing.scale.setScalar((sim.setTolerance / 2.15) * pulse);
     const edge = 2.3;
     const sign = (deck ? deck.x : dst.x) >= 0 ? 1 : -1;
     const px = (deck ? deck.x : dst.x) + (deck ? -4.2 : sign * edge);
     const pz = deck ? deck.z : dst.z;
     const py = deck ? deck.y : 0;
     pole.position.set(px, py + 1.6, pz);
-    beacon.position.set(px, py + 3.5, pz);
+    beacon.position.set(px, py + 3.5 + Math.sin(performance.now() * 0.002) * 0.22, pz);
     beacon.rotation.y += frameDt * 0.8;
 
     const fx = -Math.sin(sim.yaw);
