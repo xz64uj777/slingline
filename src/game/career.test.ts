@@ -425,3 +425,43 @@ describe("operating costs", () => {
     assert.ok(second.banked > first.banked);
   });
 });
+
+describe("grade pay and reputation", () => {
+  it("scales the payout and reputation with the grade", () => {
+    const state = owner({ job: "steel", crane: "yard", reputation: 10 });
+    const good = resolveSet(state, "beam", "S");
+    const plain = resolveSet(state, "beam", "B");
+    const poor = resolveSet(state, "beam", "C");
+
+    assert.ok(good.banked > plain.banked);
+    assert.ok(poor.banked < plain.banked);
+    assert.equal(good.state.reputation - state.reputation, 1 + 2);
+    assert.equal(plain.state.reputation - state.reputation, 1);
+    assert.equal(poor.state.reputation - state.reputation, 1);
+    assert.match(good.message, /Graded S/);
+  });
+
+  it("keeps the default grade at par so old calls are unchanged", () => {
+    const state = owner({ job: "steel", crane: "yard", reputation: 10 });
+    assert.equal(resolveSet(state, "beam").banked, resolveSet(state, "beam", "B").banked);
+  });
+});
+
+describe("set ring tightness", () => {
+  it("asks for a much tighter set on precision work than a yard move", () => {
+    const ring = (job: CareerState["job"]) => activeOffer(owner({ job })).ring;
+    const yard = ring("yard");
+    assert.equal(yard, 2.4);
+    assert.ok(ring("steel") < yard * 0.6, `steel ring is ${ring("steel")}`);
+    assert.ok(ring("roof") < ring("steel"), `roof ring is ${ring("roof")}`);
+    assert.ok(ring("night") < yard);
+    assert.ok(ring("tracks") > ring("roof"));
+  });
+
+  it("uses the follow leg's own ring on a double run", () => {
+    const first = activeOffer(owner({ job: "double", leg: 0 }));
+    const second = activeOffer(owner({ job: "double", leg: 1 }));
+    assert.equal(first.ring, 1.9);
+    assert.ok(second.ring < first.ring, `follow ring is ${second.ring}`);
+  });
+});

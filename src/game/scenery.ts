@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { acesFilmic } from "./tonemap.ts";
+import type { SiteTheme } from "./levels.ts";
 
 /**
  * Static job-site dressing. Props sit in the corners, on the high-rise, and
@@ -8,7 +9,9 @@ import { acesFilmic } from "./tonemap.ts";
  * enough for a phone.
  */
 export type SiteLook = {
-  applyNight: (amount: number) => void;
+  applyNight: (amount: number, floodBoost?: number) => void;
+  /** Swap the dressing set for the level's site. Cheap after the first call. */
+  setTheme: (theme: SiteTheme) => void;
 };
 
 type Lights = {
@@ -223,6 +226,36 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
 
   dressRise(scene, box, steel, paint, dark);
 
+  const siteThemes = dressThemes(
+    scene,
+    box,
+    cyl,
+    {
+      shed: new THREE.MeshStandardMaterial({ color: 0xb9c2ca, roughness: 0.74, metalness: 0.1 }),
+      roof: new THREE.MeshStandardMaterial({ color: 0x39424b, roughness: 0.7, metalness: 0.25 }),
+      slab: new THREE.MeshStandardMaterial({ color: 0xc5ced6, roughness: 0.9, metalness: 0 }),
+      // Sits just above the dirt skirt; the offset stops the two large planes
+      // from z-fighting into stripes at the far edge of the quay.
+      water: new THREE.MeshStandardMaterial({
+        color: 0x2f4c5c,
+        roughness: 0.18,
+        metalness: 0.4,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+      pallet: new THREE.MeshStandardMaterial({ color: 0xa88a5f, roughness: 0.66, metalness: 0.2 }),
+      containers: [0x2f6d7a, 0x8a4a3a, 0x4a6a4a, 0x9a7a34, 0x3c4a6a].map(
+        (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.66, metalness: 0.2 }),
+      ),
+      steel,
+      rust,
+      paint,
+      dark,
+    },
+    [city, caps, windows],
+  );
+
   const moonMat = new THREE.SpriteMaterial({ color: 0xf4efe4, transparent: true, opacity: 0 });
   const moon = new THREE.Sprite(moonMat);
   moon.position.set(-18, 52, -36);
@@ -245,7 +278,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
 
   const clearSky = new THREE.Color();
   return {
-    applyNight(amount: number) {
+    applyNight(amount: number, floodBoost = 0) {
       const t = THREE.MathUtils.clamp(amount, 0, 1);
       sky.copy(daySky).lerp(nightSky, t);
       lights.fog.color.copy(sky);
@@ -270,9 +303,9 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       lights.sun.intensity = 1.25 + (0.36 - 1.25) * t;
       lights.lampA.intensity = 28 + t * 26;
       lights.lampB.intensity = 18 + t * 20;
-      floodA.intensity = 6 + t * 28;
-      floodB.intensity = 6 + t * 24;
-      riseLamp.intensity = 4 + t * 18;
+      floodA.intensity = 6 + t * 28 + floodBoost * (12 + t * 26);
+      floodB.intensity = 6 + t * 24 + floodBoost * (10 + t * 22);
+      riseLamp.intensity = 4 + t * 18 + floodBoost * (8 + t * 20);
       glass.emissiveIntensity = 0.05 + t * 0.9;
       lampMat.emissiveIntensity = 0.2 + t * 2.6;
       // The environment map is a day sky; fade it with the night mix so machines
@@ -282,8 +315,9 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       }
       moonMat.opacity = t;
       cityMat.color.copy(dayCity).lerp(nightCity, t);
-      lights.ground.color.copy(daySlab).lerp(nightSlab, t * 0.55);
+      lights.ground.color.copy(daySlab).lerp(nightSlab, t * 0.55).multiply(siteThemes.tint);
     },
+    setTheme: siteThemes.setTheme,
   };
 }
 
@@ -528,4 +562,154 @@ function dressRise(
   rise.add(hoist, cage, tarp);
   castShadows(rise);
   scene.add(rise);
+}
+
+type SiteMats = {
+  shed: THREE.Material;
+  roof: THREE.Material;
+  slab: THREE.Material;
+  water: THREE.Material;
+  pallet: THREE.Material;
+  containers: THREE.Material[];
+  steel: THREE.Material;
+  rust: THREE.Material;
+  paint: THREE.Material;
+  dark: THREE.Material;
+};
+
+const THEME_TINT: Record<SiteTheme, number> = {
+  yard: 0xffffff,
+  warehouse: 0xdfe2e4,
+  steel: 0xd6cbb9,
+  tower: 0xe6e9eb,
+  port: 0xcfdbe1,
+};
+
+/**
+ * One dressing set per site theme, all outside the fence so nothing the crane
+ * can hit moves. Built once; setTheme just toggles the groups and the skyline.
+ */
+function dressThemes(
+  scene: THREE.Scene,
+  box: THREE.BoxGeometry,
+  cyl: THREE.CylinderGeometry,
+  mats: SiteMats,
+  skyline: THREE.Object3D[],
+) {
+  const groups: Record<Exclude<SiteTheme, "yard">, THREE.Group> = {
+    warehouse: new THREE.Group(),
+    steel: new THREE.Group(),
+    tower: new THREE.Group(),
+    port: new THREE.Group(),
+  };
+  for (const group of Object.values(groups)) {
+    group.visible = false;
+    scene.add(group);
+  }
+
+  const add = (
+    parent: THREE.Group,
+    mat: THREE.Material,
+    sx: number,
+    sy: number,
+    sz: number,
+    x: number,
+    y: number,
+    z: number,
+  ) => {
+    const mesh = new THREE.Mesh(box, mat);
+    mesh.scale.set(sx, sy, sz);
+    mesh.position.set(x, y, z);
+    parent.add(mesh);
+    return mesh;
+  };
+
+  // Warehouse estate: long low sheds with roller doors and trailers at the dock.
+  for (const [x, w] of [
+    [-30, 26],
+    [0, 24],
+    [30, 26],
+  ] as const) {
+    add(groups.warehouse, mats.shed, w, 7, 14, x, 3.5, 62);
+    add(groups.warehouse, mats.roof, w + 1, 0.5, 15, x, 7.2, 62);
+    for (let i = 0; i < 3; i += 1) {
+      const doorX = x - w / 3 + i * (w / 3);
+      add(groups.warehouse, mats.roof, 4.6, 4.8, 0.2, doorX, 2.4, 54.9);
+      add(groups.warehouse, mats.paint, 4.9, 0.2, 0.24, doorX, 4.9, 54.9);
+    }
+  }
+  for (const [x, rot] of [
+    [14, 0.3],
+    [20, -0.25],
+  ] as const) {
+    const trailer = new THREE.Group();
+    trailer.position.set(x, 0, 52);
+    trailer.rotation.y = rot;
+    add(trailer, mats.steel, 2.5, 0.3, 11, 0, 0.95, 0);
+    add(trailer, mats.dark, 2.5, 2.4, 2.4, 0, 1.8, -5.2);
+    for (const z of [-4.4, 4.2]) {
+      const wheel = new THREE.Mesh(cyl, mats.dark);
+      wheel.scale.set(0.62, 0.4, 0.62);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(1.15, 0.42, z);
+      trailer.add(wheel);
+    }
+    groups.warehouse.add(trailer);
+  }
+  for (let i = 0; i < 6; i += 1) {
+    add(groups.warehouse, mats.pallet, 1.2, 0.16, 1, -19 + (i % 2) * 1.4, 0.1 + Math.floor(i / 2) * 0.18, 52 - (i % 3) * 0.4);
+  }
+
+  // Steel yard: racking, pipe stacks and plate piles across the north fence.
+  for (const x of [-22, 0, 22]) {
+    for (const dx of [-2.4, 2.4]) add(groups.steel, mats.dark, 0.34, 8.5, 0.34, x + dx, 4.25, -56);
+    for (let j = 0; j < 9; j += 1) {
+      add(groups.steel, j % 3 === 1 ? mats.rust : mats.steel, 7.4, 0.34, 0.7, x, 0.35 + j * 0.42, -56 + (j % 2) * 0.5);
+    }
+    add(groups.steel, mats.paint, 7.8, 0.18, 0.9, x, 4.2, -56);
+  }
+  for (let i = 0; i < 12; i += 1) {
+    const pipe = new THREE.Mesh(cyl, i % 3 === 0 ? mats.rust : mats.steel);
+    pipe.scale.set(0.34, 10, 0.34);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(34 + (i % 4) * 0.8, 0.35 + Math.floor(i / 4) * 0.7, -54);
+    groups.steel.add(pipe);
+  }
+  for (let i = 0; i < 6; i += 1) add(groups.steel, mats.steel, 3.2, 0.16, 2.4, -36, 0.12 + i * 0.18, -54);
+
+  // High-rise: hoist, barriers and rebar on the block beside the rise.
+  add(groups.tower, mats.paint, 1.3, 26, 1.3, 46, 13, -58);
+  add(groups.tower, mats.dark, 2.4, 2.6, 2.2, 45.2, 6, -58);
+  for (let i = 0; i < 8; i += 1) add(groups.tower, i % 2 ? mats.paint : mats.slab, 0.5, 1.1, 2.6, 28, 0.55, -54 + i * 3);
+  for (let i = 0; i < 5; i += 1) add(groups.tower, mats.rust, 1.6, 0.5, 6, -46, 0.3 + (i % 2) * 0.5, -56 + Math.floor(i / 2) * 2);
+
+  // Docks: stacked boxes and a gantry over the water beyond the fence.
+  for (let row = 0; row < 2; row += 1) {
+    for (let i = 0; i < 6; i += 1) {
+      const can = mats.containers[(i + row) % mats.containers.length]!;
+      add(groups.port, can, 2.6, 2.6, 6, -18 + i * 3, 1.3 + row * 2.65, 62);
+    }
+  }
+  for (const x of [-8, 14]) add(groups.port, mats.paint, 1.1, 20, 1.1, x, 10, 66);
+  add(groups.port, mats.paint, 24, 1.4, 1.6, 3, 20, 66);
+  add(groups.port, mats.dark, 3, 2.2, 3, 3, 17.8, 66);
+  add(groups.port, mats.water, 260, 0.1, 90, 0, 0.02, 112);
+  for (let i = 0; i < 6; i += 1) {
+    const bollard = new THREE.Mesh(cyl, mats.dark);
+    bollard.scale.set(0.4, 0.9, 0.4);
+    bollard.position.set(-20 + i * 8, 0.45, 54);
+    groups.port.add(bollard);
+  }
+
+  let current: SiteTheme = "yard";
+  const tint = new THREE.Color(THEME_TINT.yard);
+  const setTheme = (next: SiteTheme) => {
+    if (next === current) return;
+    current = next;
+    for (const [key, group] of Object.entries(groups)) group.visible = key === next;
+    const showSkyline = next === "yard" || next === "steel" || next === "tower";
+    for (const part of skyline) part.visible = showSkyline;
+    tint.setHex(THEME_TINT[next]);
+  };
+  return { tint, setTheme };
 }

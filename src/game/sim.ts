@@ -1,5 +1,6 @@
 import type { Actions } from "./input.ts";
 import { CRANES } from "./cranes.ts";
+import { gradeSet, gradeRep, type Grade } from "./grade.ts";
 import {
   acceptJob as acceptCareerJob,
   activeOffer,
@@ -21,6 +22,7 @@ import {
   type JobId,
   type LoadKind,
 } from "./career.ts";
+import { YARD_DECOYS, loadSpec } from "./loads.ts";
 
 export type { CraneId, JobId, LoadKind } from "./career.ts";
 export { CRANE_CHOICES } from "./cranes.ts";
@@ -64,7 +66,7 @@ export const PADS: Pad[] = [
   { x: 17, z: -8 },
   { x: 12, z: 14 },
   { x: -16, z: -4 },
-  { x: -10, z: 16 },
+  { x: -8, z: -2 },
   { x: 7, z: -3 },
 ];
 
@@ -101,6 +103,25 @@ function writeBest(n: number) {
 }
 
 export type Boom = { x: number; y: number; z: number };
+
+/** What the debrief card reads after a set, and what the payout was built on. */
+export type SetReport = {
+  grade: Grade;
+  /** Distance from the ring centre at touchdown, in metres. */
+  off: number;
+  /** The job's ring radius, in metres. */
+  tolerance: number;
+  /** Hook speed at touchdown, in m/s. */
+  impact: number;
+  /** Peak sway through the carry, in degrees. */
+  sway: number;
+  /** Peak load-chart ratio through the carry, where 1 is the limit. */
+  chart: number;
+  /** Cash banked for the set, after the grade. */
+  pay: number;
+  /** Reputation the grade added. */
+  rep: number;
+};
 
 export class CraneSim {
   mode: Mode = "easy";
@@ -168,6 +189,10 @@ export class CraneSim {
   message = "You work for Hargrove. Take the wage and set the crate.";
   private flipBilled = false;
   warn = false;
+  /** Crane work lights, switched on by the player after dark. */
+  lightsOn = false;
+  /** Run any job at night, from the lighting setting. */
+  night = false;
   swayDeg = 0;
   hookSpeed = 0;
   tipSpeed = 0;
@@ -185,6 +210,12 @@ export class CraneSim {
   breakFlash = 0;
   deliverFlash = 0;
   impulse = 0;
+
+  /** Peak readings for the set in progress. Reset when a load comes on the hook. */
+  peakSway = 0;
+  peakChart = 0;
+  lastSet: SetReport | null = null;
+  debriefLeft = 0;
 
   cx = 0;
   cy = 0.8;
@@ -204,7 +235,6 @@ export class CraneSim {
   readonly cableMax = 14.7;
   readonly rng: Random;
   readonly hang = 0.95;
-  readonly cargoHalf = 0.8;
 
   constructor(rng: Random = Math.random) {
     this.rng = rng;
@@ -231,6 +261,11 @@ export class CraneSim {
 
   get roofActive() {
     return this.career.roofActive;
+  }
+
+  /** Centre tolerance of the active job's set ring, in metres. */
+  get setTolerance() {
+    return activeOffer(this.career).ring;
   }
 
   private applyCrane() {
@@ -513,6 +548,28 @@ export class CraneSim {
     return 1.45 + (this.mountY - 1.45) * (1 - this.stow);
   }
 
+  /**
+   * Live radius and load-chart snapshot for the operator readout. Radius is
+   * measured from the slewing axis, the way a chart is read on site, not from
+   * the carrier's reference point.
+   */
+  loadChart() {
+    const origin = this.rigOrigin();
+    const face = this.bodyHeading();
+    const slewX = origin.x - this.mountBack * Math.sin(face);
+    const slewZ = origin.z - this.mountBack * Math.cos(face);
+    const capacity = Math.max(0.35, this.chartCapacity());
+    const demand = this.attached ? this.loadDemand() : 0;
+    return {
+      radius: Math.hypot(this.hx - slewX, this.hz - slewZ),
+      capacity,
+      demand,
+      ratio: demand / capacity,
+      extension: this.extension,
+      extendMax: this.extendMax,
+    };
+  }
+
   boom(): Boom {
     const length = this.state === "lifting" && !this.hauling ? this.baseLen + this.extension : this.travelLength();
     const pitch = this.boomPitch;
@@ -536,12 +593,16 @@ export class CraneSim {
   }
 
   stockYard(aim: boolean) {
-    const homes: { kind: LoadKind; x: number; z: number }[] = [
-      { kind: "crate", x: -6, z: -8 },
-      { kind: "beam", x: 0, z: -11 },
-      { kind: "heavy", x: 6, z: -8 },
+    // The yard only stocks the call's material plus two decoys. Anything else
+    // would be clutter on the sight line and a wasted draw call.
+    const wanted = activeOffer(this.career).kind;
+    const [decoyA, decoyB] = YARD_DECOYS[wanted];
+    const main = { kind: wanted, x: -4, z: -6 };
+    const decoys = [
+      { kind: decoyA, x: 0, z: -13 },
+      { kind: decoyB, x: 7, z: -9 },
     ];
-    this.pieces = homes.map((home) => ({
+    this.pieces = [main, ...decoys].map((home) => ({
       kind: home.kind,
       x: home.x,
       z: home.z,
@@ -550,10 +611,10 @@ export class CraneSim {
       homeZ: home.z,
     }));
     this.carry = null;
-    this.load = "crate";
-    this.cx = homes[0]!.x;
-    this.cz = homes[0]!.z;
-    this.cy = this.restY("crate");
+    this.load = wanted;
+    this.cx = main.x;
+    this.cz = main.z;
+    this.cy = this.restY(wanted);
     this.from = 0;
     this.applyContract();
     this.attached = false;
@@ -562,9 +623,8 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    const p = homes[1]!;
-    const dist = Math.hypot(p.x, p.z);
-    this.yaw = Math.atan2(-p.x, -p.z);
+    const dist = Math.hypot(main.x, main.z);
+    this.yaw = Math.atan2(-main.x, -main.z);
     this.heading = this.yaw;
     this.yawRate = 0;
     this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
@@ -578,9 +638,7 @@ export class CraneSim {
   }
 
   private restY(kind: LoadKind) {
-    if (kind === "beam") return 0.32;
-    if (kind === "heavy") return 1.25;
-    return this.cargoHalf;
+    return loadSpec(kind).halfY;
   }
 
   private park(home: boolean) {
@@ -606,6 +664,7 @@ export class CraneSim {
   step(dt: number, actions: Actions) {
     if (dt <= 0 || this.careerBeat || this.boardPause) return;
     if (this.toastLeft > 0) this.toastLeft = Math.max(0, this.toastLeft - dt);
+    if (this.debriefLeft > 0) this.debriefLeft = Math.max(0, this.debriefLeft - dt);
     this.stepTruck(dt, actions);
     if (this.state !== "lifting" || this.flipped) {
       this.safetyLock = false;
@@ -770,6 +829,10 @@ export class CraneSim {
     const cosHang = clamp(-diry, -1, 1);
     this.swayDeg = (Math.acos(cosHang) * 180) / Math.PI;
     this.hookSpeed = Math.hypot(this.vx, this.vy, this.vz);
+    if (this.attached) {
+      this.peakSway = Math.max(this.peakSway, this.swayDeg);
+      this.peakChart = Math.max(this.peakChart, this.limitRatio);
+    }
 
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
@@ -790,6 +853,10 @@ export class CraneSim {
       this.deliverFlash -= dt;
       if (this.deliverFlash <= 0) this.spawnNext();
     }
+  }
+
+  setWorkLights(on: boolean) {
+    this.lightsOn = on;
   }
 
   requestSafety() {
@@ -845,7 +912,9 @@ export class CraneSim {
     this.airborne = false;
     this.hookReady = false;
     this.phase = "carry";
-    const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
+    this.peakSway = 0;
+    this.peakChart = 0;
+    const noun = loadSpec(piece.kind).noun;
     this.message = this.limitState === "ok" ? `${noun} on the hook. Set it in the amber ring.` : this.message;
   }
 
@@ -881,7 +950,7 @@ export class CraneSim {
       best = gap;
       this.latch = i;
       this.hookGap = gap;
-      this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
+      this.hookLabel = loadSpec(piece.kind).label;
       // Allow a little practical positioning tolerance without making the hook magnetic.
       // The hook must be within about 30 cm horizontally and 25 cm vertically.
       this.hookReady = flat < 0.3 && Math.abs(this.hy - idealY) < 0.25;
@@ -891,6 +960,10 @@ export class CraneSim {
 
   requestDeploy() {
     if (this.flipped) return;
+    if (this.attached) {
+      this.message = "Set the load down before you stow the pads.";
+      return;
+    }
     if (this.hauling) {
       if (!this.bStopped()) {
         this.message = "Stop the lowboy first.";
@@ -1154,9 +1227,7 @@ export class CraneSim {
     // An empty hook has no suspended load. Nearby yard pieces are candidates,
     // not cargo; never apply their weight to the live load chart until hooked.
     if (!this.attached) return 0;
-    if (this.load === "heavy") return 8.2;
-    if (this.load === "beam") return 4.1;
-    return 2;
+    return loadSpec(this.load).weight;
   }
 
   private chartCapacity() {
@@ -1258,19 +1329,19 @@ export class CraneSim {
     if (this.roofActive && this.airborne) {
       const deck = this.roofDeck();
       const flat = Math.hypot(this.hx - deck.x, this.hz - deck.z);
-      if (flat < 3.6 && bottom < deck.y + 0.45 && bottom > deck.y - 1.1) {
+      if (flat < this.setTolerance && bottom < deck.y + 0.45 && bottom > deck.y - 1.1) {
         if (!gentle && this.hookSpeed > limit) this.fail();
-        else this.succeed();
+        else this.succeed(flat);
         return;
       }
     }
 
     if (this.airborne && bottom <= 0.08) {
       const pad = PADS[this.to]!;
-      const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < 2.4;
+      const off = Math.hypot(this.hx - pad.x, this.hz - pad.z);
       if (!gentle && this.hookSpeed > limit) this.fail();
-      else if (onTarget) this.succeed();
-      else this.setAside();
+      else if (off < this.setTolerance) this.succeed(off);
+      else this.setAside(off);
       return;
     }
 
@@ -1335,13 +1406,13 @@ export class CraneSim {
     this.prevBz += dz;
   }
 
-  private setAside() {
+  private setAside(off: number) {
     this.park(false);
     this.attached = false;
     this.airborne = false;
     this.leanSign = 0;
     this.phase = "seek";
-    this.message = `Wrong pad. Call is ${this.contractLabel()}.`;
+    this.message = `Outside the ring by ${off.toFixed(1)} m. Call is ${this.contractLabel()}.`;
   }
 
   private loadRest() {
@@ -1369,8 +1440,17 @@ export class CraneSim {
     this.billDrop();
   }
 
-  private succeed() {
+  private succeed(off: number) {
     const wasRoof = this.roofActive;
+    const metrics = {
+      off,
+      tolerance: this.setTolerance,
+      impact: this.hookSpeed,
+      impactLimit: this.tuning().impact,
+      sway: this.peakSway,
+      chart: this.peakChart,
+    };
+    const grade = gradeSet(metrics);
     if (this.practicing) {
       this.score += 1;
       if (this.score > this.best) {
@@ -1383,13 +1463,15 @@ export class CraneSim {
       this.leanSign = 0;
       this.phase = "done";
       this.deliverFlash = 1.4;
-      this.message = wasRoof ? "Practice set on the building. Nothing is saved." : "Practice set. Nothing is saved.";
+      this.message = `${wasRoof ? "Practice set on the building." : "Practice set."} Graded ${grade}. Nothing is saved.`;
+      this.lastSet = { grade, ...metrics, pay: 0, rep: 0 };
+      this.debriefLeft = 6;
       this.cy = this.loadRest();
       this.cx = PADS[this.to]!.x;
       this.cz = PADS[this.to]!.z;
       return;
     }
-    const result = resolveSet(this.career, this.load);
+    const result = resolveSet(this.career, this.load, grade);
     this.adopt(result.state);
     this.applyContract();
     this.writeCareer();
@@ -1399,6 +1481,8 @@ export class CraneSim {
         this.best = this.score;
         writeBest(this.best);
       }
+      this.lastSet = { grade, ...metrics, pay: result.banked, rep: gradeRep(grade) };
+      this.debriefLeft = 6;
     }
     this.park(true);
     this.attached = false;

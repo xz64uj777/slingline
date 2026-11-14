@@ -14,7 +14,7 @@
     "preview:restart": "node scripts/preview.mjs restart",
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/preview-path-prefix.test.ts src/game/career.test.ts src/game/sim.test.ts src/game/shadow-quality.test.ts src/game/tonemap.test.ts src/game/sling.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/preview-path-prefix.test.ts src/game/career.test.ts src/game/grade.test.ts src/game/settings.test.ts src/game/sim.test.ts src/game/shadow-quality.test.ts src/game/tonemap.test.ts src/game/sling.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

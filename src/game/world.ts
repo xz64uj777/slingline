@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
+import { levelOf } from "@/game/career";
+import { LOAD_KINDS, loadSpec, type LoadKind } from "@/game/loads";
 import { dressSite } from "@/game/scenery";
-import { applyCraneLook, createCraneModel, setBeaconPulse } from "@/game/rig-model";
+import { applyCraneLook, createCraneModel, operatorSeat, setBeaconPulse } from "@/game/rig-model";
 import { placeSling } from "@/game/sling";
 import { detectShadowQuality, SHADOW_MAP_SIZE } from "./shadow-quality.ts";
 
-export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck";
+export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck" | "operator";
 
 export type YardHandlers = {
   /** The GPU dropped the WebGL context; the caller should pause and say so. */
@@ -159,11 +161,6 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     roughness: 0.4,
     metalness: 0.2,
   });
-  const crateMat = new THREE.MeshStandardMaterial({
-    color: 0xc4894a,
-    roughness: 0.7,
-    metalness: 0.05,
-  });
   const stripe = new THREE.MeshStandardMaterial({
     color: 0xe3a23a,
     roughness: 0.5,
@@ -242,6 +239,26 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   const { truck, slew, boom, tip, mast, wheels, rigs } = craneModel;
   scene.add(truck);
 
+  // Work lights: two heads on the boom tip, aimed at the hook, switched on by
+  // the player after dark. Off by default so daylight is untouched.
+  const workLampMat = new THREE.MeshStandardMaterial({
+    color: 0xfff2cf,
+    emissive: 0xffe7b0,
+    emissiveIntensity: 0,
+    roughness: 0.45,
+  });
+  const workLamps = [-1, 1].map((side) => {
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.24, 10), workLampMat);
+    const light = new THREE.SpotLight(0xfff0c9, 0, 44, 0.44, 0.7, 1.2);
+    // Mounted on the boom head so they travel with the jib.
+    housing.position.set(side * 0.34, 0.06, 0.12);
+    housing.rotation.x = 0.9;
+    light.position.set(side * 0.34, 0.14, 0.12);
+    tip.add(housing, light);
+    scene.add(light.target);
+    return { side, housing, light };
+  });
+
   const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), ropeMat);
   scene.add(rope);
 
@@ -282,15 +299,86 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     return shackle;
   });
 
-  const loads = (["crate", "beam", "heavy"] as const).map(() => {
-    const mat = crateMat.clone();
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const loadViews = new Map<LoadKind, THREE.Group>();
+
+  const loadMat = (color: number) => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.16 });
+  const addBox = (group: THREE.Group, mat: THREE.Material, w: number, h: number, d: number, x = 0, y = 0, z = 0) => {
+    const mesh = new THREE.Mesh(box, mat);
+    mesh.scale.set(w, h, d);
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+    return mesh;
+  };
+
+  /** One yard model per load kind, built at true size around its centre. */
+  const buildLoad = (kind: LoadKind) => {
+    const spec = loadSpec(kind);
     const group = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), mat);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.18, 1.62), stripe);
-    group.add(mesh, band);
+    const body = loadMat(spec.color);
+    if (kind === "crate") {
+      addBox(group, body, 1.6, 1.6, 1.6);
+      addBox(group, stripe, 1.62, 0.18, 1.62);
+    } else if (kind === "beam") {
+      addBox(group, body, 0.62, 0.1, 4.3, 0, 0.22, 0);
+      addBox(group, body, 0.62, 0.1, 4.3, 0, -0.22, 0);
+      addBox(group, body, 0.12, 0.44, 4.3);
+      addBox(group, stripe, 0.64, 0.03, 4.3, 0, 0.28, 0);
+    } else if (kind === "heavy") {
+      addBox(group, body, 2.24, 2.24, 2.24);
+      addBox(group, stripe, 2.26, 0.3, 2.26);
+      addBox(group, steelDark, 2.3, 0.12, 2.3, 0, -1.08, 0);
+    } else if (kind === "pipe") {
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 6.4, 14), body);
+      tube.rotation.x = Math.PI / 2;
+      group.add(tube);
+      for (const z of [-2.2, 0, 2.2]) {
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.09, 14), stripe);
+        band.rotation.x = Math.PI / 2;
+        band.position.z = z;
+        group.add(band);
+      }
+    } else if (kind === "truss") {
+      addBox(group, body, 1.1, 0.09, 5.2, 0, 0.44, 0);
+      addBox(group, body, 1.1, 0.09, 5.2, 0, -0.44, 0);
+      for (let i = -2; i <= 2; i += 1) {
+        addBox(group, body, 0.07, 0.88, 0.07, 0, 0, i * 1.25);
+        const diag = new THREE.Mesh(box, body);
+        diag.scale.set(0.06, 1.62, 0.06);
+        diag.position.set(0, 0, i * 1.25 + 0.62);
+        diag.rotation.x = 0.88;
+        group.add(diag);
+      }
+      addBox(group, stripe, 1.12, 0.04, 5.2, 0, 0.5, 0);
+    } else if (kind === "panel") {
+      addBox(group, concrete, 3.4, 0.26, 1.8);
+      addBox(group, steelDark, 3.4, 0.03, 1.8, 0, 0.145, 0);
+      for (const x of [-1.2, 1.2]) {
+        const loop = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.03, 6, 10), steelDark);
+        loop.position.set(x, 0.2, 0);
+        loop.rotation.y = Math.PI / 2;
+        group.add(loop);
+      }
+    } else if (kind === "hvac") {
+      addBox(group, body, 2.0, 1.2, 1.6);
+      addBox(group, steelDark, 2.04, 0.08, 1.64, 0, 0.64, 0);
+      const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.44, 0.08, 14), steelDark);
+      fan.position.set(0.35, 0.7, 0);
+      group.add(fan);
+      for (const x of [-0.75, -0.25, 0.25]) addBox(group, stripe, 0.04, 0.5, 1.5, x, 0, 0.06);
+    } else {
+      addBox(group, body, 2.4, 2.6, 6.0);
+      addBox(group, stripe, 2.42, 0.16, 6.02, 0, 0.9, 0);
+      addBox(group, steelDark, 2.44, 0.14, 6.02, 0, -1.2, 0);
+      for (const z of [-2.7, -1.4, 0, 1.4, 2.7]) {
+        addBox(group, steelDark, 2.44, 2.5, 0.06, 0, 0, z);
+      }
+    }
     scene.add(group);
-    return { group, mat };
-  });
+    loadViews.set(kind, group);
+  };
+
+  for (const kind of LOAD_KINDS) buildLoad(kind);
 
   function ring(material: THREE.Material) {
     const mesh = new THREE.Mesh(new THREE.RingGeometry(1.7, 2.15, 28), material);
@@ -430,7 +518,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     office,
     rise,
     ...containers,
-    ...loads.map((load) => load.group),
+    ...loadViews.values(),
   ];
   for (const caster of casters) {
     caster.traverse((obj) => {
@@ -456,6 +544,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   const desired = new THREE.Vector3();
   const dir = new THREE.Vector3();
   const mid = new THREE.Vector3();
+  const seatDir = new THREE.Vector3();
   let shake = 0;
   let nightMix = 0;
   let elapsed = 0;
@@ -466,6 +555,8 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   function setView(next: CamView) {
     view = next;
     camera.zoom = 1;
+    // The seat sits inside the cab, so it wants a wider lens than the chase view.
+    camera.fov = next === "operator" ? 54 : camera.aspect < 1 ? 48 : 40;
     camera.updateProjectionMatrix();
     orbit = next === "wide" ? 0.6 : 0;
     pitch = next === "wide" ? 24 : 0;
@@ -490,7 +581,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
-    camera.fov = camera.aspect < 1 ? 48 : 40;
+    camera.fov = view === "operator" ? 54 : camera.aspect < 1 ? 48 : 40;
     camera.updateProjectionMatrix();
   }
 
@@ -499,10 +590,11 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
-    const wantNight = sim.career.job === "night" ? 1 : 0;
+    const wantNight = sim.career.job === "night" || sim.night ? 1 : 0;
     nightMix += (wantNight - nightMix) * Math.min(1, frameDt * 1.4);
     elapsed += frameDt;
-    site.applyNight(nightMix);
+    site.applyNight(nightMix, sim.lightsOn ? 1 : 0);
+    site.setTheme(levelOf(sim.career.job).theme);
     setBeaconPulse(craneModel, nightMix, elapsed);
     const face = sim.bodyHeading();
     slew.rotation.y = sim.yaw - face;
@@ -538,18 +630,32 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     const showPads = sim.crane !== "crawler";
     const reach = Math.min(1, sim.outrigger / 0.57);
     const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
+    const outer = 1.35 + reach * 1.8;
+    const padY = 0.5 - down * 0.48;
     for (const rig of rigs) {
       rig.beam.visible = showPads;
       rig.pad.visible = showPads;
-      rig.beam.scale.x = 0.35 + reach * 1.7;
-      rig.beam.position.x = rig.sign * (1.15 + reach * 1.15);
-      rig.pad.position.x = rig.sign * (1.35 + reach * 1.7);
-      // Stowed pads tuck up under the deck instead of hanging beside the tyres.
-      rig.pad.position.y = 0.6 - down * 0.56;
+      rig.beam.scale.x = outer;
+      rig.pad.position.set(rig.sign * (outer - 0.02), padY, rig.z);
+      // The jack drops out of the beam and lands on the pad, so the foot is
+      // always attached to the machine instead of floating under the beam.
+      rig.bracket.position.set(rig.sign * (outer - 0.02), 0.5, rig.z);
+      const legLen = Math.max(0, 0.51 - (padY + 0.1));
+      rig.leg.visible = showPads && legLen > 0.05;
+      rig.leg.scale.set(1, legLen, 1);
+      rig.leg.position.set(rig.sign * (outer - 0.02), padY + 0.1 + legLen / 2, rig.z);
     }
     truck.updateWorldMatrix(true, true);
     tip.getWorldPosition(mid);
     const b = { x: mid.x, y: mid.y, z: mid.z };
+
+    // Work lights hang off the boom head and aim at the hook.
+    const lampTarget = sim.lightsOn ? 1 : 0;
+    workLampMat.emissiveIntensity += (lampTarget * 2.4 - workLampMat.emissiveIntensity) * Math.min(1, frameDt * 6);
+    for (const lamp of workLamps) {
+      lamp.light.target.position.set(sim.hx, sim.hy, sim.hz);
+      lamp.light.intensity += (lampTarget * 150 - lamp.light.intensity) * Math.min(1, frameDt * 5);
+    }
 
     dir.set(sim.hx - b.x, sim.hy - b.y, sim.hz - b.z);
     const length = Math.max(0.2, dir.length());
@@ -570,11 +676,10 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     slingLegs.forEach((leg) => { leg.visible = Boolean(carried); });
     shackles.forEach((shackle) => { shackle.visible = Boolean(carried); });
     if (carried) {
-      const heavyLoad = carried.kind === "heavy";
-      const beamLoad = carried.kind === "beam";
-      const halfSpan = heavyLoad ? 1.12 : beamLoad ? 0.13 : 0.62;
-      const halfLength = heavyLoad ? 1.12 : beamLoad ? 2.15 : 0.62;
-      const attachY = carried.y + (beamLoad ? 0.18 : 0.55);
+      const spec = loadSpec(carried.kind);
+      const halfSpan = spec.halfX;
+      const halfLength = spec.halfZ;
+      const attachY = carried.y + spec.halfY;
       const apex = new THREE.Vector3(sim.hx, sim.hy - 0.18, sim.hz);
       for (let i = 0; i < 4; i += 1) {
         const xSign = i % 2 === 0 ? -1 : 1;
@@ -589,15 +694,9 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       }
     }
 
-    sim.pieces.forEach((piece, i) => {
-      const view = loads[i];
-      if (!view) return;
-      view.group.position.set(piece.x, piece.y, piece.z);
-      const heavy = piece.kind === "heavy";
-      const beam = piece.kind === "beam";
-      view.group.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
-      view.mat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
-    });
+    for (const piece of sim.pieces) loadViews.get(piece.kind)?.position.set(piece.x, piece.y, piece.z);
+    // Only the stocked kinds are drawn; the rest stay parked off-stage.
+    for (const [kind, group] of loadViews) group.visible = sim.pieces.some((piece) => piece.kind === kind);
 
     // Keep the one tight sun frustum over the crane and whatever it is carrying,
     // snapped to whole shadow texels so the edges do not crawl while driving.
@@ -619,6 +718,9 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     sourceRing.position.x = src.x;
     sourceRing.position.z = src.z;
     targetRing.position.set(deck ? deck.x : dst.x, deck ? deck.y + 0.08 : 0.04, deck ? deck.z : dst.z);
+    // The amber ring is the landing tolerance: draw it at the job's radius so
+    // precision work visibly asks for a smaller target than a yard move.
+    targetRing.scale.setScalar(sim.setTolerance / 2.15);
     const edge = 2.3;
     const sign = (deck ? deck.x : dst.x) >= 0 ? 1 : -1;
     const px = (deck ? deck.x : dst.x) + (deck ? -4.2 : sign * edge);
@@ -637,6 +739,22 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       const hz = -Math.cos(sim.heading);
       desired.set(sim.truckX - hx * 6, Math.max(2.8, 4.2 + pitch * 0.25), sim.truckZ - hz * 6);
       lookTarget.set(sim.hx, Math.max(1.5, sim.hy), sim.hz);
+    } else if (view === "operator") {
+      // Operator's seat in the house cab, a hand's width ahead of the glass so
+      // the boom and the hook stay framed instead of the near plane filling up.
+      operatorSeat(craneModel, desired);
+      seatDir.set(sim.hx - desired.x, 0, sim.hz - desired.z);
+      if (seatDir.lengthSq() < 1e-4) seatDir.set(fx, 0, fz);
+      seatDir.normalize();
+      // Out past the cab glass and above the house roof: seated at the glass the
+      // near roof fills half the frame, which is not what the view is for.
+      desired.addScaledVector(seatDir, 0.95);
+      desired.y += 0.45;
+      // Sit off the boom's axis, the way the cab does, so the jib does not
+      // eclipse the load on the sight line.
+      desired.x += Math.cos(sim.yaw) * 0.75;
+      desired.z -= Math.sin(sim.yaw) * 0.75;
+      lookTarget.set(sim.hx, Math.max(0.8, sim.hy) + pitch * 0.25, sim.hz);
     } else if (view === "hook") {
       desired.set(sim.hx + Math.sin(yaw) * 7, Math.max(1.8, sim.hy + 3.2 + pitch * 0.45), sim.hz + Math.cos(yaw) * 7);
       lookTarget.set(sim.hx, sim.hy, sim.hz);

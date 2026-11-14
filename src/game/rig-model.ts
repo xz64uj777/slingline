@@ -6,7 +6,16 @@ import type { CraneId } from "@/game/cranes";
  * from the reference photos. No logos, no photo textures. The boom tip stays
  * on the same local axis the rope already uses.
  */
-export type Outrigger = { beam: THREE.Group; pad: THREE.Group; sign: number };
+export type Outrigger = {
+  beam: THREE.Group;
+  pad: THREE.Group;
+  /** Vertical jack between the beam end and the pad. */
+  leg: THREE.Mesh;
+  /** Bracket under the beam end that carries the jack. */
+  bracket: THREE.Mesh;
+  sign: number;
+  z: number;
+};
 
 export type CraneModel = {
   truck: THREE.Group;
@@ -94,6 +103,8 @@ export function createCraneModel(): CraneModel {
   const cabMat = paint(0xd5dde4, 0.45, 0.2);
   const carrierMat = paint(0x3e454c, 0.62, 0.3);
   const accentMat = paint(0xe3a23a, 0.45, 0.15);
+  // Bare steel for the outrigger jacks, so the leg reads against the shadow.
+  const jackMat = paint(0xa7b0b8, 0.32, 0.5);
   const rubber = paint(0x1a1c1e, 0.9, 0.05);
   // Mirror housings keep their own chrome: the cab colour is repainted per
   // crane, and a cab-coloured mirror vanishes on the black yard cab.
@@ -204,22 +215,41 @@ export function createCraneModel(): CraneModel {
     [-1.05, -0.9],
   ] as const) {
     const sign = Math.sign(x) || 1;
+    // Beam group is anchored on the chassis centreline; scaling its X slides the
+    // beam out of the chassis, so the bar always runs from the frame to the pad.
     const beam = new THREE.Group();
+    beam.position.set(0, 0.62, z);
     const bar = new THREE.Mesh(unit, carrierMat);
-    bar.scale.set(1.35, 0.16, 0.2);
+    bar.scale.set(1, 0.22, 0.26);
+    bar.position.x = sign * 0.5;
     const stripe = new THREE.Mesh(unit, accentMat);
-    stripe.scale.set(1.38, 0.05, 0.24);
+    stripe.scale.set(1, 0.05, 0.28);
+    stripe.position.set(sign * 0.5, 0.14, 0);
     beam.add(bar, stripe);
-    beam.position.set(x + sign * 0.4, 0.62, z);
+
+    // Jack leg and its mounting bracket, placed each frame by the render loop.
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1, 10), jackMat);
+    leg.position.y = 0.25;
+    leg.visible = false;
+    const bracket = new THREE.Mesh(unit, carrierMat);
+    bracket.scale.set(0.3, 0.26, 0.34);
+    bracket.position.y = 0.5;
+
+    // Pad, sized like a real 0.8 m outrigger float, origin at the ground face.
     const pad = new THREE.Group();
-    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 0.1, 10), carrierMat);
-    const plate = new THREE.Mesh(unit, accentMat);
-    plate.scale.set(0.7, 0.04, 0.7);
-    plate.position.y = 0.02;
-    pad.add(foot, plate);
-    pad.position.set(x + sign * 0.8, 0.4, z);
-    truck.add(beam, pad);
-    rigs.push({ beam, pad, sign });
+    const foot = new THREE.Mesh(unit, jackMat);
+    foot.scale.set(0.78, 0.1, 0.78);
+    foot.position.y = 0.05;
+    const rim = new THREE.Mesh(unit, accentMat);
+    rim.scale.set(0.82, 0.03, 0.82);
+    rim.position.y = 0.115;
+    const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.12, 10), carrierMat);
+    socket.position.y = 0.18;
+    pad.add(foot, rim, socket);
+    pad.position.set(sign * 1.33, 0.5, z);
+
+    truck.add(beam, leg, bracket, pad);
+    rigs.push({ beam, pad, leg, bracket, sign, z });
   }
 
   const mast = new THREE.Group();
@@ -440,6 +470,16 @@ function showTruss(truss: Truss, shown: number, halfX: number, rise: number, y0:
       }
     }
   }
+}
+
+/**
+ * World point of the operator's eye in the house cab. The seat camera looks
+ * from here down the boom, so it follows the slew rather than the carrier.
+ */
+export function operatorSeat(model: CraneModel, out: THREE.Vector3) {
+  const cab = partsOf(model).houseCab;
+  cab.updateWorldMatrix(true, false);
+  return out.setFromMatrixPosition(cab.matrixWorld);
 }
 
 /**

@@ -14,6 +14,8 @@ export type Settings = {
   sensitivity: Sensitivity;
   /** Master audio level, 0 = muted. */
   volume: number;
+  /** Run every job after dark, not just the night call. */
+  night: boolean;
 };
 
 export const SETTINGS_KEY = "slingline-settings";
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scheme: "stick",
   sensitivity: "normal",
   volume: 1,
+  night: false,
 };
 
 const SENSITIVITY_VALUE: Record<Sensitivity, number> = {
@@ -60,7 +63,8 @@ export function loadSettings(raw: unknown): Settings {
         : "normal";
   const stored = typeof record.volume === "number" ? record.volume : Number(record.volume);
   const volume = Number.isFinite(stored) ? clamp(stored, 0, 1) : DEFAULT_SETTINGS.volume;
-  return { mode, pace, scheme, sensitivity, volume };
+  const night = record.night === true;
+  return { mode, pace, scheme, sensitivity, volume, night };
 }
 
 export function readSettingsStore(): Settings {

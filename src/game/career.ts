@@ -6,12 +6,32 @@ import {
   type CraneId,
 } from "./cranes.ts";
 
+import { gradePay, gradeRep, type Grade } from "./grade.ts";
+import { LOAD_SPECS, type LoadKind } from "./loads.ts";
+import type { SiteTheme } from "./levels.ts";
+
 export type { CraneId } from "./cranes.ts";
+export type { Grade } from "./grade.ts";
+export type { LoadKind } from "./loads.ts";
+export type { SiteTheme } from "./levels.ts";
 export { CRANES, CRANE_CHOICES, nextCrane, reachesRoof } from "./cranes.ts";
 
-export type LoadKind = "crate" | "beam" | "heavy";
 export type CareerStatus = "hired" | "independent";
-export type JobId = "yard" | "pad" | "steel" | "night" | "floor" | "double" | "heavy" | "roof" | "tracks";
+export type JobId =
+  | "yard"
+  | "pipe"
+  | "pad"
+  | "truss"
+  | "steel"
+  | "panel"
+  | "double"
+  | "heavy"
+  | "container"
+  | "floor"
+  | "night"
+  | "roof"
+  | "hvac"
+  | "tracks";
 
 export const CAREER_KEY = "slingline-career";
 export const BOSS = "Hargrove Crane";
@@ -27,13 +47,15 @@ export const ECONOMY = {
   wageShare: 0.35,
   shortWageShare: 0.6,
   waryShare: 0.8,
-  foundCash: 2800,
-  foundJobs: 6,
-  foundStanding: 64,
-  foundFee: 1800,
+  foundCash: 1900,
+  foundJobs: 4,
+  foundStanding: 60,
+  foundFee: 1500,
   startStanding: 70,
   hiredVarietyJobs: 2,
   hiredVarietyStanding: 45,
+  hiredTrussJobs: 3,
+  hiredTrussStanding: 55,
   noteFraction: 0.2,
   noteSlice: 0.1,
   noteCap: 0.4,
@@ -76,41 +98,278 @@ export const REPAIR: Record<CraneId, number> = {
 
 type JobDef = {
   id: JobId;
+  /** Campaign number, shown on the board and the HUD. */
+  no: number;
   title: string;
   kind: LoadKind;
   pad: number;
+  theme: SiteTheme;
+  brief: string;
   pay: number;
-  follow?: { title: string; kind: LoadKind; pad: number; pay: number };
+  /** Set ring radius in metres: how far off centre the load may land. */
+  ring: number;
+  follow?: { title: string; kind: LoadKind; pad: number; pay: number; ring: number };
   rep: number;
   crane: CraneId;
   roof: boolean;
   repGain: number;
 };
 
+/**
+ * The campaign. Levels 1-4 are Hargrove's rental shifts: the player takes a
+ * wage, learns each control, and earns the filing fee. From level 5 the
+ * player owns the call, picks the crane, and each site changes with the work.
+ */
 const JOBS: Record<JobId, JobDef> = {
-  yard: { id: "yard", title: "YARD MOVE", kind: "crate", pad: 5, pay: 900, rep: 0, crane: "rental", roof: false, repGain: 1 },
-  pad: { id: "pad", title: "BASIC SET", kind: "crate", pad: 0, pay: 1200, rep: 1, crane: "rental", roof: false, repGain: 1 },
-  steel: { id: "steel", title: "STEEL SET", kind: "beam", pad: 1, pay: 2400, rep: 3, crane: "yard", roof: false, repGain: 1 },
-  night: { id: "night", title: "NIGHT CALL", kind: "beam", pad: 4, pay: 3000, rep: 5, crane: "yard", roof: false, repGain: 1 },
-  floor: { id: "floor", title: "FLOOR SET", kind: "beam", pad: 0, pay: 3600, rep: 6, crane: "yard", roof: true, repGain: 2 },
+  yard: {
+    id: "yard",
+    no: 1,
+    title: "YARD MOVE",
+    kind: "crate",
+    pad: 5,
+    theme: "yard",
+    brief: "A crate has to cross the yard. Hook it, keep the sway down, and set it inside the amber ring.",
+    pay: 900,
+    rep: 0,
+    crane: "rental",
+    roof: false,
+    repGain: 1,
+    ring: 2.4,
+  },
+  pipe: {
+    id: "pipe",
+    no: 2,
+    title: "PIPE DROP",
+    kind: "pipe",
+    pad: 3,
+    theme: "steel",
+    brief: "Line pipe is stacked by the rack. Long loads swing wide — bring it across flat and set it without rolling the ring.",
+    pay: 1500,
+    rep: 0,
+    crane: "rental",
+    roof: false,
+    repGain: 1,
+    ring: 1.6,
+  },
+  pad: {
+    id: "pad",
+    no: 3,
+    title: "WAREHOUSE SET",
+    kind: "crate",
+    pad: 0,
+    theme: "warehouse",
+    brief: "A delivery crate comes off the truck and goes through the warehouse door. Short picks, tight set.",
+    pay: 1200,
+    rep: 1,
+    crane: "rental",
+    roof: false,
+    repGain: 1,
+    ring: 2.2,
+  },
+  truss: {
+    id: "truss",
+    no: 4,
+    title: "TRUSS PICK",
+    kind: "truss",
+    pad: 4,
+    theme: "tower",
+    brief: "A roof truss is waiting at the laydown. It is long, light, and catches every gust — keep the tag line steady.",
+    pay: 2200,
+    rep: 1,
+    crane: "rental",
+    roof: false,
+    repGain: 2,
+    ring: 1.2,
+  },
+  steel: {
+    id: "steel",
+    no: 5,
+    title: "STEEL SET",
+    kind: "beam",
+    pad: 1,
+    theme: "steel",
+    brief: "Structural beams for the frame. Set the beam square in the ring — a rolled beam is a rework bill.",
+    pay: 2400,
+    rep: 3,
+    crane: "yard",
+    roof: false,
+    repGain: 1,
+    ring: 1.1,
+  },
+  panel: {
+    id: "panel",
+    no: 6,
+    title: "PANEL SET",
+    kind: "panel",
+    pad: 2,
+    theme: "tower",
+    brief: "Precast wall panels come off the rack flat. Keep the load level; a panel that tips is scrap.",
+    pay: 5200,
+    rep: 5,
+    crane: "heavy",
+    roof: false,
+    repGain: 2,
+    ring: 1.3,
+  },
+  heavy: {
+    id: "heavy",
+    no: 7,
+    title: "HEAVY PICK",
+    kind: "heavy",
+    pad: 2,
+    theme: "yard",
+    brief: "A machine base on the skids. Over the chart it will pull the boom and the yard with it.",
+    pay: 5000,
+    rep: 7,
+    crane: "heavy",
+    roof: false,
+    repGain: 2,
+    ring: 1.5,
+  },
+  container: {
+    id: "container",
+    no: 8,
+    title: "CONTAINER PICK",
+    kind: "container",
+    pad: 2,
+    theme: "port",
+    brief: "A loaded box off the stack at the docks. Long and heavy, and it catches the wind off the water.",
+    pay: 4600,
+    rep: 8,
+    crane: "heavy",
+    roof: false,
+    repGain: 2,
+    ring: 1.4,
+  },
+  floor: {
+    id: "floor",
+    no: 9,
+    title: "FLOOR SET",
+    kind: "beam",
+    pad: 0,
+    theme: "tower",
+    brief: "Beams for the next floor of the rise. The load goes over the parapet and down between the columns.",
+    pay: 3600,
+    rep: 6,
+    crane: "yard",
+    roof: true,
+    repGain: 2,
+    ring: 1,
+  },
+  night: {
+    id: "night",
+    no: 10,
+    title: "NIGHT CALL",
+    kind: "beam",
+    pad: 4,
+    theme: "yard",
+    brief: "The yard runs all night under the floods. Same beam, less light, and the work lights are yours to switch.",
+    pay: 3000,
+    rep: 5,
+    crane: "yard",
+    roof: false,
+    repGain: 1,
+    ring: 1,
+  },
+  roof: {
+    id: "roof",
+    no: 11,
+    title: "ROOF SET",
+    kind: "beam",
+    pad: 0,
+    theme: "tower",
+    brief: "A beam for the roof line. This crane can just reach it, and the ring is small.",
+    pay: 7000,
+    rep: 9,
+    crane: "yard",
+    roof: true,
+    repGain: 2,
+    ring: 0.8,
+  },
+  hvac: {
+    id: "hvac",
+    no: 12,
+    title: "ROOFTOP UNIT",
+    kind: "hvac",
+    pad: 0,
+    theme: "tower",
+    brief: "A packaged rooftop unit for the high-rise. Over the parapet, down on the curb, and do not clip the edge.",
+    pay: 8200,
+    rep: 11,
+    crane: "lattice",
+    roof: true,
+    repGain: 3,
+    ring: 0.9,
+  },
+  tracks: {
+    id: "tracks",
+    no: 13,
+    title: "TRACK PICK",
+    kind: "heavy",
+    pad: 2,
+    theme: "yard",
+    brief: "Crawler pick on the lowboy pad. Walk the tracks in, set the pads, and lift the base off the deck.",
+    pay: 8600,
+    rep: 12,
+    crane: "crawler",
+    roof: false,
+    repGain: 3,
+    ring: 1.3,
+  },
   double: {
     id: "double",
+    no: 14,
     title: "DOUBLE RUN",
     kind: "crate",
     pad: 5,
+    theme: "warehouse",
+    brief: "Two loads, one call. Set the crate, then the beam, and keep the clock and the sway on your side.",
     pay: 1100,
-    follow: { title: "DOUBLE RUN 2", kind: "beam", pad: 3, pay: 4400 },
+    follow: { title: "DOUBLE RUN 2", kind: "beam", pad: 3, pay: 4400, ring: 1 },
     rep: 6,
     crane: "heavy",
     roof: false,
     repGain: 1,
+    ring: 1.9,
   },
-  heavy: { id: "heavy", title: "HEAVY PICK", kind: "heavy", pad: 2, pay: 5000, rep: 7, crane: "heavy", roof: false, repGain: 2 },
-  roof: { id: "roof", title: "ROOF SET", kind: "beam", pad: 0, pay: 7000, rep: 9, crane: "yard", roof: true, repGain: 2 },
-  tracks: { id: "tracks", title: "TRACK PICK", kind: "heavy", pad: 2, pay: 8600, rep: 12, crane: "crawler", roof: false, repGain: 3 },
 };
 
-const JOB_ORDER: JobId[] = ["yard", "pad", "steel", "night", "floor", "double", "heavy", "roof", "tracks"];
+const JOB_ORDER: JobId[] = [
+  "yard",
+  "pipe",
+  "pad",
+  "truss",
+  "steel",
+  "panel",
+  "heavy",
+  "container",
+  "floor",
+  "night",
+  "roof",
+  "hvac",
+  "tracks",
+  "double",
+];
+
+/** Hargrove's rental shifts, in order. */
+export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "pad", "truss"];
+
+export const LEVEL_COUNT = JOB_ORDER.length;
+
+/** Level card data for the board and the HUD. */
+export function levelOf(job: JobId) {
+  const def = JOBS[job] ?? JOBS.yard;
+  return {
+    id: def.id,
+    no: def.no,
+    title: def.title,
+    kind: def.kind,
+    theme: def.theme,
+    brief: def.brief,
+    ring: def.ring,
+    pay: def.pay,
+  };
+}
 
 const BOUGHT_LINE: Record<Exclude<CraneId, "rental">, string> = {
   yard: "Yard crane is yours. Longer boom. The note comes out of the next jobs.",
@@ -144,9 +403,13 @@ export type CareerState = {
 
 export type JobOffer = {
   id: JobId;
+  no: number;
   title: string;
   kind: LoadKind;
+  theme: SiteTheme;
+  brief: string;
   pad: number;
+  ring: number;
   gross: number;
   take: number;
   wage: boolean;
@@ -237,10 +500,17 @@ function veteranBump(state: CareerState) {
 }
 
 export function assignedJob(state: CareerState): JobId {
-  if (state.downtime > 0 || state.standing < ECONOMY.hiredVarietyStanding || state.jobsDone < ECONOMY.hiredVarietyJobs) {
-    return "yard";
+  // A rental shift is picked by the record, not by the player: one new lesson
+  // per clean job, and a yard move is always the way out of downtime.
+  if (state.downtime > 0) return "yard";
+  if (state.jobsDone >= ECONOMY.hiredTrussJobs) {
+    return state.standing >= ECONOMY.hiredTrussStanding ? "truss" : "yard";
   }
-  return state.jobsDone % 2 === 0 ? "pad" : "yard";
+  if (state.jobsDone >= ECONOMY.hiredVarietyJobs) {
+    return state.standing >= ECONOMY.hiredVarietyStanding ? "pad" : "yard";
+  }
+  if (state.jobsDone >= 1) return "pipe";
+  return "yard";
 }
 
 function callersWary(state: CareerState) {
@@ -250,20 +520,32 @@ function callersWary(state: CareerState) {
 export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reason: string } {
   const def = JOBS[job];
   if (state.status === "hired") {
-    if (job !== "yard" && job !== "pad") {
+    if (!RENTAL_LEVELS.includes(job)) {
       return { ok: false, reason: "Hargrove does not assign this. It opens when Slingline is yours." };
     }
     if (state.downtime > 0 && job !== "yard") {
       return { ok: false, reason: "You are on downtime. Only a yard move is open." };
     }
+    if (job === "pipe" && state.jobsDone < 1) {
+      return { ok: false, reason: "Hargrove puts the pipe drop on your list after the first clean yard move." };
+    }
     if (job === "pad") {
       if (state.jobsDone < ECONOMY.hiredVarietyJobs) {
-        return { ok: false, reason: `Hargrove assigns a basic set after ${ECONOMY.hiredVarietyJobs - state.jobsDone} more clean job${ECONOMY.hiredVarietyJobs - state.jobsDone === 1 ? "" : "s"}.` };
+        return { ok: false, reason: `Hargrove assigns a warehouse set after ${ECONOMY.hiredVarietyJobs - state.jobsDone} more clean job${ECONOMY.hiredVarietyJobs - state.jobsDone === 1 ? "" : "s"}.` };
       }
       if (state.standing < ECONOMY.hiredVarietyStanding) {
-        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredVarietyStanding} before a basic set.` };
+        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredVarietyStanding} before a warehouse set.` };
       }
-      return { ok: true, reason: "Hargrove put a basic set on your list." };
+      return { ok: true, reason: "Hargrove put a warehouse set on your list." };
+    }
+    if (job === "truss") {
+      if (state.jobsDone < ECONOMY.hiredTrussJobs) {
+        return { ok: false, reason: `Hargrove assigns the truss pick after ${ECONOMY.hiredTrussJobs - state.jobsDone} more clean job${ECONOMY.hiredTrussJobs - state.jobsDone === 1 ? "" : "s"}.` };
+      }
+      if (state.standing < ECONOMY.hiredTrussStanding) {
+        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredTrussStanding} before a truss pick.` };
+      }
+      return { ok: true, reason: "Hargrove put a truss pick on your list." };
     }
     if (state.downtime > 0) return { ok: true, reason: "Short wage. A clean yard move clears one downtime." };
     return { ok: true, reason: "" };
@@ -321,9 +603,13 @@ export function activeOffer(state: CareerState): JobOffer {
   const wage = state.status === "hired";
   return {
     id,
+    no: def.no,
     title: follow ? follow.title : def.title,
     kind: follow ? follow.kind : def.kind,
+    theme: def.theme,
+    brief: def.brief,
     pad: follow ? follow.pad : def.pad,
+    ring: follow ? follow.ring : def.ring,
     gross,
     take: takeFor(state, gross),
     wage,
@@ -343,9 +629,13 @@ export function jobBoard(state: CareerState): JobOffer[] {
     const current = (state.status === "hired" ? assignedJob(state) : state.job) === id;
     return {
       id,
+      no: JOBS[id].no,
       title: JOBS[id].title,
       kind: JOBS[id].kind,
+      theme: JOBS[id].theme,
+      brief: JOBS[id].brief,
       pad: JOBS[id].pad,
+      ring: JOBS[id].ring,
       gross,
       take: takeFor(state, gross),
       wage: state.status === "hired",
@@ -361,7 +651,7 @@ export function jobBoard(state: CareerState): JobOffer[] {
 
 export function contractLabel(state: CareerState): string {
   const offer = activeOffer(state);
-  const noun = offer.kind === "beam" ? "BEAM" : offer.kind === "heavy" ? "BLOCK" : "CRATE";
+  const noun = LOAD_SPECS[offer.kind]?.label ?? "LOAD";
   if (offer.wage) {
     const word = offer.short ? "SHORT WAGE" : "WAGE";
     return `${offer.title}: ${noun} · ${word} ${money(offer.take)} OF ${money(offer.gross)}`;
@@ -512,18 +802,20 @@ function payLine(state: CareerState, offer: JobOffer, banked: number, upkeep: nu
   return `Contract ${money(offer.gross)}. You banked ${money(banked)}.${fuel}${note}`;
 }
 
-export function resolveSet(state: CareerState, load: LoadKind): CareerResult {
+export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B"): CareerResult {
   const offer = activeOffer(state);
   if (load !== offer.kind) return resolveWrongLoad(state);
 
   const next = copy(state);
   const upkeep = next.status === "independent" ? UPKEEP[next.crane] : 0;
+  // The grade scales what the set is worth before upkeep and the note come off.
+  const take = Math.round(offer.take * gradePay(grade));
   let notePaid = 0;
   if (next.status === "independent" && next.note > 0) {
     notePaid = Math.min(next.note, Math.round(offer.gross * ECONOMY.noteSlice));
     notePaid = Math.min(notePaid, Math.round(offer.gross * ECONOMY.noteCap));
   }
-  let banked = offer.take - upkeep - notePaid;
+  let banked = take - upkeep - notePaid;
   if (banked < 1) {
     const back = Math.min(notePaid, 1 - banked);
     notePaid -= back;
@@ -534,10 +826,10 @@ export function resolveSet(state: CareerState, load: LoadKind): CareerResult {
   next.note = Math.max(0, next.note - notePaid);
   next.jobsDone += 1;
 
-  let message = payLine(next, offer, banked, upkeep, notePaid);
+  let message = `${payLine(next, offer, banked, upkeep, notePaid)} Graded ${grade}.`;
 
   if (next.status === "hired") {
-    next.standing = clamp(next.standing + ECONOMY.standingGain, 0, 100);
+    next.standing = clamp(next.standing + ECONOMY.standingGain + gradeRep(grade), 0, 100);
     if (next.downtime > 0) {
       next.downtime -= 1;
       message += next.downtime > 0 ? " One downtime is cleared." : " Downtime is cleared.";
@@ -549,7 +841,7 @@ export function resolveSet(state: CareerState, load: LoadKind): CareerResult {
     const gate = canFound(next);
     if (gate.ok) message += " You can file Slingline.";
   } else {
-    next.reputation += JOBS[offer.id].repGain;
+    next.reputation += JOBS[offer.id].repGain + gradeRep(grade);
     if (offer.id === "double" && state.leg === 0) {
       next.leg = 1;
       message = `First half set. You banked ${money(banked)}. Now ${activeOffer(next).title}.`;
@@ -663,6 +955,13 @@ export function careerSummary(state: CareerState) {
     downtime: state.downtime,
     call: contractLabel(state),
     callTitle: offer.title,
+    level: offer.no,
+    levelTheme: offer.theme,
+    levelBrief: offer.brief,
+    levelKind: offer.kind,
+    levelCount: LEVEL_COUNT,
+    rentalStep: state.status === "hired" ? Math.min(RENTAL_LEVELS.length, state.jobsDone + 1) : 0,
+    rentalTotal: RENTAL_LEVELS.length,
     found,
     hired: state.status === "hired",
   };

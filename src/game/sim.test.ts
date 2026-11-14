@@ -176,7 +176,7 @@ describe("load chart", () => {
     assert.ok(sim.limitRatio > 0);
   });
 
-  it("reads inside the chart at short reach and over it at full reach", () => {
+  it("keeps the crate inside the rental chart even at full reach", () => {
     const sim = new CraneSim();
     hookUp(sim, 0);
     run(sim, 1.2, { hoist: 1 });
@@ -187,15 +187,17 @@ describe("load chart", () => {
     sim.extension = sim.extendMax;
     sim.step(STEP, IDLE);
 
-    assert.equal(sim.limitState, "over");
     assert.ok(sim.limitRatio > shortReach);
-    assert.ok(sim.limitRatio > 1);
-    assert.equal(sim.warn, true);
+    assert.equal(sim.limitState, "ok");
+    assert.equal(sim.warn, false);
   });
 
   it("puts a heavy block over the rental chart at short reach", () => {
     const sim = new CraneSim();
-    hookUp(sim, 2);
+    // The yard now stocks the call's material: put the heavy call on the pad.
+    sim.career = { ...sim.career, status: "independent", job: "heavy" };
+    sim.stockYard(true);
+    hookUp(sim, 0);
     run(sim, 1.2, { hoist: 1 });
 
     assert.equal(sim.airborne, true);
@@ -315,5 +317,127 @@ describe("deterministic wind", () => {
     assert.notEqual(second.windAmp, 0.8);
     assert.notEqual(first.windX, second.windX);
     assert.notEqual(first.hx, second.hx);
+  });
+});
+
+describe("set ring tolerance", () => {
+  it("reads the ring from the active job instead of a flat 2.4 m", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard" };
+    assert.equal(sim.setTolerance, 2.4);
+
+    sim.career = { ...sim.career, job: "steel" };
+    assert.ok(sim.setTolerance < 1.4, `steel ring is ${sim.setTolerance} m`);
+
+    sim.career = { ...sim.career, job: "roof" };
+    assert.ok(sim.setTolerance < 1, `roof ring is ${sim.setTolerance} m`);
+  });
+});
+
+describe("work lights", () => {
+  it("starts dark and toggles", () => {
+    const sim = new CraneSim();
+    assert.equal(sim.lightsOn, false);
+
+    sim.setWorkLights(true);
+    assert.equal(sim.lightsOn, true);
+
+    sim.setWorkLights(false);
+    assert.equal(sim.lightsOn, false);
+  });
+
+  it("only runs a day job at night when the setting asks for it", () => {
+    const sim = new CraneSim();
+    assert.equal(sim.night, false);
+    sim.night = true;
+    assert.equal(sim.night, true);
+    // The lighting override does not change which job is on the hook.
+    assert.equal(sim.career.job, "yard");
+  });
+});
+
+describe("set grading", () => {
+  /** Lands the load as the touchdown branch would, without playing the carry. */
+  const land = (sim: CraneSim, off: number): void => {
+    (sim as unknown as { succeed(off: number): void }).succeed(off);
+  };
+
+  it("grades a clean set, pays it, and leaves a debrief", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard", reputation: 5, cash: 0 };
+    sim.peakSway = 0.5;
+    sim.peakChart = 0.4;
+    sim.hookSpeed = 0.1;
+
+    land(sim, 0.2);
+
+    assert.equal(sim.phase, "done");
+    assert.ok(sim.lastSet, "a set should leave a report");
+    assert.equal(sim.lastSet!.grade, "S");
+    assert.ok(sim.lastSet!.pay > 0);
+    assert.equal(sim.lastSet!.rep, 2);
+    assert.ok(sim.debriefLeft > 0);
+    assert.match(sim.message, /Graded S/);
+  });
+
+  it("pays a sloppy steel set less than a clean one", () => {
+    const clean = new CraneSim();
+    clean.career = { ...clean.career, status: "independent", job: "steel", reputation: 10, cash: 0 };
+    clean.load = "beam";
+    clean.peakSway = 0.5;
+    clean.hookSpeed = 0.1;
+    land(clean, 0.1);
+
+    const sloppy = new CraneSim();
+    sloppy.career = { ...clean.career };
+    sloppy.load = "beam";
+    sloppy.peakSway = 0.5;
+    sloppy.hookSpeed = 0.1;
+    land(sloppy, 1);
+
+    assert.equal(clean.lastSet!.grade, "S");
+    assert.equal(sloppy.lastSet!.grade, "C");
+    assert.ok(sloppy.lastSet!.pay < clean.lastSet!.pay, `${sloppy.lastSet!.pay} vs ${clean.lastSet!.pay}`);
+  });
+
+  it("only grades the set that actually matched the call", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "steel", reputation: 10, cash: 0 };
+    sim.load = "crate";
+    land(sim, 0.1);
+
+    assert.equal(sim.lastSet, null);
+  });
+});
+
+describe("operator load chart", () => {
+  it("reads radius from the slewing axis, not the yard origin", () => {
+    const sim = new CraneSim();
+    // Line the boom up with the z axis so a 10 m move is 10 m of radius.
+    sim.yaw = 0;
+    sim.heading = 0;
+    const empty = sim.loadChart();
+    assert.equal(empty.demand, 0);
+    assert.equal(empty.ratio, 0);
+    assert.ok(empty.capacity > 0);
+
+    sim.hx = 0;
+    sim.hz = 8;
+    const near = sim.loadChart().radius;
+    sim.hz = 18;
+    const far = sim.loadChart().radius;
+    assert.ok(far > near, `${far} should exceed ${near}`);
+    assert.ok(Math.abs(far - near - 10) < 1e-9, "ten metres out is ten metres of radius");
+  });
+
+  it("loses capacity as the boom telescopes out", () => {
+    const sim = new CraneSim();
+    sim.boomPitch = 0.9;
+    sim.extension = 0;
+    const retracted = sim.loadChart();
+    sim.extension = sim.extendMax;
+    const extended = sim.loadChart();
+    assert.ok(extended.capacity < retracted.capacity, `${extended.capacity} should be under ${retracted.capacity}`);
+    assert.equal(retracted.extendMax, sim.extendMax);
   });
 });

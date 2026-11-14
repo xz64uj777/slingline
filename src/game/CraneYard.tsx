@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Lightbulb } from "lucide-react";
 import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   ECONOMY,
+  RENTAL_LEVELS,
   canFound,
   careerSummary,
   jobBoard,
+  levelOf,
   money,
   readCareerStore,
   type CareerState,
   type JobId,
   type JobOffer,
 } from "@/game/career";
+import { SITE_THEME_LABEL } from "@/game/levels";
+import { loadSpec } from "@/game/loads";
 import {
   idleActions,
   installInput,
@@ -61,6 +65,8 @@ export function CraneYard() {
   const [scheme, setScheme] = useState<Scheme>(storedSettings.scheme);
   const [sensitivity, setSensitivity] = useState<Sensitivity>(storedSettings.sensitivity);
   const [volume, setVolume] = useState(storedSettings.volume);
+  const [nightAny, setNightAny] = useState(storedSettings.night);
+  const [workLights, setWorkLights] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [contextLost, setContextLost] = useState(false);
   const [crane, setCrane] = useState<CraneId>("rental");
@@ -89,6 +95,8 @@ export function CraneYard() {
   const speedRef = useRef<HTMLSpanElement>(null);
   const meterRef = useRef<HTMLSpanElement>(null);
   const deployRef = useRef<HTMLButtonElement>(null);
+  const deployLabelRef = useRef<HTMLSpanElement>(null);
+  const hookLabelRef = useRef<HTMLSpanElement>(null);
   const hookBtnRef = useRef<HTMLButtonElement>(null);
   const gapRef = useRef<HTMLParagraphElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
@@ -99,6 +107,22 @@ export function CraneYard() {
   const windWrapRef = useRef<HTMLParagraphElement>(null);
   const windArrowRef = useRef<SVGSVGElement>(null);
   const windLevelRef = useRef<HTMLSpanElement>(null);
+  const chartRadiusRef = useRef<HTMLSpanElement>(null);
+  const chartCapacityRef = useRef<HTMLSpanElement>(null);
+  const chartLoadRef = useRef<HTMLSpanElement>(null);
+  const chartPctRef = useRef<HTMLParagraphElement>(null);
+  const chartBarRef = useRef<HTMLSpanElement>(null);
+  const chartPanelRef = useRef<HTMLDivElement>(null);
+  const debriefRef = useRef<HTMLDivElement>(null);
+  const debriefGradeRef = useRef<HTMLSpanElement>(null);
+  const debriefRingRef = useRef<HTMLSpanElement>(null);
+  const debriefImpactRef = useRef<HTMLSpanElement>(null);
+  const debriefSwayRef = useRef<HTMLSpanElement>(null);
+  const debriefChartRef = useRef<HTMLSpanElement>(null);
+  const debriefPayRef = useRef<HTMLSpanElement>(null);
+  const lightsBtnRef = useRef<HTMLButtonElement>(null);
+  const lightsRef = useRef(false);
+  const nightRef = useRef(storedSettings.night);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -119,8 +143,13 @@ export function CraneYard() {
   }, [volume]);
 
   useEffect(() => {
-    writeSettingsStore({ mode, pace, scheme, sensitivity, volume });
-  }, [mode, pace, scheme, sensitivity, volume]);
+    nightRef.current = nightAny;
+    if (simRef.current) simRef.current.night = nightAny;
+  }, [nightAny]);
+
+  useEffect(() => {
+    writeSettingsStore({ mode, pace, scheme, sensitivity, volume, night: nightAny });
+  }, [mode, pace, scheme, sensitivity, volume, nightAny]);
 
   const shownBest = useRef(0);
   const beatShown = useRef<string | null>(null);
@@ -180,6 +209,8 @@ export function CraneYard() {
         getSpeed: () => sim.trolleySpeed,
         setKeys: (codes) => setQaKeys(codes),
         setSteer: (v) => setSteerOverride(v),
+        getHook: () => ({ hy: sim.hy, extension: sim.extension, cable: sim.cable, state: sim.state, pitch: sim.boomPitch, safety: sim.safetyLock }),
+        getInput: () => ({ playing: playingRef.current, actions: readActions(), boardPause: sim.boardPause, beat: sim.careerBeat }),
       };
     }
 
@@ -254,8 +285,8 @@ export function CraneYard() {
           }
         }
       }
-      if (deployRef.current) {
-        deployRef.current.textContent = sim.flipped
+      if (deployLabelRef.current) {
+        const label = sim.flipped
           ? "RIGHT"
           : sim.hauling
             ? "UNLOAD"
@@ -266,15 +297,64 @@ export function CraneYard() {
               : sim.outrigger > 0.5 && sim.deployDir >= 0
                 ? "STOW"
                 : "DEPLOY";
+        deployLabelRef.current.textContent = label;
+        if (deployRef.current) deployRef.current.dataset.on = label === "STOW" || label === "DRIVE" ? "true" : "false";
       }
       if (hookBtnRef.current) {
-        hookBtnRef.current.style.display = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0) ? "block" : "none";
-        hookBtnRef.current.textContent = sim.attached ? "RELEASE LOAD" : "HOOK";
+        const ready = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0);
+        hookBtnRef.current.disabled = !ready;
+        hookBtnRef.current.dataset.ready = ready ? "true" : "false";
+        hookBtnRef.current.dataset.on = sim.attached ? "true" : "false";
+        if (hookLabelRef.current) hookLabelRef.current.textContent = sim.attached ? "RELEASE" : "HOOK";
       }
       if (gapRef.current) {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
         if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(1)} m`;
+      }
+      const debrief = debriefRef.current;
+      if (debrief) {
+        const report = sim.lastSet;
+        const show = sim.debriefLeft > 0 && report != null;
+        debrief.style.display = show ? "block" : "none";
+        if (show && report) {
+          const tint =
+            report.grade === "S" ? "#e3a23a" : report.grade === "A" ? "#8fc17a" : report.grade === "B" ? "#cfd6dd" : "#e05252";
+          if (debriefGradeRef.current) {
+            debriefGradeRef.current.textContent = report.grade;
+            debriefGradeRef.current.style.color = tint;
+          }
+          if (debriefRingRef.current) {
+            debriefRingRef.current.textContent = `${report.off.toFixed(1)} / ${report.tolerance.toFixed(1)} m`;
+          }
+          if (debriefImpactRef.current) debriefImpactRef.current.textContent = `${report.impact.toFixed(1)} m/s`;
+          if (debriefSwayRef.current) debriefSwayRef.current.textContent = `${report.sway.toFixed(1)}°`;
+          if (debriefChartRef.current) debriefChartRef.current.textContent = `${Math.round(report.chart * 100)}%`;
+          if (debriefPayRef.current) {
+            const repLabel = sim.career.status === "hired" ? "STANDING" : "REP";
+            debriefPayRef.current.textContent =
+              report.pay > 0
+                ? `${money(report.pay)}${report.rep > 0 ? ` · +${report.rep} ${repLabel}` : ""}`
+                : "Practice — no pay";
+          }
+        }
+        if (chartPanelRef.current) chartPanelRef.current.style.display = show ? "none" : "block";
+      }
+      if (chartRadiusRef.current) {
+        const chart = sim.loadChart();
+        chartRadiusRef.current.textContent = `${chart.radius.toFixed(1)} m`;
+        if (chartCapacityRef.current) chartCapacityRef.current.textContent = `${chart.capacity.toFixed(1)} t`;
+        if (chartLoadRef.current) chartLoadRef.current.textContent = chart.demand > 0 ? `${chart.demand.toFixed(1)} t` : "—";
+        const overChart = chart.ratio > 1;
+        const nearChart = chart.ratio > 0.78;
+        if (chartPctRef.current) {
+          chartPctRef.current.textContent = `${Math.round(chart.ratio * 100)}%`;
+          chartPctRef.current.style.color = overChart ? "#e05252" : nearChart ? "#e3a23a" : "";
+        }
+        if (chartBarRef.current) {
+          chartBarRef.current.style.width = `${Math.min(100, Math.max(0, chart.ratio * 100))}%`;
+          chartBarRef.current.style.backgroundColor = overChart ? "#e05252" : nearChart ? "#e3a23a" : "#7fa6b8";
+        }
       }
       const dot = dotRef.current;
       if (dot) {
@@ -291,6 +371,19 @@ export function CraneYard() {
       const hot = sim.warn ? "hold-hot" : "";
       if (upRef.current) upRef.current.classList.toggle("hold-hot", hot === "hold-hot");
       if (downRef.current) downRef.current.classList.toggle("hold-hot", hot === "hold-hot");
+      const lampBtn = lightsBtnRef.current;
+      if (lampBtn) {
+        const dark = nightRef.current || sim.career.job === "night";
+        // Lights go out with the night rather than staying on into daylight.
+        if (!dark && sim.lightsOn) {
+          lightsRef.current = false;
+          sim.setWorkLights(false);
+          setWorkLights(false);
+        }
+        lampBtn.dataset.on = sim.lightsOn ? "true" : "false";
+        lampBtn.dataset.day = dark ? "false" : "true";
+        lampBtn.setAttribute("aria-pressed", sim.lightsOn ? "true" : "false");
+      }
       const banner = bannerRef.current;
       if (banner) {
         if (sim.phase === "broke") {
@@ -340,6 +433,8 @@ export function CraneYard() {
         }
         sim.mode = modeRef.current;
         sim.pace = paceRef.current;
+        sim.night = nightRef.current;
+        sim.lightsOn = lightsRef.current;
         sim.step(STEP, actions);
         acc -= STEP;
         steps += 1;
@@ -491,6 +586,10 @@ export function CraneYard() {
           <p ref={statusRef} className="mt-1 font-display text-xs tracking-widest text-muted">
             FOR HARGROVE
           </p>
+          <p className="mt-1 border-t border-line pt-1 font-display text-[10px] tracking-widest text-steel">
+            {summary.hired ? `SHIFT ${summary.rentalStep}/${summary.rentalTotal}` : `LV ${summary.level}/${summary.levelCount}`} ·{" "}
+            {SITE_THEME_LABEL[summary.levelTheme]}
+          </p>
         </div>
         <div className="bg-surface px-3 py-2 text-right">
           <p className="font-display text-sm tracking-widest text-muted">SETS</p>
@@ -578,7 +677,7 @@ export function CraneYard() {
             <p className="mt-2 text-sm leading-relaxed text-fg">
               {[
                 "Stop the carrier in the work area. If this crane has outriggers, press DEPLOY and wait for the pads to set before lifting.",
-                "Use the left/right joystick movement to slew. Use the joystick forward/back to move the trolley. Use Out and In to telescope the boom. Change camera view if you need a better sightline.",
+                "Use the left/right joystick movement to slew. Use the joystick forward/back to move the trolley. Use the left/right arrows to telescope the boom. Change camera view if you need a better sightline.",
                 "Lower the hook with DOWN. Use the HOOK view to line it up. Get close to the load and press HOOK when the prompt appears. The load should remain supported by the ground until you start lifting.",
                 "Use UP gently to take up slack and lift clear. Watch the load-limit percentage and sway meter. If the warning rises, stop and bring the boom in or lower the load.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
@@ -631,35 +730,50 @@ export function CraneYard() {
             >
               FILE SLINGLINE
             </button>
-{(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setCam(id);
-                  yardRef.current?.setView(id);
-                }}
-                className={`px-2 py-1 font-display text-base tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-surface text-fg"}`}
-              >
-                {id === "chase"
-                  ? "CHASE"
-                  : id === "wide"
-                    ? "WIDE"
-                    : id === "truck"
-                      ? "TRUCK"
-                      : id === "cab"
-                        ? "CAB"
-                        : id === "hook"
-                          ? "HOOK"
-                          : "HIGH"}
-              </button>
-            ))}
+            <details className="pointer-events-auto relative">
+              <summary className="cursor-pointer bg-surface px-2 py-1 font-display text-base tracking-wide text-fg">
+                VIEW · {cam === "operator" ? "SEAT" : cam.toUpperCase()}
+              </summary>
+              <div className="absolute left-0 top-full z-20 mt-1 grid grid-cols-2 gap-1 border border-line bg-surface p-1">
+                {(["chase", "wide", "truck", "cab", "hook", "high", "operator"] as CamView[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={(event) => {
+                      setCam(id);
+                      yardRef.current?.setView(id);
+                      const box = event.currentTarget.closest<HTMLDetailsElement>("details");
+                      if (box) box.open = false;
+                    }}
+                    className={`px-2 py-1 font-display text-sm tracking-wide ${cam === id ? "bg-primary text-bg" : "bg-bg text-fg"}`}
+                  >
+                    {id === "operator" ? "SEAT" : id.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </details>
           </div>
         </div>
       ) : null}
 
       {playing ? (
-        <div className="pointer-events-auto absolute right-3 top-32 z-20 flex flex-col items-end gap-2">
+        <div className="pointer-events-auto absolute right-3 top-64 z-20 flex flex-col items-end gap-2">
+          <button
+            ref={lightsBtnRef}
+            type="button"
+            aria-label="Toggle work lights"
+            aria-pressed={workLights}
+            onClick={() => {
+              const next = !lightsRef.current;
+              lightsRef.current = next;
+              setWorkLights(next);
+              simRef.current?.setWorkLights(next);
+            }}
+            style={{ display: "none" }}
+            className="flex size-12 items-center justify-center rounded-full border border-primary bg-surface text-fg shadow-lg"
+          >
+            <Lightbulb size={20} />
+          </button>
           <button
             type="button"
             aria-label="Open game settings"
@@ -701,9 +815,9 @@ export function CraneYard() {
               </div>
               <p className="mt-3 font-display text-xs tracking-widest text-muted">CAMERA VIEW</p>
               <div className="mt-1 grid grid-cols-3 gap-2">
-                {(["chase", "wide", "truck", "cab", "hook", "high"] as CamView[]).map((id) => (
+                {(["chase", "wide", "truck", "cab", "hook", "high", "operator"] as CamView[]).map((id) => (
                   <button key={id} type="button" onClick={() => { setCam(id); yardRef.current?.setView(id); }} className={`min-h-10 border px-2 font-display text-xs tracking-wide ${cam === id ? "border-primary bg-primary text-bg" : "border-line bg-bg text-fg"}`}>
-                    {id.toUpperCase()}
+                    {id === "operator" ? "SEAT" : id.toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -720,6 +834,11 @@ export function CraneYard() {
                   />
                 ))}
               </div>
+              <p className="mt-3 font-display text-xs tracking-widest text-muted">LIGHTING</p>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <ModeButton active={!nightAny} onClick={() => setNightAny(false)} label="Day" detail="As the job says" />
+                <ModeButton active={nightAny} onClick={() => setNightAny(true)} label="Night" detail="Every job after dark" />
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -732,33 +851,79 @@ export function CraneYard() {
               </button>
               <details className="mt-3 border border-line bg-bg p-2">
                 <summary className="cursor-pointer font-display text-sm tracking-wide">OPERATING HELP</summary>
-                <p className="mt-2 text-sm leading-relaxed text-muted">Stop the carrier and deploy the stabilizer pads before lifting. Use the joystick or arrows to position the crane, Out/In to telescope, and Up/Down to raise or lower the hook. Drag the yard to look around; use two fingers to zoom. Hard mode adds a shifting wind: the arrow beside the sway meter shows which way it pushes the load.</p>
+                <p className="mt-2 text-sm leading-relaxed text-muted">Stop the carrier and deploy the stabilizer pads before lifting. Use the joystick or arrows to position the crane, the left/right arrows to telescope, and the up/down arrows to raise or lower the hook. Drag the yard to look around; use two fingers to zoom. Hard mode adds a shifting wind: the arrow beside the sway meter shows which way it pushes the load.</p>
               </details>
             </section>
           ) : null}
         </div>
       ) : null}
 
-      <button
-        ref={hookBtnRef}
-        type="button"
-        onClick={() => {
-          const sim = simRef.current;
-          if (!sim) return;
-          if (sim.attached) sim.requestRelease();
-          else sim.requestHook();
-        }}
-        style={{ display: "none" }}
-        className="pointer-events-auto absolute left-1/2 top-1/2 z-10 h-12 min-w-24 -translate-x-1/2 -translate-y-1/2 border border-primary bg-surface px-3 font-display text-base tracking-wide text-fg"
-      >
-        HOOK
-      </button>
+      {playing && cam === "operator" ? (
+        <div ref={chartPanelRef} className="pointer-events-none absolute bottom-24 left-1/2 w-44 -translate-x-1/2 border border-line bg-surface px-3 py-2 font-display text-xs tracking-wide text-fg">
+          <p className="flex items-baseline justify-between gap-2">
+            <span className="text-muted">RADIUS</span>
+            <span ref={chartRadiusRef}>0.0 m</span>
+          </p>
+          <p className="mt-0.5 flex items-baseline justify-between gap-2">
+            <span className="text-muted">CHART</span>
+            <span ref={chartCapacityRef}>0.0 t</span>
+          </p>
+          <p className="mt-0.5 flex items-baseline justify-between gap-2">
+            <span className="text-muted">LOAD</span>
+            <span ref={chartLoadRef}>—</span>
+          </p>
+          <div className="mt-1 h-1.5 w-full bg-bg">
+            <span ref={chartBarRef} className="block h-full" style={{ width: "0%", backgroundColor: "#7fa6b8" }} />
+          </div>
+          <p ref={chartPctRef} className="mt-0.5 text-right text-sm">
+            0%
+          </p>
+        </div>
+      ) : null}
+
+      {playing ? (
+        <div
+          ref={debriefRef}
+          style={{ display: "none" }}
+          className="pointer-events-none absolute bottom-24 left-1/2 w-56 -translate-x-1/2 border border-line bg-surface px-3 py-2 font-display tracking-wide text-fg"
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs tracking-widest text-muted">SET DEBRIEF</span>
+            <span ref={debriefGradeRef} className="text-3xl leading-none">
+              B
+            </span>
+          </div>
+          <p className="mt-1 flex justify-between gap-2 text-xs">
+            <span className="text-muted">RING</span>
+            <span ref={debriefRingRef}>0.0 / 0.0 m</span>
+          </p>
+          <p className="flex justify-between gap-2 text-xs">
+            <span className="text-muted">IMPACT</span>
+            <span ref={debriefImpactRef}>0.0 m/s</span>
+          </p>
+          <p className="flex justify-between gap-2 text-xs">
+            <span className="text-muted">SWAY</span>
+            <span ref={debriefSwayRef}>0.0°</span>
+          </p>
+          <p className="flex justify-between gap-2 text-xs">
+            <span className="text-muted">CHART</span>
+            <span ref={debriefChartRef}>0%</span>
+          </p>
+          <p className="mt-1 border-t border-line pt-1 text-right text-sm">
+            <span ref={debriefPayRef}>—</span>
+          </p>
+        </div>
+      ) : null}
+
       {!playing ? (
         <div className="absolute inset-0 overflow-y-auto p-3 pb-8 sm:p-6">
           <section className="mx-auto w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-4 sm:max-w-3xl sm:p-5">
             <p className="font-display text-sm tracking-widest text-primary">SLINGLINE CAREER</p>
             <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">Ready for work?</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Run the crane, complete the lift, and build your reputation one job at a time.</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              You start on Hargrove&apos;s rental: four paid shifts, one new load at a time. File Slingline, then buy your own crane and take the
+              contracts that pay.
+            </p>
             <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
               {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
             </button>
@@ -784,6 +949,30 @@ export function CraneYard() {
               </p>
             </div>
             <p className="mt-3 bg-bg px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">{summary.call}</p>
+            <p className="mt-1 font-display text-[10px] tracking-widest text-steel">
+              LV {summary.level} · {SITE_THEME_LABEL[summary.levelTheme]} · {loadSpec(summary.levelKind).label}
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-fg">{summary.levelBrief}</p>
+            {summary.hired ? (
+              <ol className="mt-3 grid gap-1">
+                {RENTAL_LEVELS.map((id, i) => {
+                  const lv = levelOf(id);
+                  const done = summary.jobsDone > i;
+                  const next = summary.jobsDone === i;
+                  return (
+                    <li
+                      key={id}
+                      className={`flex items-baseline justify-between gap-2 border px-2 py-1 text-xs ${next ? "border-primary text-fg" : "border-line text-muted"}`}
+                    >
+                      <span className="font-display tracking-wide">
+                        {String(lv.no).padStart(2, "0")} · {lv.title}
+                      </span>
+                      <span className="font-display text-[10px] tracking-widest">{done ? "DONE" : next ? "NEXT" : "—"}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
             <p className="mt-2 text-sm leading-relaxed text-fg">{summary.hired ? summary.found.reason : summary.buyDetail}</p>
             {summary.downtime > 0 ? (
               <p className="mt-2 text-sm text-danger">Downtime {summary.downtime}. A yard move is the way back out.</p>
@@ -871,6 +1060,11 @@ export function CraneYard() {
                 />
               ))}
             </div>
+            <p className="mt-4 font-display text-xs tracking-widest text-muted">LIGHTING</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <ModeButton active={!nightAny} onClick={() => setNightAny(false)} label="Day" detail="As the job says" />
+              <ModeButton active={nightAny} onClick={() => setNightAny(true)} label="Night" detail="Every job after dark" />
+            </div>
             <button
               type="button"
               onClick={() => setConfirmReset(true)}
@@ -894,7 +1088,87 @@ export function CraneYard() {
         </div>
       ) : (
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
-          {scheme === "stick" ? <Stick /> : <ArrowPad />}
+          <div className="flex flex-col items-center gap-1">
+            <span className="border border-line bg-surface px-1.5 py-0.5 font-display text-[10px] tracking-widest text-muted">
+              SLEW · TROLLEY
+            </span>
+            {scheme === "stick" ? <Stick /> : <ArrowPad />}
+          </div>
+          <div className="machine-plate pointer-events-auto flex items-center gap-3 px-3 py-2 max-sm:absolute max-sm:bottom-44 max-sm:left-1/2 max-sm:-translate-x-1/2">
+            <button
+              ref={deployRef}
+              type="button"
+              data-on="false"
+              aria-label="Deploy or stow the outriggers"
+              onClick={() => {
+                const sim = simRef.current;
+                if (!sim) return;
+                if (sim.flipped) sim.recover();
+                else sim.requestDeploy();
+              }}
+              className="machine-deploy flex flex-col items-center gap-1.5 px-1"
+            >
+              <span className="machine-lever" aria-hidden />
+              <span ref={deployLabelRef} className="font-display text-[11px] tracking-widest text-fg">
+                DEPLOY
+              </span>
+            </button>
+            <button
+              ref={hookBtnRef}
+              type="button"
+              data-ready="false"
+              data-on="false"
+              aria-label="Hook or release the load"
+              onClick={() => {
+                const sim = simRef.current;
+                if (!sim) return;
+                if (sim.attached) sim.requestRelease();
+                else sim.requestHook();
+              }}
+              className="machine-trigger flex flex-col items-center gap-1.5 px-1 disabled:cursor-not-allowed"
+            >
+              <span className="machine-lever" aria-hidden />
+              <span ref={hookLabelRef} className="font-display text-[11px] tracking-widest text-fg">
+                HOOK
+              </span>
+            </button>
+            <div className="flex flex-col items-center gap-1">
+              <div className="machine-seg flex">
+                {(["slow", "steady", "fast"] as Pace[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    aria-pressed={pace === p}
+                    onClick={() => setPace(p)}
+                    className={`h-8 px-2 font-display text-[11px] tracking-wide ${pace === p ? "bg-primary text-bg" : "bg-surface text-muted"}`}
+                  >
+                    {p === "slow" ? "SLOW" : p === "steady" ? "STEADY" : "FAST"}
+                  </button>
+                ))}
+              </div>
+              <span className="font-display text-[9px] tracking-widest text-muted">CONTROL SPEED</span>
+            </div>
+            <button
+              ref={lightsBtnRef}
+              type="button"
+              data-on="false"
+              data-day="false"
+              aria-label="Toggle work lights"
+              aria-pressed={workLights}
+              onClick={() => {
+                const next = !lightsRef.current;
+                lightsRef.current = next;
+                setWorkLights(next);
+                simRef.current?.setWorkLights(next);
+              }}
+              className="machine-lamp flex flex-col items-center gap-1 px-1"
+            >
+              <span className="machine-lamp-dial flex size-9 items-center justify-center rounded-full border border-line bg-bg text-fg">
+                <Lightbulb size={17} />
+              </span>
+              <span className="font-display text-[9px] tracking-widest text-muted">LIGHTS</span>
+            </button>
+          </div>
           <div className="pointer-events-auto flex flex-col items-end gap-2">
             {practiceId ? (
               <button
@@ -905,57 +1179,11 @@ export function CraneYard() {
                 {crane.toUpperCase()}
               </button>
             ) : null}
-            <button
-              ref={deployRef}
-              type="button"
-              onClick={() => {
-                const sim = simRef.current;
-                if (!sim) return;
-                if (sim.flipped) sim.recover();
-                else sim.requestDeploy();
-              }}
-              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              DEPLOY
-            </button>
-            <button
-              type="button"
-              onClick={() => pickScheme(scheme === "stick" ? "arrows" : "stick")}
-              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              {scheme === "stick" ? "STICK" : "ARROWS"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPace(pace === "slow" ? "steady" : pace === "steady" ? "fast" : "slow")}
-              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              {pace === "slow" ? "SLOW" : pace === "steady" ? "STEADY" : "FAST"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode(mode === "easy" ? "hard" : "easy")}
-              className="h-11 min-w-20 border border-line bg-surface px-3 font-display text-lg tracking-wide text-fg"
-            >
-              {mode === "easy" ? "EASY" : "HARD"}
-            </button>
-            <div className="flex gap-2">
-              <ExtendHold label="Out" dir={1} />
-              <ExtendHold label="In" dir={-1} />
-            </div>
-            <div className="flex gap-2">
-              <Hold
-                buttonRef={upRef}
-                label="Up"
-                icon={<ArrowUp className="size-5" aria-hidden />}
-                dir={1}
-              />
-              <Hold
-                buttonRef={downRef}
-                label="Down"
-                icon={<ArrowDown className="size-5" aria-hidden />}
-                dir={-1}
-              />
+            <div className="flex flex-col items-end gap-1">
+              <span className="border border-primary bg-surface px-1.5 py-0.5 font-display text-[10px] tracking-widest text-primary">
+                HOIST · TELESCOPE
+              </span>
+              <BoomPad upRef={upRef} downRef={downRef} />
             </div>
           </div>
         </div>
@@ -1068,11 +1296,15 @@ function JobButton({
           : "min-h-11 border border-line bg-bg px-3 py-2 text-left"
       }
     >
+      <span className="block font-display text-[10px] tracking-widest text-steel">
+        LV {String(offer.no).padStart(2, "0")} · {SITE_THEME_LABEL[offer.theme]} · {loadSpec(offer.kind).label}
+      </span>
       <span className="block font-display text-xl leading-none text-fg">{offer.title}</span>
       <span className={`mt-1 block text-xs leading-snug ${offer.locked ? "text-muted" : "text-steel"}`}>
         {hired && !offer.locked ? "Assigned. " : ""}
         {pay}
       </span>
+      {!offer.locked ? <span className="mt-1 block text-xs leading-snug text-muted">{offer.brief}</span> : null}
       {!offer.locked && offer.reason ? <span className="mt-1 block text-xs leading-snug text-muted">{offer.reason}</span> : null}
     </button>
   );
@@ -1102,7 +1334,7 @@ function JobSheet({
           </button>
         </div>
         <div className="mt-3 grid gap-2">
-          {offers.map((offer) => (
+          {(hired ? offers.filter((offer) => RENTAL_LEVELS.includes(offer.id)) : offers).map((offer) => (
             <JobButton key={offer.id} offer={offer} hired={hired} onPick={onPick} />
           ))}
         </div>
@@ -1287,6 +1519,28 @@ function ArrowHold({
   );
 }
 
+function BoomPad({
+  upRef,
+  downRef,
+}: {
+  upRef: React.RefObject<HTMLButtonElement | null>;
+  downRef: React.RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <div className="pointer-events-auto grid grid-cols-3 gap-1">
+      <span />
+      <Hold buttonRef={upRef} label="Raise hook" icon={<ArrowUp className="size-5" aria-hidden />} dir={1} />
+      <span />
+      <ExtendHold label="Telescope in" dir={-1} icon={<ChevronLeft className="size-6" aria-hidden />} />
+      <span className="size-14" />
+      <ExtendHold label="Telescope out" dir={1} icon={<ChevronRight className="size-6" aria-hidden />} />
+      <span />
+      <Hold buttonRef={downRef} label="Lower hook" icon={<ArrowDown className="size-5" aria-hidden />} dir={-1} />
+      <span />
+    </div>
+  );
+}
+
 const held = { up: false, down: false };
 const telescope = { out: false, inn: false };
 
@@ -1298,12 +1552,14 @@ function syncExtend() {
   setTouchExtend((telescope.out ? 1 : 0) + (telescope.inn ? -1 : 0));
 }
 
-function ExtendHold({ label, dir }: { label: string; dir: 1 | -1 }) {
+function ExtendHold({ label, dir, icon }: { label: string; dir: 1 | -1; icon: React.ReactNode }) {
   const key = dir === 1 ? "out" : "inn";
   return (
     <button
       type="button"
-      className="flex h-11 w-16 touch-none items-center justify-center border border-line bg-surface font-display text-base text-fg"
+      aria-label={label}
+      title={label}
+      className="flex size-14 touch-none items-center justify-center border border-line bg-surface text-fg"
       onPointerDown={(e) => {
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -1320,7 +1576,7 @@ function ExtendHold({ label, dir }: { label: string; dir: 1 | -1 }) {
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {label}
+      {icon}
     </button>
   );
 }
@@ -1341,7 +1597,9 @@ function Hold({
     <button
       ref={buttonRef}
       type="button"
-      className="flex h-16 w-24 touch-none flex-col items-center justify-center gap-0.5 border border-line bg-surface font-display text-lg text-fg"
+      aria-label={label}
+      title={label}
+      className="flex size-14 touch-none items-center justify-center border border-line bg-surface text-fg"
       onPointerDown={(e) => {
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -1359,7 +1617,6 @@ function Hold({
       }}
     >
       {icon}
-      {label}
     </button>
   );
 }
