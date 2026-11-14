@@ -1432,7 +1432,7 @@ export class CraneSim {
         return;
       }
       this.landed = true;
-      this.message = "Load is on the ground but outside the amber ring. Move it into the target before releasing.";
+      this.message = "Load is on the ground but outside the amber ring. Hoist it, reposition over the ring, and lower again.";
       return;
     }
 

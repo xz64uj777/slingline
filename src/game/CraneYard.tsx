@@ -338,7 +338,7 @@ export function CraneYard() {
             ? "SETUP · Stop the lowboy on its marked pad, then unload."
             : "SETUP · Stop in the work area, then deploy the pads.";
         } else if (sim.attached && sim.landed) {
-          objective = "SET · Load is resting in the zone. Press RELEASE LOAD to finish.";
+          objective = "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
         } else if (sim.attached) {
           objective = `DELIVER · Carry the ${liveCargo} into the amber ring; slow down and let it settle.`;
         } else if (sim.hookReady) {
@@ -753,7 +753,7 @@ export function CraneYard() {
                 "Lower with DOWN or E/F. Use the HOOK view and live alignment cue. HOOK only connects when centered: within 0.3 m horizontally and 0.25 m vertically.",
                 "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
-                "Lower with DOWN until the load is resting in the marked amber ring. A clean placement inside the ring completes the job; if you set it down outside, move it back in and release.",
+                "Lower with DOWN until the load is resting in the marked amber ring. A clean placement inside the ring completes the job; if you set it down outside, hoist it and lower it again inside.",
               ][trainingStep]}
             </p>
             <div className="mt-4 flex gap-2">
