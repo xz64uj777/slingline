@@ -58,19 +58,22 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: 38, z: 40, hx: 2.4, hz: 4.6 },
   { x: 22, z: -42, hx: 1.8, hz: 2.8 },
 ];
-const RESIDENTIAL_HOUSE_BLOCK = { x: -38, z: 41, hx: 7, hz: 5.5 };
+const RESIDENTIAL_HOUSE_BLOCK = { x: -102, z: 30, hx: 7, hz: 5 };
+const RESIDENTIAL_TRUCK_START = { x: -95, z: 39.5 };
 
 export const LOWBOY_DROP = { x: 4, z: 10 };
 
 export const PADS: Pad[] = [
   { x: 0, z: -9 },
-  { x: 17, z: -8 },
+  { x: 13, z: -8 },
   { x: 12, z: 14 },
   { x: -16, z: -4 },
   { x: -8, z: -2 },
   { x: 7, z: -3 },
-  { x: -39, z: 32 },
-  { x: -35, z: 32 },
+  { x: -103, z: 42 },
+  { x: -99, z: 42 },
+  { x: -4, z: -6 },
+  { x: -90, z: 40 },
 ];
 
 const TUNING = {
@@ -179,7 +182,7 @@ export class CraneSim {
   landed = false;
   phase: JobPhase = "seek";
   load: LoadKind = "crate";
-  from = 0;
+  from = 8;
   to = 1;
   score = 0;
   best = 0;
@@ -192,6 +195,7 @@ export class CraneSim {
   crane: CraneId = "rental";
   message = "You work for Hargrove. Take the wage and set the crate.";
   private flipBilled = false;
+  private currentSite: "yard" | "residential" | null = null;
   warn = false;
   /** Crane work lights, switched on by the player after dark. */
   lightsOn = false;
@@ -315,6 +319,7 @@ export class CraneSim {
     this.truckX = 0;
     this.truckZ = 0;
     this.heading = 0;
+    this.currentSite = null;
     this.stockYard(true);
     if (this.crane === "crawler" && !this.career.crawlerOnSite) this.beginHaul();
   }
@@ -443,6 +448,7 @@ export class CraneSim {
     this.heading = 0;
     this.truckX = 0;
     this.truckZ = 0;
+    this.currentSite = null;
     this.hauling = false;
     this.outrigger = 0;
     this.stow = 1;
@@ -489,7 +495,8 @@ export class CraneSim {
     }
     this.adopt(result.state);
     this.writeCareer();
-    this.spawnNext();
+    this.currentSite = null;
+    this.stockYard(true);
     this.say(result.message);
   }
 
@@ -600,13 +607,52 @@ export class CraneSim {
   stockYard(aim: boolean) {
     // The yard only stocks the call's material plus two decoys. Anything else
     // would be clutter on the sight line and a wasted draw call.
+    const residential = this.career.job === "spa";
+    const site = residential ? "residential" : "yard";
+    if (this.currentSite !== site) {
+      this.currentSite = site;
+      const start = residential ? RESIDENTIAL_TRUCK_START : { x: 0, z: 0 };
+      this.truckX = start.x;
+      this.truckZ = start.z;
+      this.heading = 0;
+      this.speed = 0;
+      this.driveSteer = 0;
+      this.state = "driving";
+      this.outrigger = 0;
+      this.stow = 1;
+      this.deployDir = 0;
+      this.hauling = false;
+      this.flipped = false;
+      this.roll = 0;
+      this.rollRate = 0;
+      this.attached = false;
+      this.airborne = false;
+      this.landed = false;
+      this.carry = null;
+      this.yaw = 0;
+      this.yawRate = 0;
+      this.pitchRate = 0;
+      this.extendRate = 0;
+      this.extension = 0;
+      this.boomPitch = 0.85;
+      this.cable = 6.2;
+      this.ready = false;
+      this.safetyLock = false;
+      this.safetyBypass = false;
+    }
     const wanted = activeOffer(this.career).kind;
     const [decoyA, decoyB] = YARD_DECOYS[wanted];
-    const main = { kind: wanted, x: -4, z: -6 };
-    const decoys = [
-      { kind: decoyA, x: 0, z: -13 },
-      { kind: decoyB, x: 7, z: -9 },
-    ];
+    const source = PADS[residential ? 9 : 8]!;
+    const main = { kind: wanted, x: source.x, z: source.z };
+    const decoys = residential
+      ? [
+          { kind: decoyA, x: -85, z: 40 },
+          { kind: decoyB, x: -90, z: 33 },
+        ]
+      : [
+          { kind: decoyA, x: 0, z: -13 },
+          { kind: decoyB, x: 7, z: -9 },
+        ];
     this.pieces = [main, ...decoys].map((home) => ({
       kind: home.kind,
       x: home.x,
@@ -620,7 +666,7 @@ export class CraneSim {
     this.cx = main.x;
     this.cz = main.z;
     this.cy = this.restY(wanted);
-    this.from = 0;
+    this.from = residential ? 9 : 8;
     this.applyContract();
     this.attached = false;
     this.airborne = false;
@@ -629,8 +675,10 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    const dist = Math.hypot(main.x, main.z);
-    this.yaw = Math.atan2(-main.x, -main.z);
+    const dx = main.x - this.truckX;
+    const dz = main.z - this.truckZ;
+    const dist = Math.hypot(dx, dz);
+    this.yaw = Math.atan2(-dx, -dz);
     this.heading = this.yaw;
     this.yawRate = 0;
     this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
@@ -1213,8 +1261,9 @@ export class CraneSim {
       }
       const fx = forwardSign * Math.sin(this.heading);
       const fz = forwardSign * Math.cos(this.heading);
-      const nx = clamp(this.truckX + fx * this.speed * dt, -46, 46);
-      const nz = clamp(this.truckZ + fz * this.speed * dt, -46, 46);
+      const residential = this.career.job === "spa";
+      const nx = clamp(this.truckX + fx * this.speed * dt, residential ? -126 : -46, residential ? -78 : 46);
+      const nz = clamp(this.truckZ + fz * this.speed * dt, residential ? 5 : -46, residential ? 56 : 46);
       if (!this.hitsYard(nx, nz)) {
         this.truckX = nx;
         this.truckZ = nz;

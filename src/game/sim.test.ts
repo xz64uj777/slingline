@@ -403,22 +403,43 @@ describe("call cargo progression", () => {
       status: "independent",
       crane: "yard",
       reputation: 3,
-      job: "spa",
+      job: "yard",
       leg: 0,
       roofActive: false,
     };
-    sim.spawnNext();
+    sim.acceptJob("spa");
     assert.equal(sim.load, "deck");
     assert.equal(sim.pieces[0]?.kind, "deck");
     assert.equal(sim.to, 6);
-    assert.deepEqual(PADS[sim.to], { x: -39, z: 32 });
+    assert.deepEqual(PADS[sim.to], { x: -103, z: 42 });
+    assert.equal(sim.from, 9);
+    assert.deepEqual({ x: sim.truckX, z: sim.truckZ }, { x: -95, z: 39.5 });
+    assert.deepEqual(PADS[sim.from], { x: -90, z: 40 });
 
     sim.career = { ...sim.career, leg: 1 };
     sim.spawnNext();
     assert.equal(sim.load, "hotTub");
     assert.equal(sim.pieces[0]?.kind, "hotTub");
     assert.equal(sim.to, 7);
-    assert.deepEqual(PADS[sim.to], { x: -35, z: 32 });
+    assert.deepEqual(PADS[sim.to], { x: -99, z: 42 });
+    assert.equal(sim.from, 9);
+  });
+
+  it("keeps each of the first six call routes inside the easy-mode reach envelope", () => {
+    const sim = new CraneSim();
+    const easyReach = sim.mountBack + (sim.baseLen + sim.extendMax) * Math.cos((44 * Math.PI) / 180 + 0.08);
+    const yardSource = PADS[8]!;
+    for (const padIndex of [5, 3, 0, 4, 1]) {
+      const pad = PADS[padIndex]!;
+      const span = Math.hypot(pad.x - yardSource.x, pad.z - yardSource.z);
+      assert.ok(span <= easyReach * 2, `yard route to pad ${padIndex} spans ${span.toFixed(2)} m`);
+    }
+    const residentialSource = PADS[9]!;
+    for (const padIndex of [6, 7]) {
+      const pad = PADS[padIndex]!;
+      const span = Math.hypot(pad.x - residentialSource.x, pad.z - residentialSource.z);
+      assert.ok(span <= easyReach * 2, `Maple Lane route to pad ${padIndex} spans ${span.toFixed(2)} m`);
+    }
   });
 });
 

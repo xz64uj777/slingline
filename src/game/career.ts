@@ -340,7 +340,7 @@ const JOBS: Record<JobId, JobDef> = {
     kind: "deck",
     pad: 6,
     theme: "residential",
-    brief: "A tight backyard renovation: set the wrapped decking bundle on the marked pad, then fly the empty hot tub through the narrow work area onto the new patio. Keep the load level and the swing small beside the house and fence.",
+    brief: "At Maple Lane, work from the residential driveway and side gate: set the decking bundle on the backyard patio, then fly the empty hot tub through the narrow access. Keep it level and clear of the house and fence.",
     pay: 3200,
     follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
     rep: 3,

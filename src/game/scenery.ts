@@ -226,6 +226,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
 
   dressRise(scene, box, steel, paint, dark);
 
+  let siteFogDensity = 0.004;
   const siteThemes = dressThemes(
     scene,
     box,
@@ -254,6 +255,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       dark,
     },
     [city, caps, windows],
+    (density) => { siteFogDensity = density; },
   );
 
   const moonMat = new THREE.SpriteMaterial({ color: 0xf4efe4, transparent: true, opacity: 0 });
@@ -295,7 +297,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       } else {
         lights.renderer.setClearColor(sky, 1);
       }
-      lights.fog.density = 0.004 + t * 0.0035;
+      lights.fog.density = siteFogDensity + t * 0.0035;
       lights.hemi.color.copy(dayHemi).lerp(nightHemi, t);
       lights.hemi.groundColor.copy(dayGround).lerp(nightGround, t);
       lights.hemi.intensity = 1.35 + (0.4 - 1.35) * t;
@@ -606,6 +608,7 @@ function dressThemes(
   cyl: THREE.CylinderGeometry,
   mats: SiteMats,
   skyline: THREE.Object3D[],
+  setFogDensity: (density: number) => void,
 ) {
   const groups: Record<Exclude<SiteTheme, "yard">, THREE.Group> = {
     warehouse: new THREE.Group(),
@@ -713,36 +716,149 @@ function dressThemes(
     groups.port.add(bollard);
   }
 
-  // A compact suburban remodel: the patio sits just outside the house and has
-  // room for the decking bundle followed by the hot tub.
-  add(groups.residential, mats.shed, 14, 5.6, 10, -38, 3.2, 41);
-  add(groups.residential, mats.roof, 15.2, 0.55, 11.2, -38, 6.25, 41);
-  add(groups.residential, mats.dark, 1.25, 2.5, 0.18, -38, 1.65, 35.92);
-  for (const x of [-42.5, -33.5]) {
-    add(groups.residential, mats.steel, 2.2, 1.7, 0.12, x, 3.7, 35.88);
-    add(groups.residential, mats.paint, 2.45, 0.1, 0.16, x, 4.6, 35.84);
+  // Maple Lane is a separate off-yard address, not another pad inside the
+  // industrial fence. The crane works through a side gate into a real backyard.
+  const residential = groups.residential;
+  const homeX = -102;
+  const homeZ = 30;
+  const lawnMat = new THREE.MeshStandardMaterial({ color: 0x55764b, roughness: 0.98 });
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x33393e, roughness: 0.96 });
+  const driveMat = new THREE.MeshStandardMaterial({ color: 0x555a5d, roughness: 0.92 });
+  const walkMat = new THREE.MeshStandardMaterial({ color: 0xc4c0b4, roughness: 0.94 });
+  const sidingMat = new THREE.MeshStandardMaterial({ color: 0xe7dbc4, roughness: 0.9 });
+  const sageMat = new THREE.MeshStandardMaterial({ color: 0xa9b69e, roughness: 0.92 });
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0xb3c6cd, roughness: 0.9 });
+  const shingleMat = new THREE.MeshStandardMaterial({ color: 0x45494b, roughness: 0.86 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0xf2eee3, roughness: 0.82 });
+  const windowMat = new THREE.MeshStandardMaterial({ color: 0x82aebd, roughness: 0.22, metalness: 0.12 });
+  const garageMat = new THREE.MeshStandardMaterial({ color: 0xd5d2c8, roughness: 0.82 });
+  const doorMat = new THREE.MeshStandardMaterial({ color: 0x536456, roughness: 0.85 });
+  const fenceMat = new THREE.MeshStandardMaterial({ color: 0xe6dece, roughness: 0.9 });
+  const deckMat = new THREE.MeshStandardMaterial({ color: 0x9b7654, roughness: 0.88 });
+  const barkMat = new THREE.MeshStandardMaterial({ color: 0x69513b, roughness: 0.96 });
+  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x476b43, roughness: 0.98 });
+  const markingMat = new THREE.MeshStandardMaterial({ color: 0xe6cf78, roughness: 0.8 });
+
+  // A green residential block carries the street, lawns and two neighboring lots.
+  add(residential, lawnMat, 52, 0.08, 50, homeX, 0.025, 31);
+  add(residential, roadMat, 52, 0.14, 7.2, homeX, 0.1, 8);
+  add(residential, walkMat, 52, 0.16, 0.3, homeX, 0.1, 4.25);
+  add(residential, walkMat, 52, 0.16, 0.3, homeX, 0.1, 11.75);
+  add(residential, walkMat, 52, 0.12, 1.1, homeX, 0.08, 3.35);
+  add(residential, walkMat, 52, 0.12, 1.1, homeX, 0.08, 12.65);
+  for (let i = 0; i < 9; i += 1) {
+    add(residential, markingMat, 2.5, 0.025, 0.12, -126 + i * 6, 0.18, 8);
   }
+
+  // Front drive to the garage and a separate side drive through the backyard gate.
+  add(residential, driveMat, 7, 0.12, 18, -105, 0.09, 17.5);
+  add(residential, driveMat, 8, 0.12, 32, -91.5, 0.09, 24);
+  for (const x of [-108.7, -101.3]) add(residential, walkMat, 0.16, 0.1, 17, x, 0.08, 17.5);
+  for (const x of [-95.5, -87.5]) add(residential, walkMat, 0.16, 0.1, 32, x, 0.08, 24);
+
+  // Main Maple Lane home: gabled roof, garage, entry porch and glazed windows.
+  add(residential, sidingMat, 14, 6, 10, homeX, 3, homeZ);
+  const mainRoofL = add(residential, shingleMat, 7.8, 0.42, 11.2, homeX - 3.5, 7.45, homeZ);
+  mainRoofL.rotation.z = 0.4;
+  const mainRoofR = add(residential, shingleMat, 7.8, 0.42, 11.2, homeX + 3.5, 7.45, homeZ);
+  mainRoofR.rotation.z = -0.4;
+  add(residential, shingleMat, 0.42, 0.4, 11.5, homeX, 8.88, homeZ);
+  add(residential, trimMat, 14.5, 0.22, 10.5, homeX, 6.03, homeZ);
+  add(residential, trimMat, 5.05, 3.15, 0.18, -106, 1.68, 24.82);
+  add(residential, garageMat, 4.65, 2.75, 0.1, -106, 1.62, 24.68);
+  for (const y of [0.95, 1.55, 2.15]) add(residential, trimMat, 4.35, 0.055, 0.08, -106, y, 24.61);
+  add(residential, trimMat, 1.9, 2.85, 0.18, -98.4, 1.55, 24.82);
+  add(residential, doorMat, 1.42, 2.42, 0.1, -98.4, 1.44, 24.68);
+  for (const x of [-101.8, -96.6]) {
+    add(residential, trimMat, 2.35, 1.8, 0.16, x, 4.02, 24.82);
+    add(residential, windowMat, 2.04, 1.48, 0.08, x, 4.02, 24.7);
+    add(residential, trimMat, 2.35, 0.12, 0.22, x, 3.02, 24.72);
+  }
+  add(residential, shingleMat, 3.5, 0.24, 2.2, -98.4, 3, 24.0);
+  for (const x of [-99.8, -97]) add(residential, trimMat, 0.14, 2.5, 0.14, x, 1.25, 23.2);
+
+  // Two lower homes make this read as a neighborhood street, not an isolated prop.
+  const addNeighborHome = (x: number, wall: THREE.Material) => {
+    const z = homeZ;
+    add(residential, wall, 9, 4.5, 8, x, 2.25, z);
+    const roofL = add(residential, shingleMat, 5.2, 0.35, 8.7, x - 2.3, 5.55, z);
+    roofL.rotation.z = 0.48;
+    const roofR = add(residential, shingleMat, 5.2, 0.35, 8.7, x + 2.3, 5.55, z);
+    roofR.rotation.z = -0.48;
+    add(residential, shingleMat, 0.34, 0.34, 8.8, x, 6.55, z);
+    for (const wx of [x - 2.2, x + 2.2]) {
+      add(residential, trimMat, 1.7, 1.35, 0.14, wx, 3.05, z - 4.08);
+      add(residential, windowMat, 1.42, 1.08, 0.08, wx, 3.05, z - 4.19);
+    }
+  };
+  addNeighborHome(-120, sageMat);
+  addNeighborHome(-84, blueMat);
+
+  // Street trees and a mailbox help anchor the driveways and house scale.
+  const treeLeaves = new THREE.SphereGeometry(1.9, 10, 8);
+  for (const [x, z] of [[-123, 19], [-78, 19], [-119, 48], [-78, 51]] as const) {
+    const trunk = new THREE.Mesh(cyl, barkMat);
+    trunk.scale.set(0.42, 4.2, 0.42);
+    trunk.position.set(x, 2.1, z);
+    const crown = new THREE.Mesh(treeLeaves, foliageMat);
+    crown.scale.set(1.15, 1.3, 1.1);
+    crown.position.set(x, 5.5, z);
+    residential.add(trunk, crown);
+  }
+  add(residential, trimMat, 0.14, 1.45, 0.14, -91.5, 0.73, 16);
+  add(residential, doorMat, 0.82, 0.48, 0.48, -91.5, 1.45, 16);
+  add(residential, trimMat, 0.16, 3.1, 0.16, -77.5, 1.55, 8.5);
+  add(residential, doorMat, 1.75, 0.7, 0.12, -77.5, 3.05, 8.5);
+
+  // The backyard is fenced, with a deliberately wide side-gate opening for the crane.
+  const addFenceX = (x0: number, x1: number, z: number) => {
+    const length = x1 - x0;
+    const mid = (x0 + x1) / 2;
+    add(residential, fenceMat, length, 0.12, 0.12, mid, 0.48, z);
+    add(residential, fenceMat, length, 0.12, 0.12, mid, 1.02, z);
+    for (let x = x0; x <= x1 + 0.01; x += 1.25) {
+      add(residential, fenceMat, 0.12, 1.25, 0.16, x, 0.62, z);
+    }
+  };
+  const addFenceZ = (x: number, z0: number, z1: number) => {
+    const length = z1 - z0;
+    const mid = (z0 + z1) / 2;
+    add(residential, fenceMat, 0.12, 0.12, length, x, 0.48, mid);
+    add(residential, fenceMat, 0.12, 0.12, length, x, 1.02, mid);
+    for (let z = z0; z <= z1 + 0.01; z += 1.25) {
+      add(residential, fenceMat, 0.16, 1.25, 0.12, x, 0.62, z);
+    }
+  };
+  addFenceX(-116, -88, 54);
+  addFenceZ(-116, 36, 54);
+  addFenceZ(-88, 36, 54);
+  addFenceX(-116, -96, 36);
+  for (const x of [-116, -96, -88]) add(residential, fenceMat, 0.24, 1.55, 0.24, x, 0.78, 36);
+
+  // Patio deck and paver walk sit behind the house, inside the fence.
   const backyardDeck = new THREE.Group();
-  backyardDeck.position.set(-38, 0, 32);
-  for (let i = 0; i < 10; i += 1) {
-    add(backyardDeck, i % 2 ? mats.pallet : mats.shed, 1.0, 0.04, 8, -4.5 + i, 0.02, 0);
+  backyardDeck.position.set(-103, 0, 42);
+  for (let i = 0; i < 12; i += 1) {
+    add(backyardDeck, i % 2 ? deckMat : mats.pallet, 1, 0.06, 8, -5.5 + i, 0.06, 0);
   }
-  add(backyardDeck, mats.dark, 10.2, 0.12, 0.16, 0, 0.02, -3.95);
-  add(backyardDeck, mats.dark, 10.2, 0.12, 0.16, 0, 0.02, 3.95);
-  for (const x of [-4.95, 4.95]) add(backyardDeck, mats.dark, 0.16, 0.12, 8, x, 0.02, 0);
-  groups.residential.add(backyardDeck);
-  for (const x of [-47, -29]) {
-    add(groups.residential, mats.dark, 0.16, 1.45, 0.16, x, 0.72, 32);
-    add(groups.residential, mats.dark, 0.1, 0.08, 18, x, 1.05, 32);
+  add(backyardDeck, mats.dark, 12.2, 0.12, 0.16, 0, 0.05, -3.95);
+  add(backyardDeck, mats.dark, 12.2, 0.12, 0.16, 0, 0.05, 3.95);
+  for (const x of [-5.95, 5.95]) add(backyardDeck, mats.dark, 0.16, 0.12, 8, x, 0.05, 0);
+  residential.add(backyardDeck);
+  for (const z of [36.7, 38.1]) add(residential, walkMat, 1.8, 0.1, 0.8, -103, 0.08, z);
+  for (const x of [-113, -92]) {
+    const shrub = new THREE.Mesh(treeLeaves, foliageMat);
+    shrub.scale.set(0.75, 0.45, 0.65);
+    shrub.position.set(x, 0.75, 30);
+    residential.add(shrub);
   }
-  for (let i = 0; i < 7; i += 1) add(groups.residential, mats.dark, 0.08, 0.8, 0.08, -47 + i * 3, 0.4, 40);
-  add(groups.residential, mats.dark, 18, 0.08, 0.1, -38, 1.05, 40);
-  // Small stairs and a paver path lead from the patio to the yard gate.
-  for (let i = 0; i < 3; i += 1) {
-    add(groups.residential, mats.pallet, 2.8, 0.12, 0.55, -38, 0.08 + i * 0.08, 27.6 - i * 0.5);
-    add(groups.residential, mats.slab, 1.2, 0.06, 0.9, -38, 0.04, 25.8 - i * 1.2);
-  }
-  for (const x of [-45.5, -30.5]) add(groups.residential, mats.paint, 0.8, 0.75, 0.8, x, 0.37, 34.5);
+
+  residential.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
 
   let current: SiteTheme = "yard";
   const tint = new THREE.Color(THEME_TINT.yard);
@@ -753,6 +869,7 @@ function dressThemes(
     const showSkyline = next === "yard" || next === "steel" || next === "tower";
     for (const part of skyline) part.visible = showSkyline;
     tint.setHex(THEME_TINT[next]);
+    setFogDensity(next === "residential" ? 0.012 : 0.004);
   };
   return { tint, setTheme };
 }

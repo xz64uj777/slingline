@@ -83,6 +83,15 @@ export function CraneYard() {
   const currentCargo = loadSpec(currentOffer.kind).label;
   const careerSnapshotRef = useRef<CareerState | null>(null);
 
+  const takeCall = (id: JobId) => {
+    const sim = simRef.current;
+    sim?.acceptJob(id);
+    if (!sim || sim.practicing || sim.career.status !== "independent" || sim.career.job !== id) return;
+    const nextCam: CamView = id === "spa" ? "wide" : "chase";
+    setCam(nextCam);
+    yardRef.current?.setView(nextCam);
+  };
+
   const scoreRef = useRef<HTMLSpanElement>(null);
   const bestRef = useRef<HTMLSpanElement>(null);
   const cashRef = useRef<HTMLSpanElement>(null);
@@ -200,6 +209,9 @@ export function CraneYard() {
         },
       });
       yardRef.current = yard;
+      const initialCam: CamView = sim.career.job === "spa" ? "wide" : "chase";
+      setCam(initialCam);
+      yard.setView(initialCam);
     } catch (err) {
       setGlError(err instanceof Error ? err.message : "The yard couldn't start.");
       return;
@@ -1091,7 +1103,7 @@ export function CraneYard() {
                       offer={offer}
                       hired={false}
                       onPick={(id) => {
-                        simRef.current?.acceptJob(id);
+                        takeCall(id);
                         refreshBooks();
                       }}
                     />
@@ -1289,7 +1301,7 @@ export function CraneYard() {
           offers={jobBoard(simRef.current?.career ?? books)}
           hired={(simRef.current?.career.status ?? books.status) === "hired"}
           onPick={(id) => {
-            simRef.current?.acceptJob(id);
+            takeCall(id);
             refreshBooks();
             setBoardOpen(false);
           }}
