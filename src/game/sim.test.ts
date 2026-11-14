@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Actions } from "./input.ts";
-import { CraneSim } from "./sim.ts";
+import { CraneSim, PADS } from "./sim.ts";
 
 const STEP = 1 / 60;
 
@@ -115,17 +115,65 @@ describe("hook pickup", () => {
   });
 });
 
+describe("deployment safety", () => {
+  it("raises the boom clear of the interlock when the pads set", () => {
+    const sim = new CraneSim();
+    assert.equal(sim.state, "driving");
+
+    sim.requestDeploy();
+    run(sim, 2.2);
+
+    assert.equal(sim.state, "lifting");
+    assert.equal(sim.safetyLock, false);
+    assert.ok(sim.boomPitch > (44 * Math.PI) / 180 + 0.07);
+  });
+});
+
+describe("grounded load", () => {
+  it("cannot be dragged by DOWN input and lifts again on HOIST", () => {
+    const sim = new CraneSim();
+    hookUp(sim, 0);
+    run(sim, 1.2, { hoist: 1 });
+    assert.equal(sim.airborne, true);
+
+    for (let i = 0; i < 1600 && !sim.landed; i += 1) sim.step(STEP, { ...IDLE, hoist: -0.15 });
+    assert.equal(sim.landed, true, `expected touchdown, message: ${sim.message}`);
+    assert.equal(sim.airborne, false);
+
+    const hx = sim.hx;
+    const hz = sim.hz;
+    run(sim, 1.5, { hoist: -1 });
+    assert.equal(sim.attached, true);
+    assert.ok(Math.hypot(sim.hx - hx, sim.hz - hz) < 0.05, "DOWN input dragged the grounded load");
+
+    run(sim, 0.5, { hoist: 1 });
+    assert.equal(sim.landed, false);
+    assert.equal(sim.airborne, true);
+  });
+});
+
 describe("hook release", () => {
-  it("sets the load down where the hook is and clears the chart", () => {
+  it("keeps a suspended load on the hook until it is landed", () => {
     const sim = new CraneSim();
     hookUp(sim, 0);
     run(sim, 1.2, { hoist: 1 });
 
     assert.equal(sim.airborne, true);
     assert.ok(sim.limitRatio > 0);
+
+    sim.requestRelease();
+
+    assert.equal(sim.attached, true);
+    assert.match(sim.message, /lower the load fully/i);
+  });
+
+  it("releases a landed load outside the ring and clears the chart without paying", () => {
+    const sim = new CraneSim();
+    hookUp(sim, 0);
     const piece = sim.pieces[0]!;
     const hx = sim.hx;
     const hz = sim.hz;
+    sim.landed = true;
 
     sim.requestRelease();
 
@@ -134,9 +182,26 @@ describe("hook release", () => {
     assert.equal(sim.phase, "seek");
     assert.equal(sim.limitRatio, 0);
     assert.equal(sim.limitState, "ok");
+    assert.equal(sim.lastSet, null);
     assert.equal(piece.x, hx);
     assert.equal(piece.z, hz);
     assert.equal(piece.y, 0.8);
+    assert.match(sim.message, /outside the ring/i);
+  });
+
+  it("completes a landed set inside the ring when RELEASE is pressed", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard", cash: 0, reputation: 5 };
+    hookUp(sim, 0);
+    sim.landed = true;
+    sim.hx = PADS[sim.to]!.x;
+    sim.hz = PADS[sim.to]!.z;
+
+    sim.requestRelease();
+
+    assert.equal(sim.attached, false);
+    assert.equal(sim.phase, "done");
+    assert.ok(sim.lastSet, "a landed release on the ring should leave a report");
   });
 
   it("ignores release when nothing is on the hook", () => {
