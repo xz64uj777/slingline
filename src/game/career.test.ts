@@ -21,6 +21,8 @@ import {
   resolveSet,
   writeCareer,
   type CareerState,
+  type JobId,
+  type LoadKind,
 } from "./career.ts";
 
 function owner(partial: Partial<CareerState> = {}): CareerState {
@@ -78,7 +80,7 @@ describe("wage versus contract", () => {
   it("pays a wage that is a clear share of the contract", () => {
     const offer = activeOffer(freshCareer());
     assert.equal(offer.wage, true);
-    assert.equal(offer.title, "YARD MOVE");
+    assert.equal(offer.title, "TOOL CRATE RUN");
     assert.equal(offer.gross, 900);
     assert.equal(offer.take, Math.round(offer.gross * ECONOMY.wageShare));
     assert.ok(offer.take < offer.gross / 2);
@@ -223,15 +225,24 @@ describe("save and reload", () => {
 });
 
 describe("job unlocks", () => {
-  it("keeps Hargrove on yard moves until the record is solid, then a basic set", () => {
+  it("starts with the rental and assigns a varied six-job apprenticeship", () => {
     assert.equal(assignedJob(freshCareer()), "yard");
     assert.equal(isUnlocked(freshCareer(), "steel").ok, false);
     assert.match(isUnlocked(freshCareer(), "steel").reason, /Hargrove|Slingline/);
-    const ready = { ...freshCareer(), jobsDone: ECONOMY.hiredVarietyJobs, standing: ECONOMY.hiredVarietyStanding };
-    assert.equal(assignedJob(ready), "pad");
-    const low = { ...ready, standing: ECONOMY.hiredVarietyStanding - 1 };
-    assert.equal(assignedJob(low), "yard");
-    assert.match(isUnlocked(low, "pad").reason, /Standing/);
+    const expected: JobId[] = ["yard", "pipes", "generator", "panel", "pad", "yard"];
+    const expectedLoads: LoadKind[] = ["crate", "pipes", "generator", "panel", "crate", "crate"];
+    let state = freshCareer();
+    const actual: JobId[] = [];
+    for (let i = 0; i < expected.length; i += 1) {
+      actual.push(assignedJob(state));
+      const offer = activeOffer(state);
+      assert.equal(offer.kind, expectedLoads[i]);
+      state = resolveSet(state, offer.kind).state;
+    }
+    assert.deepEqual(actual, expected);
+    assert.equal(state.jobsDone, 6);
+    assert.ok(state.cash >= ECONOMY.foundCash, "the six starter wages should let a clean operator file the company");
+    assert.equal(assignedJob({ ...freshCareer(), jobsDone: 3, standing: ECONOMY.hiredVarietyStanding - 1 }), "yard");
   });
 
   it("opens calls from reputation and the crane you own, and closes them again", () => {

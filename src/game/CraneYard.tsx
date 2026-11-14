@@ -5,6 +5,7 @@ import {
   ECONOMY,
   activeOffer,
   canFound,
+  cargoLabel,
   careerSummary,
   jobBoard,
   money,
@@ -163,9 +164,24 @@ export function CraneYard() {
       if (callRef.current) callRef.current.textContent = sim.contractLabel();
       if (progressRef.current) {
         const offer = activeOffer(sim.career);
-        const loadName = offer.kind === "beam" ? "STEEL BEAM" : offer.kind === "heavy" ? "HEAVY BLOCK" : "CRATE";
+        const loadName = cargoLabel(offer.kind);
         const destination = sim.roofActive ? "BUILDING SET ZONE" : "AMBER RING";
-        const doubleLeg = offer.id === "double" ? (sim.career.leg === 0 ? "DELIVERY 1 OF 2" : "DELIVERY 2 OF 2") : "SINGLE DELIVERY";
+        const doubleLeg = offer.wage
+          ? `RENTAL APPRENTICE · JOB ${Math.min(6, sim.career.jobsDone + 1)} OF 6`
+          : offer.id === "double"
+            ? (sim.career.leg === 0 ? "DELIVERY 1 OF 2" : "DELIVERY 2 OF 2")
+            : "SINGLE DELIVERY";
+        const briefing = offer.kind === "pipes"
+          ? "LONG LOAD · use small, slow slews"
+          : offer.kind === "generator"
+            ? "HEAVY MACHINE · keep the boom short"
+            : offer.kind === "panel"
+              ? "PRECISION SET · land flat in the tight ring"
+              : offer.kind === "beam"
+                ? "LONG STEEL · let the swing settle"
+                : offer.kind === "heavy"
+                  ? "HEAVY PICK · watch the load chart"
+                  : "FIRST LIFT · steady inputs pay";
         let step = "TRAVEL TO WORK AREA · STOP AND DEPLOY";
         if (sim.hauling) step = "TRANSPORT CRANE · REACH THE UNLOAD PAD";
         else if (sim.phase === "done") step = "DELIVERY COMPLETE";
@@ -181,6 +197,7 @@ export function CraneYard() {
         const lines = [
           doubleLeg,
           `LOAD: ${loadName}`,
+          briefing,
           `DESTINATION: ${destinationText}`,
           `PAY: ${money(offer.take)} ${offer.wage ? "WAGE" : "CONTRACT"}`,
           step,
@@ -563,7 +580,7 @@ export function CraneYard() {
             <div className="mt-2 rounded border border-line bg-bg p-2 text-center text-xs">
               <p className="font-display tracking-widest text-muted">LIFT ROUTE</p>
               <div className="my-2 flex items-center justify-between gap-1">
-                <span className="rounded border border-primary px-2 py-2 font-display">CRATE</span>
+                <span className="rounded border border-primary px-2 py-2 font-display">LOAD</span>
                 <span className="text-primary">→</span>
                 <span className="rounded border border-primary px-2 py-2 font-display">AMBER RING</span>
               </div>
@@ -692,7 +709,7 @@ export function CraneYard() {
           <section className="mx-auto w-full max-w-md border border-line border-t-4 border-t-primary bg-surface p-4 sm:max-w-3xl sm:p-5">
             <p className="font-display text-sm tracking-widest text-primary">SLINGLINE CAREER</p>
             <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">Ready for work?</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Run the crane, complete the lift, and build your reputation one job at a time.</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted">Start on Hargrove’s rental. Finish six paid calls, save your wages, file Slingline, and work toward a crane of your own.</p>
             <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
               {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
             </button>

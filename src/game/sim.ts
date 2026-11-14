@@ -6,6 +6,7 @@ import {
   buyCrane as buyCareerCrane,
   buyDetail,
   buyLabel as careerBuyLabel,
+  cargoLabel,
   companyName as careerCompanyName,
   contractLabel as careerContractLabel,
   employerLine,
@@ -492,6 +493,9 @@ export class CraneSim {
       { kind: "crate", x: -6, z: -8 },
       { kind: "beam", x: 0, z: -11 },
       { kind: "heavy", x: 6, z: -8 },
+      { kind: "pipes", x: 19, z: -20 },
+      { kind: "generator", x: -9, z: 19 },
+      { kind: "panel", x: -29, z: -8 },
     ];
     this.pieces = homes.map((home) => ({
       kind: home.kind,
@@ -535,6 +539,9 @@ export class CraneSim {
   private restY(kind: LoadKind) {
     if (kind === "beam") return 0.32;
     if (kind === "heavy") return 1.25;
+    if (kind === "pipes") return 0.5;
+    if (kind === "generator") return 0.9;
+    if (kind === "panel") return 0.28;
     return this.cargoHalf;
   }
 
@@ -837,8 +844,7 @@ export class CraneSim {
     this.landed = false;
     this.hookReady = false;
     this.phase = "carry";
-    const noun = piece.kind === "beam" ? "steel beam" : piece.kind === "heavy" ? "heavy block" : "crate";
-    this.message = this.limitState === "ok" ? `${noun} on the hook. Set it in the amber ring.` : this.message;
+    this.message = this.limitState === "ok" ? `${cargoLabel(piece.kind).toLowerCase()} on the hook. Set it in the amber ring.` : this.message;
   }
 
   requestRelease() {
@@ -849,7 +855,7 @@ export class CraneSim {
     }
     const carried = this.carry != null ? this.pieces[this.carry] : undefined;
     const target = this.roofActive ? this.roofDeck() : PADS[this.to]!;
-    const radius = this.roofActive ? 3.6 : 2.4;
+    const radius = this.roofActive ? 3.6 : this.targetRadius();
     const onTarget = Math.hypot(this.hx - target.x, this.hz - target.z) < radius;
     if (onTarget) {
       this.succeed();
@@ -893,12 +899,19 @@ export class CraneSim {
       best = gap;
       this.latch = i;
       this.hookGap = gap;
-      this.hookLabel = piece.kind === "beam" ? "BEAM" : piece.kind === "heavy" ? "BLOCK" : "CRATE";
+      this.hookLabel = cargoLabel(piece.kind);
       // Allow a little practical positioning tolerance without making the hook magnetic.
       // The hook must be within about 30 cm horizontally and 25 cm vertically.
       this.hookReady = flat < 0.3 && Math.abs(this.hy - idealY) < 0.25;
       this.load = piece.kind;
     }
+  }
+
+  private targetRadius() {
+    if (this.load === "panel") return 1.75;
+    if (this.load === "generator") return 2;
+    if (this.load === "pipes") return 2.1;
+    return 2.4;
   }
 
   requestDeploy() {
@@ -1173,6 +1186,9 @@ export class CraneSim {
     if (!this.attached) return 0;
     if (this.load === "heavy") return 8.2;
     if (this.load === "beam") return 4.1;
+    if (this.load === "generator") return 2.8;
+    if (this.load === "panel") return 2.7;
+    if (this.load === "pipes") return 1.5;
     return 2;
   }
 
@@ -1291,7 +1307,7 @@ export class CraneSim {
       this.hy = this.hang + this.restY(this.load);
       this.vy = 0;
       const pad = PADS[this.to]!;
-      const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < 2.4;
+      const onTarget = Math.hypot(this.hx - pad.x, this.hz - pad.z) < this.targetRadius();
       if (!gentle && this.hookSpeed > limit) {
         this.fail();
       } else {

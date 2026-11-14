@@ -9,9 +9,9 @@ import {
 export type { CraneId } from "./cranes.ts";
 export { CRANES, CRANE_CHOICES, nextCrane, reachesRoof } from "./cranes.ts";
 
-export type LoadKind = "crate" | "beam" | "heavy";
+export type LoadKind = "crate" | "beam" | "heavy" | "pipes" | "generator" | "panel";
 export type CareerStatus = "hired" | "independent";
-export type JobId = "yard" | "pad" | "steel" | "night" | "floor" | "double" | "heavy" | "roof" | "tracks";
+export type JobId = "yard" | "pipes" | "generator" | "panel" | "pad" | "steel" | "night" | "floor" | "double" | "heavy" | "roof" | "tracks";
 
 export const CAREER_KEY = "slingline-career";
 export const BOSS = "Hargrove Crane";
@@ -32,7 +32,6 @@ export const ECONOMY = {
   foundStanding: 64,
   foundFee: 1800,
   startStanding: 70,
-  hiredVarietyJobs: 2,
   hiredVarietyStanding: 45,
   noteFraction: 0.2,
   noteSlice: 0.1,
@@ -88,8 +87,11 @@ type JobDef = {
 };
 
 const JOBS: Record<JobId, JobDef> = {
-  yard: { id: "yard", title: "YARD MOVE", kind: "crate", pad: 5, pay: 900, rep: 0, crane: "rental", roof: false, repGain: 1 },
-  pad: { id: "pad", title: "BASIC SET", kind: "crate", pad: 0, pay: 1200, rep: 1, crane: "rental", roof: false, repGain: 1 },
+  yard: { id: "yard", title: "TOOL CRATE RUN", kind: "crate", pad: 5, pay: 900, rep: 0, crane: "rental", roof: false, repGain: 1 },
+  pipes: { id: "pipes", title: "PIPE RACK DELIVERY", kind: "pipes", pad: 1, pay: 1450, rep: 1, crane: "rental", roof: false, repGain: 1 },
+  generator: { id: "generator", title: "BACKUP GENERATOR SET", kind: "generator", pad: 4, pay: 1750, rep: 2, crane: "rental", roof: false, repGain: 1 },
+  panel: { id: "panel", title: "PRECAST PANEL PICK", kind: "panel", pad: 3, pay: 2050, rep: 3, crane: "rental", roof: false, repGain: 1 },
+  pad: { id: "pad", title: "CONCRETE CREW RESUPPLY", kind: "crate", pad: 0, pay: 1600, rep: 1, crane: "rental", roof: false, repGain: 1 },
   steel: { id: "steel", title: "STEEL SET", kind: "beam", pad: 1, pay: 2400, rep: 3, crane: "yard", roof: false, repGain: 1 },
   night: { id: "night", title: "NIGHT CALL", kind: "beam", pad: 4, pay: 3000, rep: 5, crane: "yard", roof: false, repGain: 1 },
   floor: { id: "floor", title: "FLOOR SET", kind: "beam", pad: 0, pay: 3600, rep: 6, crane: "yard", roof: true, repGain: 2 },
@@ -110,7 +112,11 @@ const JOBS: Record<JobId, JobDef> = {
   tracks: { id: "tracks", title: "TRACK PICK", kind: "heavy", pad: 2, pay: 8600, rep: 12, crane: "crawler", roof: false, repGain: 3 },
 };
 
-const JOB_ORDER: JobId[] = ["yard", "pad", "steel", "night", "floor", "double", "heavy", "roof", "tracks"];
+const JOB_ORDER: JobId[] = ["yard", "pipes", "generator", "panel", "pad", "steel", "night", "floor", "double", "heavy", "roof", "tracks"];
+
+export function cargoLabel(kind: LoadKind): string {
+  return ({ crate: "TOOL CRATE", beam: "STEEL BEAM", heavy: "HEAVY BLOCK", pipes: "PIPE BUNDLE", generator: "GENERATOR", panel: "PRECAST PANEL" })[kind];
+}
 
 const BOUGHT_LINE: Record<Exclude<CraneId, "rental">, string> = {
   yard: "Yard crane is yours. Longer boom. The note comes out of the next jobs.",
@@ -237,9 +243,9 @@ function veteranBump(state: CareerState) {
 }
 
 export function assignedJob(state: CareerState): JobId {
-  if (state.downtime > 0 || state.standing < ECONOMY.hiredVarietyStanding || state.jobsDone < ECONOMY.hiredVarietyJobs) {
-    return "yard";
-  }
+  if (state.downtime > 0 || state.standing < ECONOMY.hiredVarietyStanding) return "yard";
+  const firstShift: JobId[] = ["yard", "pipes", "generator", "panel", "pad", "yard"];
+  if (state.jobsDone < firstShift.length) return firstShift[state.jobsDone] ?? "yard";
   return state.jobsDone % 2 === 0 ? "pad" : "yard";
 }
 
@@ -250,23 +256,10 @@ function callersWary(state: CareerState) {
 export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reason: string } {
   const def = JOBS[job];
   if (state.status === "hired") {
-    if (job !== "yard" && job !== "pad") {
-      return { ok: false, reason: "Hargrove does not assign this. It opens when Slingline is yours." };
+    if (job !== assignedJob(state)) {
+      return { ok: false, reason: `Hargrove's next assignment is ${JOBS[assignedJob(state)].title}.` };
     }
-    if (state.downtime > 0 && job !== "yard") {
-      return { ok: false, reason: "You are on downtime. Only a yard move is open." };
-    }
-    if (job === "pad") {
-      if (state.jobsDone < ECONOMY.hiredVarietyJobs) {
-        return { ok: false, reason: `Hargrove assigns a basic set after ${ECONOMY.hiredVarietyJobs - state.jobsDone} more clean job${ECONOMY.hiredVarietyJobs - state.jobsDone === 1 ? "" : "s"}.` };
-      }
-      if (state.standing < ECONOMY.hiredVarietyStanding) {
-        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredVarietyStanding} before a basic set.` };
-      }
-      return { ok: true, reason: "Hargrove put a basic set on your list." };
-    }
-    if (state.downtime > 0) return { ok: true, reason: "Short wage. A clean yard move clears one downtime." };
-    return { ok: true, reason: "" };
+    return { ok: true, reason: state.downtime > 0 ? "Short wage. A clean yard move clears one downtime." : "Hargrove assigned this lift." };
   }
 
   if (job !== "yard" && state.downtime > 0) {
@@ -365,7 +358,7 @@ export function jobBoard(state: CareerState): JobOffer[] {
 
 export function contractLabel(state: CareerState): string {
   const offer = activeOffer(state);
-  const noun = offer.kind === "beam" ? "BEAM" : offer.kind === "heavy" ? "BLOCK" : "CRATE";
+  const noun = cargoLabel(offer.kind);
   if (offer.wage) {
     const word = offer.short ? "SHORT WAGE" : "WAGE";
     return `${offer.title}: ${noun} · ${word} ${money(offer.take)} OF ${money(offer.gross)}`;

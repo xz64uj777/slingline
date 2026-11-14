@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { LOWBOY_DROP, PADS, type CraneSim } from "@/game/sim";
+import { LOWBOY_DROP, PADS, type CraneSim, type LoadKind } from "@/game/sim";
 import { dressSite } from "@/game/scenery";
 import { applyCraneLook, createCraneModel } from "@/game/rig-model";
 
@@ -148,12 +148,69 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     return shackle;
   });
 
-  const loads = (["crate", "beam", "heavy"] as const).map(() => {
+  const cargoKinds: LoadKind[] = ["crate", "beam", "heavy", "pipes", "generator", "panel"];
+  const loads = cargoKinds.map((kind) => {
     const mat = crateMat.clone();
     const group = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), mat);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.18, 1.62), stripe);
-    group.add(mesh, band);
+    if (kind === "crate") {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), mat);
+      const bandA = new THREE.Mesh(new THREE.BoxGeometry(1.64, 0.16, 1.64), stripe);
+      const bandB = bandA.clone();
+      bandB.position.y = 0.48;
+      group.add(body, bandA, bandB);
+    } else if (kind === "beam") {
+      mat.color.setHex(0x87929d);
+      for (let i = -1; i <= 1; i += 1) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.28, 4.5), mat);
+        beam.position.set(i * 0.42, i * 0.16, 0);
+        group.add(beam);
+      }
+    } else if (kind === "heavy") {
+      mat.color.setHex(0x51483f);
+      const block = new THREE.Mesh(new THREE.BoxGeometry(2.96, 2.72, 2.96), mat);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(3, 0.16, 3), stripe);
+      band.position.y = 0.65;
+      group.add(block, band);
+    } else if (kind === "pipes") {
+      mat.color.setHex(0x5f9b9c);
+      group.position.y = -0.58;
+      const pipeGeometry = new THREE.CylinderGeometry(0.22, 0.22, 3.8, 10);
+      pipeGeometry.rotateX(Math.PI / 2);
+      for (const [x, y] of [[-0.25, 0.74], [0.25, 0.74], [-0.5, 0.3], [0, 0.3], [0.5, 0.3]] as const) {
+        const pipe = new THREE.Mesh(pipeGeometry, mat);
+        pipe.position.set(x, y, 0);
+        group.add(pipe);
+      }
+      for (const z of [-1.2, 1.2]) {
+        const strap = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.16), stripe);
+        strap.position.set(0, 0.55, z);
+        group.add(strap);
+      }
+    } else if (kind === "generator") {
+      mat.color.setHex(0x3d6674);
+      group.position.y = -0.8;
+      const skid = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.2, 1.55), steelDark);
+      const housing = new THREE.Mesh(new THREE.BoxGeometry(1.85, 1.35, 1.35), mat);
+      housing.position.y = 0.78;
+      const control = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.62, 0.08), steelDark);
+      control.position.set(0.48, 0.82, 0.72);
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.5, 8), steelDark);
+      exhaust.position.set(-0.52, 1.7, -0.42);
+      group.add(skid, housing, control, exhaust);
+      for (let i = -2; i <= 2; i += 1) {
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.58, 0.04), stripe);
+        vent.position.set(i * 0.2 - 0.48, 0.83, 0.69);
+        group.add(vent);
+      }
+    } else {
+      mat.color.setHex(0xb8c1c8);
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.42, 3.4), mat);
+      const ribA = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.54, 3.38), steelDark);
+      const ribB = ribA.clone();
+      ribA.position.x = -1.1;
+      ribB.position.x = 1.1;
+      group.add(slab, ribA, ribB);
+    }
     scene.add(group);
     const shade = new THREE.Mesh(
       new THREE.CircleGeometry(1.1, 16),
@@ -409,7 +466,7 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     hook.quaternion.setFromUnitVectors(UP, dir);
 
     // Keep lifting slings and shackles stowed during travel and setup.
-    const carried = sim.attached && sim.state === "lifting" && !sim.hauling
+    const carried = sim.attached && sim.state === "lifting" && !sim.hauling && sim.carry !== null
       ? sim.pieces[sim.carry]
       : undefined;
     slings.visible = Boolean(carried);
@@ -417,9 +474,11 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     if (carried) {
       const heavyLoad = carried.kind === "heavy";
       const beamLoad = carried.kind === "beam";
-      const halfSpan = heavyLoad ? 1.12 : beamLoad ? 0.13 : 0.62;
-      const halfLength = heavyLoad ? 1.12 : beamLoad ? 2.15 : 0.62;
-      const attachY = carried.y + (beamLoad ? 0.18 : 0.55);
+      const wideLoad = heavyLoad || carried.kind === "panel";
+      const longLoad = beamLoad || carried.kind === "pipes";
+      const halfSpan = wideLoad ? 1.12 : longLoad ? 0.48 : 0.62;
+      const halfLength = heavyLoad ? 1.12 : longLoad ? 2.15 : carried.kind === "panel" ? 1.35 : 0.62;
+      const attachY = carried.y + (beamLoad || carried.kind === "panel" ? 0.18 : 0.55);
       const apex = new THREE.Vector3(sim.hx, sim.hy - 0.18, sim.hz);
       const positions = slingGeometry.getAttribute("position") as THREE.BufferAttribute;
       for (let i = 0; i < 4; i += 1) {
@@ -441,14 +500,13 @@ export function createYard(canvas: HTMLCanvasElement): Yard {
     sim.pieces.forEach((piece, i) => {
       const view = loads[i];
       if (!view) return;
-      view.group.position.set(piece.x, piece.y, piece.z);
+      const modelOffset = piece.kind === "pipes" ? -0.58 : piece.kind === "generator" ? -0.8 : 0;
+      view.group.position.set(piece.x, piece.y + modelOffset, piece.z);
       const heavy = piece.kind === "heavy";
-      const beam = piece.kind === "beam";
-      view.group.scale.set(heavy ? 1.85 : beam ? 0.5 : 1, heavy ? 1.7 : beam ? 0.38 : 1, heavy ? 1.85 : beam ? 2.8 : 1);
-      view.mat.color.setHex(heavy ? 0x4a4038 : beam ? 0x8d98a4 : 0xc4894a);
       view.shade.position.x = piece.x;
       view.shade.position.z = piece.z;
-      const lift = Math.max(0, piece.y - (heavy ? 1.25 : beam ? 0.32 : sim.cargoHalf));
+      const rest = heavy ? 1.25 : piece.kind === "beam" ? 0.32 : piece.kind === "pipes" ? 0.5 : piece.kind === "generator" ? 0.9 : piece.kind === "panel" ? 0.28 : sim.cargoHalf;
+      const lift = Math.max(0, piece.y - rest);
       (view.shade.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(0.45 - lift * 0.03, 0.12, 0.45);
       view.shade.scale.setScalar(THREE.MathUtils.clamp(1 + lift * 0.04, 1, 1.6));
     });

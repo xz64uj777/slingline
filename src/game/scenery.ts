@@ -166,6 +166,9 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   addBeams(scene, box, steel, -38, -30);
   addSpools(scene, cyl, rust, -34, -36);
   addPlates(scene, box, steel, 28.6, 13.4);
+  addPipeRack(scene, box, cyl, steel, rust, 25, -25);
+  addGeneratorBay(scene, box, cyl, steel, dark, paint, -15, 21);
+  addPanelBed(scene, box, steel, paint, -34, -14);
   addTruck(scene, box, cyl, cabMat, dark, steel, 38, 40, 0.4);
   addMixer(scene, box, cyl, mixerMat, dark, 22, -42, 0.8);
 
@@ -415,4 +418,105 @@ function dressRise(
   tarp.position.set(0, 8.2, 5.15);
   rise.add(hoist, cage, tarp);
   scene.add(rise);
+}
+
+function addPipeRack(
+  scene: THREE.Scene,
+  box: THREE.BoxGeometry,
+  cyl: THREE.CylinderGeometry,
+  steel: THREE.Material,
+  rust: THREE.Material,
+  x: number,
+  z: number,
+) {
+  const rack = new THREE.Group();
+  rack.position.set(x, 0, z);
+  for (const px of [-3.8, 3.8]) {
+    for (const pz of [-1.4, 1.4]) {
+      const leg = new THREE.Mesh(box, rust);
+      leg.scale.set(0.18, 2.4, 0.18);
+      leg.position.set(px, 1.2, pz);
+      rack.add(leg);
+    }
+    const crossbar = new THREE.Mesh(box, rust);
+    crossbar.scale.set(0.22, 0.2, 3.2);
+    crossbar.position.set(px, 2.15, 0);
+    rack.add(crossbar);
+  }
+  const pipeGeometry = cyl.clone();
+  pipeGeometry.rotateZ(Math.PI / 2);
+  for (let layer = 0; layer < 3; layer += 1) {
+    for (let i = 0; i < 4; i += 1) {
+      const tube = new THREE.Mesh(pipeGeometry, steel);
+      tube.scale.set(0.48, 7.2, 0.48);
+      tube.position.set(0, 0.45 + layer * 0.58, -0.9 + i * 0.6);
+      rack.add(tube);
+    }
+  }
+  scene.add(rack);
+}
+
+function addGeneratorBay(
+  scene: THREE.Scene,
+  box: THREE.BoxGeometry,
+  cyl: THREE.CylinderGeometry,
+  steel: THREE.Material,
+  dark: THREE.Material,
+  paint: THREE.Material,
+  x: number,
+  z: number,
+) {
+  const bay = new THREE.Group();
+  bay.position.set(x, 0, z);
+  const plinth = new THREE.Mesh(box, dark);
+  plinth.scale.set(5.2, 0.18, 4.4);
+  plinth.position.y = 0.12;
+  const cabinet = new THREE.Mesh(box, steel);
+  cabinet.scale.set(2.2, 1.7, 1.4);
+  cabinet.position.set(0, 1.05, 0);
+  const control = new THREE.Mesh(box, paint);
+  control.scale.set(0.5, 0.7, 0.08);
+  control.position.set(0.55, 1.05, 0.75);
+  const exhaust = new THREE.Mesh(cyl, dark);
+  exhaust.scale.set(0.15, 0.75, 0.15);
+  exhaust.position.set(-0.65, 2.25, -0.35);
+  bay.add(plinth, cabinet, control, exhaust);
+  for (const px of [-2.3, 2.3]) {
+    const bollard = new THREE.Mesh(cyl, paint);
+    bollard.scale.set(0.14, 0.8, 0.14);
+    bollard.position.set(px, 0.4, 1.8);
+    bay.add(bollard);
+  }
+  scene.add(bay);
+}
+
+function addPanelBed(
+  scene: THREE.Scene,
+  box: THREE.BoxGeometry,
+  steel: THREE.Material,
+  paint: THREE.Material,
+  x: number,
+  z: number,
+) {
+  const bed = new THREE.Group();
+  bed.position.set(x, 0, z);
+  for (let level = 0; level < 3; level += 1) {
+    const panel = new THREE.Mesh(box, steel);
+    panel.scale.set(5.2, 0.36, 3.6);
+    panel.position.set(0, 0.42 + level * 0.48, 0);
+    bed.add(panel);
+    for (const px of [-1.9, 0, 1.9]) {
+      const rib = new THREE.Mesh(box, paint);
+      rib.scale.set(0.08, 0.48, 3.5);
+      rib.position.set(px, 0.42 + level * 0.48, 0);
+      bed.add(rib);
+    }
+  }
+  for (const px of [-3.2, 3.2]) {
+    const stop = new THREE.Mesh(box, paint);
+    stop.scale.set(0.12, 1.8, 0.12);
+    stop.position.set(px, 0.9, -2.3);
+    bed.add(stop);
+  }
+  scene.add(bed);
 }
