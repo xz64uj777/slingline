@@ -94,6 +94,7 @@ export function CraneYard() {
   const jobsRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const callRef = useRef<HTMLParagraphElement>(null);
+  const driveModeRef = useRef<HTMLSpanElement>(null);
   const objectiveRef = useRef<HTMLParagraphElement>(null);
   const alignmentRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
@@ -237,6 +238,7 @@ export function CraneYard() {
       }
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
       if (callRef.current) callRef.current.textContent = sim.contractLabel();
+      if (driveModeRef.current) driveModeRef.current.textContent = sim.state === "driving" ? "STEER · DRIVE" : "SLEW · TROLLEY";
       if (soloRef.current) {
         const show = !sim.practicing && sim.career.status === "hired" && canFound(sim.career).ok;
         soloRef.current.style.display = show ? "block" : "none";
@@ -748,7 +750,7 @@ export function CraneYard() {
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-fg">
               {[
-                "Stop the carrier in the work area. If this crane has outriggers, press DEPLOY and wait for the pads to set before lifting.",
+                "Drive forward with W/↑, reverse with S/↓, and steer left/right with A/← and D/→. Stop in the work area. Once lifting, those axes control boom pitch and slew instead.",
                 "Slew left/right with the stick or A/D. Pitch the boom with forward/back or W/S; telescope with the right-side arrows or Z/C. Raise/lower the hook with Q/R or E/F. The on-screen controls work too.",
                 "Lower with DOWN or E/F. Use the HOOK view and live alignment cue. HOOK only connects when centered: within 0.3 m horizontally and 0.25 m vertically.",
                 "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
@@ -1167,7 +1169,7 @@ export function CraneYard() {
               RESET CAREER
             </button>
             <p className="mt-3 hidden text-xs text-steel sm:block">
-              A D slew · W S trolley · Q up · E down · H flips mode
+              A/D steer or slew · W/S drive or pitch · Q/R raise · E/F lower · Z/C telescope · H flips mode
             </p>
             <p className="mt-3 text-xs text-muted">
               Stop, deploy the pads, then pitch, telescope, and hook. Drag the yard to look around.
@@ -1183,7 +1185,7 @@ export function CraneYard() {
       ) : (
         <div className="hud-safe pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between">
           <div className="flex flex-col items-center gap-1">
-            <span className="border border-line bg-surface px-1.5 py-0.5 font-display text-[10px] tracking-widest text-muted">
+            <span ref={driveModeRef} className="border border-line bg-surface px-1.5 py-0.5 font-display text-[10px] tracking-widest text-muted">
               SLEW · TROLLEY
             </span>
             {scheme === "stick" ? <Stick /> : <ArrowPad />}

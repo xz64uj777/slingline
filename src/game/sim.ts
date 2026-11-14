@@ -1191,6 +1191,7 @@ export class CraneSim {
     const pace = PACE_SCALE[this.pace];
 
     if (canDrive) {
+      const forwardSign = this.hauling ? -1 : 1;
       const maxV = (this.mode === "hard" ? 11 : 9) * pace * (this.hauling ? 0.62 : 1);
       const target = actions.trolley * maxV;
       const follow = 1 - Math.exp(-dt * (this.pace === "slow" ? 1.4 : this.mode === "easy" ? 2.2 : 1.15));
@@ -1199,12 +1200,12 @@ export class CraneSim {
       const moving = Math.abs(this.speed) > 0.08;
       if (moving) {
         const tightness = 0.95 / (1 + Math.abs(this.speed) * 0.16);
-        this.heading += this.driveSteer * tightness * Math.sign(this.speed) * dt;
+        this.heading -= forwardSign * this.driveSteer * tightness * Math.sign(this.speed) * dt;
       } else if (Math.abs(this.driveSteer) > 0.25 && Math.abs(actions.trolley) < 0.2) {
-        this.heading += this.driveSteer * 0.4 * pace * dt;
+        this.heading -= forwardSign * this.driveSteer * 0.4 * pace * dt;
       }
-      const fx = -Math.sin(this.heading);
-      const fz = -Math.cos(this.heading);
+      const fx = forwardSign * Math.sin(this.heading);
+      const fz = forwardSign * Math.cos(this.heading);
       const nx = clamp(this.truckX + fx * this.speed * dt, -46, 46);
       const nz = clamp(this.truckZ + fz * this.speed * dt, -46, 46);
       if (!this.hitsYard(nx, nz)) {

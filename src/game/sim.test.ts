@@ -338,6 +338,38 @@ describe("outrigger interlock", () => {
   });
 });
 
+describe("vehicle controls", () => {
+  it("drives forward toward the visible cab nose and reverses with the opposite input", () => {
+    const forward = new CraneSim();
+    run(forward, 1, { trolley: 1 });
+    assert.ok(forward.truckZ > 0.5, `forward travel was ${forward.truckZ}`);
+
+    const reverse = new CraneSim();
+    run(reverse, 1, { trolley: -1 });
+    assert.ok(reverse.truckZ < -0.5, `reverse travel was ${reverse.truckZ}`);
+  });
+
+  it("steers left and right relative to the visible cab while moving forward", () => {
+    const left = new CraneSim();
+    const initialLeftHeading = left.heading;
+    run(left, 0.8, { trolley: 1, steer: 1 });
+    assert.ok(left.heading < initialLeftHeading, `left steering changed heading to ${left.heading}`);
+
+    const right = new CraneSim();
+    const initialRightHeading = right.heading;
+    run(right, 0.8, { trolley: 1, steer: -1 });
+    assert.ok(right.heading > initialRightHeading, `right steering changed heading to ${right.heading}`);
+  });
+
+  it("keeps the lowboy tractor moving toward its drop pad", () => {
+    const sim = new CraneSim();
+    sim.hauling = true;
+    sim.truckZ = 36;
+    run(sim, 1, { trolley: 1 });
+    assert.ok(sim.truckZ < 35.5, `lowboy delivery travel was ${sim.truckZ}`);
+  });
+});
+
 describe("sway", () => {
   it("swings further in hard mode than with the easy-mode assist", () => {
     const easy = new CraneSim();
