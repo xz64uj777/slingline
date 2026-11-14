@@ -4,6 +4,7 @@ import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/g
 import {
   ECONOMY,
   RENTAL_LEVELS,
+  activeOffer,
   canFound,
   careerSummary,
   jobBoard,
@@ -78,6 +79,8 @@ export function CraneYard() {
   const [boardOpen, setBoardOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
+  const currentOffer = activeOffer(books);
+  const currentCargo = loadSpec(currentOffer.kind).label;
 
   const scoreRef = useRef<HTMLSpanElement>(null);
   const bestRef = useRef<HTMLSpanElement>(null);
@@ -90,6 +93,8 @@ export function CraneYard() {
   const jobsRef = useRef<HTMLButtonElement>(null);
   const coachRef = useRef<HTMLParagraphElement>(null);
   const callRef = useRef<HTMLParagraphElement>(null);
+  const objectiveRef = useRef<HTMLParagraphElement>(null);
+  const alignmentRef = useRef<HTMLParagraphElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -301,7 +306,7 @@ export function CraneYard() {
         if (deployRef.current) deployRef.current.dataset.on = label === "STOW" || label === "DRIVE" ? "true" : "false";
       }
       if (hookBtnRef.current) {
-        const ready = sim.attached || (sim.hookGap < 1.6 && sim.hookLabel.length > 0);
+        const ready = sim.attached || sim.hookReady;
         hookBtnRef.current.disabled = !ready;
         hookBtnRef.current.dataset.ready = ready ? "true" : "false";
         hookBtnRef.current.dataset.on = sim.attached ? "true" : "false";
@@ -310,7 +315,70 @@ export function CraneYard() {
       if (gapRef.current) {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
-        if (show) gapRef.current.textContent = `${sim.hookLabel}  ${sim.hookGap.toFixed(1)} m`;
+        if (show) gapRef.current.textContent = `${sim.hookLabel} · ${sim.hookGap.toFixed(1)} m to hook`;
+      }
+      const liveOffer = activeOffer(sim.career);
+      const liveCargo = loadSpec(liveOffer.kind).label;
+      if (objectiveRef.current) {
+        let objective = `FIND THE MARKED ${liveCargo}.`;
+        if (sim.phase === "done") {
+          objective = `JOB COMPLETE${sim.lastSet ? ` · GRADE ${sim.lastSet.grade}` : ""}.`;
+        } else if (sim.phase === "broke") {
+          objective = "PICK FAILED · Check the warning, recover, and take another call.";
+        } else if (sim.flipped) {
+          objective = "CRANE OVER · Press RIGHT to recover, then stow the pads.";
+        } else if (sim.safetyLock) {
+          objective = "EASY SAFETY STOP · Raise the boom above 44° to clear the angle interlock.";
+        } else if (sim.state !== "lifting") {
+          objective = sim.hauling
+            ? "SETUP · Stop the lowboy on its marked pad, then unload."
+            : "SETUP · Stop in the work area, then deploy the pads.";
+        } else if (sim.attached && sim.landed) {
+          objective = "SET · Load is resting in the zone. Press RELEASE LOAD to finish.";
+        } else if (sim.attached) {
+          objective = `DELIVER · Carry the ${liveCargo} into the amber ring; slow down and let it settle.`;
+        } else if (sim.hookReady) {
+          objective = `PICKUP READY · Press HOOK to attach the ${liveCargo}.`;
+        } else if (sim.hookGap < 12) {
+          objective = `PICKUP · Align the hook with the ${liveCargo}, then connect.`;
+        } else {
+          objective = `PICKUP · Find the marked ${liveCargo}; use the HOOK camera if needed.`;
+        }
+        objectiveRef.current.textContent = objective;
+      }
+      if (alignmentRef.current) {
+        const alignment = sim.hookAlignment();
+        const show =
+          sim.state === "lifting" &&
+          !sim.attached &&
+          sim.hookGap < 12 &&
+          alignment != null;
+        alignmentRef.current.style.display = show ? "block" : "none";
+        if (show && alignment) {
+          const corrections: string[] = [];
+          if (Math.abs(alignment.slew) > 0.3) {
+            corrections.push(
+              `${alignment.slew > 0 ? "SLEW LEFT" : "SLEW RIGHT"} ${Math.abs(alignment.slew).toFixed(1)} m`,
+            );
+          }
+          if (Math.abs(alignment.reach) > 0.3) {
+            corrections.push(
+              `${alignment.reach > 0 ? "REACH OUT" : "REACH IN"} ${Math.abs(alignment.reach).toFixed(1)} m`,
+            );
+          }
+          if (Math.abs(alignment.hoist) > 0.18) {
+            corrections.push(
+              `${alignment.hoist > 0 ? "HOIST UP" : "HOIST DOWN"} ${Math.abs(alignment.hoist).toFixed(1)} m`,
+            );
+          }
+          alignmentRef.current.textContent = alignment.ready
+            ? `${alignment.target} CENTERED · HOOK READY`
+            : `${alignment.target} ALIGN · ${corrections.join(" · ") || "Center the hook"}`;
+          alignmentRef.current.dataset.ready = alignment.ready
+            ? "true"
+            : "false";
+          alignmentRef.current.style.color = alignment.ready ? "#8fc17a" : "";
+        }
       }
       const debrief = debriefRef.current;
       if (debrief) {
@@ -677,9 +745,9 @@ export function CraneYard() {
             <p className="mt-2 text-sm leading-relaxed text-fg">
               {[
                 "Stop the carrier in the work area. If this crane has outriggers, press DEPLOY and wait for the pads to set before lifting.",
-                "Use the left/right joystick movement to slew. Use the joystick forward/back to move the trolley. Use the left/right arrows to telescope the boom. Change camera view if you need a better sightline.",
-                "Lower the hook with DOWN. Use the HOOK view to line it up. Get close to the load and press HOOK when the prompt appears. The load should remain supported by the ground until you start lifting.",
-                "Use UP gently to take up slack and lift clear. Watch the load-limit percentage and sway meter. If the warning rises, stop and bring the boom in or lower the load.",
+                "Slew left/right with the stick or A/D. Pitch the boom with forward/back or W/S; telescope with the right-side arrows or Z/C. Raise/lower the hook with Q/R or E/F. The on-screen controls work too.",
+                "Lower with DOWN or E/F. Use the HOOK view and live alignment cue. HOOK only connects when centered: within 0.3 m horizontally and 0.25 m vertically.",
+                "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
                 "Lower with DOWN until the load is resting in the marked set zone, then press RELEASE LOAD. A clean, controlled placement completes the job.",
               ][trainingStep]}
@@ -701,16 +769,38 @@ export function CraneYard() {
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Find the marked load. Lower the hook until it is over the crate, attach it, then carry it to the amber set ring.
           </p>
+          <p
+            ref={objectiveRef}
+            className="border-l-2 border-primary bg-surface px-3 py-2 text-left font-display text-sm tracking-wide text-fg"
+          >
+            SETUP · Stop in the work area, then deploy the pads.
+          </p>
+          <p
+            ref={alignmentRef}
+            data-ready="false"
+            style={{ display: "none" }}
+            className="border-l-2 border-line bg-surface px-3 py-2 text-left font-display text-sm tracking-wide text-fg"
+          >
+            ALIGN · SLEW · REACH · HOIST
+          </p>
           <details className="pointer-events-auto w-full max-w-[13rem] bg-surface px-3 py-2">
             <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">SHOW JOB MAP</summary>
             <div className="mt-2 rounded border border-line bg-bg p-2 text-center text-xs">
-              <p className="font-display tracking-widest text-muted">LIFT ROUTE</p>
+              <p className="font-display tracking-widest text-muted">
+                LIFT ROUTE · {currentOffer.title} · LV {String(currentOffer.no).padStart(2, "0")}
+              </p>
               <div className="my-2 flex items-center justify-between gap-1">
-                <span className="rounded border border-primary px-2 py-2 font-display">CRATE</span>
+                <span className="rounded border border-primary px-2 py-2 font-display">
+                  {currentCargo}
+                </span>
                 <span className="text-primary">→</span>
-                <span className="rounded border border-primary px-2 py-2 font-display">AMBER RING</span>
+                <span className="rounded border border-primary px-2 py-2 font-display">
+                  {SITE_THEME_LABEL[currentOffer.theme]} SET
+                </span>
               </div>
-              <p className="text-muted">Use the camera views to locate the load and the marked set zone.</p>
+              <p className="text-muted">
+                {currentOffer.brief} Set within {currentOffer.ring.toFixed(1)} m of the ring center.
+              </p>
             </div>
           </details>
           <p
