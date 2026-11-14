@@ -824,7 +824,7 @@ export function CraneYard() {
               style={{ display: "none" }}
               className="h-11 bg-primary px-3 font-display text-base tracking-wide text-bg"
             >
-              FILE SLINGLINE
+              FILE SLINGLINE · {money(ECONOMY.foundFee)}
             </button>
           </div>
         </div>
