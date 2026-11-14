@@ -7,10 +7,10 @@ import {
   activeOffer,
   canFound,
   careerSummary,
+  freshCareer,
   jobBoard,
   levelOf,
   money,
-  readCareerStore,
   type CareerState,
   type JobId,
   type JobOffer,
@@ -74,13 +74,14 @@ export function CraneYard() {
   const [cam, setCam] = useState<CamView>("chase");
   const [best, setBest] = useState(0);
   const [glError, setGlError] = useState("");
-  const [books, setBooks] = useState<CareerState>(() => readCareerStore());
+  const [books, setBooks] = useState<CareerState>(() => freshCareer());
   const [practiceId, setPracticeId] = useState<CraneId | null>(null);
   const [boardOpen, setBoardOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
   const currentOffer = activeOffer(books);
   const currentCargo = loadSpec(currentOffer.kind).label;
+  const careerSnapshotRef = useRef<CareerState | null>(null);
 
   const scoreRef = useRef<HTMLSpanElement>(null);
   const bestRef = useRef<HTMLSpanElement>(null);
@@ -244,10 +245,13 @@ export function CraneYard() {
         const show = !sim.practicing && sim.career.status === "independent" && !sim.attached;
         jobsRef.current.style.display = show ? "block" : "none";
       }
+      if (careerSnapshotRef.current !== sim.career) {
+        careerSnapshotRef.current = sim.career;
+        setBooks({ ...sim.career });
+      }
       if (sim.careerBeat !== beatShown.current) {
         beatShown.current = sim.careerBeat;
         setBeat(sim.careerBeat);
-        setBooks({ ...sim.career });
       }
       if (coachRef.current) {
         const text = sim.toastLeft > 0 ? sim.toast : sim.message;
