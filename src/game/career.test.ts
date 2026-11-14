@@ -276,6 +276,9 @@ describe("job unlocks", () => {
     assert.equal(isUnlocked(owner({ reputation: 9, crane: "rental" }), "roof").ok, false);
     assert.equal(isUnlocked(owner({ reputation: 8, crane: "yard" }), "roof").ok, false);
     assert.equal(isUnlocked(owner({ reputation: 9, crane: "yard" }), "roof").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 2, crane: "yard" }), "spa").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 3, crane: "rental" }), "spa").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 3, crane: "yard" }), "spa").ok, true);
     assert.equal(isUnlocked(owner({ reputation: 6, crane: "yard" }), "floor").ok, true);
     assert.equal(isUnlocked(owner({ reputation: 12, crane: "tower" }), "tracks").ok, false);
     const waiting = isUnlocked(owner({ reputation: 12, crane: "crawler", crawlerOnSite: false }), "tracks");
@@ -438,11 +441,36 @@ describe("operating costs", () => {
     assert.match(result.message, /Note/);
   });
 
+  it("runs the rooftop spa as a paid deck-kit lift followed by a hot-tub set", () => {
+    const state = owner({ reputation: 3, crane: "yard", job: "spa" });
+    const deck = activeOffer(state);
+    assert.equal(deck.no, 6);
+    assert.equal(deck.title, "BACKYARD SPA DECK");
+    assert.equal(deck.kind, "deck");
+    assert.equal(deck.theme, "residential");
+    assert.equal(deck.pad, 6);
+
+    const first = resolveSet(state, "deck", "A");
+    assert.equal(first.state.leg, 1);
+    assert.match(first.message, /First load set/);
+    const tub = activeOffer(first.state);
+    assert.equal(tub.title, "HOT TUB SET");
+    assert.equal(tub.kind, "hotTub");
+    assert.equal(tub.pad, 7);
+    assert.ok(tub.gross > deck.gross);
+
+    const second = resolveSet(first.state, "hotTub", "A");
+    assert.equal(second.matched, true);
+    assert.equal(second.state.leg, 0);
+    assert.equal(activeOffer(second.state).kind, "deck");
+    assert.ok(second.state.cash > state.cash);
+  });
+
   it("runs a double as two paid legs", () => {
     const state = owner({ reputation: 8, crane: "heavy", job: "double", cash: 0 });
     const first = resolveSet(state, "crate");
     assert.equal(first.state.leg, 1);
-    assert.match(first.message, /First half/);
+    assert.match(first.message, /First load/);
     const second = resolveSet(first.state, "beam");
     assert.equal(second.matched, true);
     assert.equal(second.state.leg, 0);
@@ -487,5 +515,15 @@ describe("set ring tightness", () => {
     const second = activeOffer(owner({ job: "double", leg: 1 }));
     assert.equal(first.ring, 1.9);
     assert.ok(second.ring < first.ring, `follow ring is ${second.ring}`);
+  });
+
+  it("restores a saved hot-tub follow leg as a ground-level backyard placement", () => {
+    const state = owner({ reputation: 3, crane: "yard", job: "spa", leg: 1, roofActive: false });
+    const restored = loadCareer(state);
+    assert.equal(restored.job, "spa");
+    assert.equal(restored.leg, 1);
+    assert.equal(restored.roofActive, false);
+    assert.equal(activeOffer(restored).kind, "hotTub");
+    assert.equal(activeOffer(restored).pad, 7);
   });
 });

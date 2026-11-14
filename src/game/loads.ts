@@ -3,7 +3,7 @@
  * physics (resting height, sling corners) and the yard model, so a pipe sits on
  * the ground and hangs from its own ends instead of borrowing the crate box.
  */
-export type LoadKind = "crate" | "beam" | "heavy" | "pipe" | "truss" | "panel" | "hvac" | "container";
+export type LoadKind = "crate" | "beam" | "heavy" | "pipe" | "truss" | "panel" | "hvac" | "container" | "deck" | "hotTub";
 
 export type LoadSpec = {
   /** Half extents in metres, centred on the load's middle. */
@@ -29,6 +29,8 @@ export const LOAD_SPECS: Record<LoadKind, LoadSpec> = {
   panel: { halfX: 1.7, halfY: 0.14, halfZ: 0.9, label: "PANEL", noun: "precast panel", color: 0xc5ced6, weight: 3.2 },
   hvac: { halfX: 1.0, halfY: 0.65, halfZ: 0.8, label: "HVAC", noun: "rooftop unit", color: 0x9aa6b1, weight: 3.6 },
   container: { halfX: 1.2, halfY: 1.3, halfZ: 3.0, label: "CONTAINER", noun: "container", color: 0x2f6d7a, weight: 3.6 },
+  deck: { halfX: 1.35, halfY: 0.22, halfZ: 1.8, label: "DECK KIT", noun: "decking bundle", color: 0xa8784b, weight: 1.7 },
+  hotTub: { halfX: 1.15, halfY: 0.65, halfZ: 1.15, label: "HOT TUB", noun: "hot tub", color: 0x577d82, weight: 0.85 },
 };
 
 export const LOAD_KINDS = Object.keys(LOAD_SPECS) as LoadKind[];
@@ -43,6 +45,8 @@ export const YARD_DECOYS: Record<LoadKind, [LoadKind, LoadKind]> = {
   panel: ["hvac", "beam"],
   hvac: ["panel", "crate"],
   container: ["heavy", "crate"],
+  deck: ["beam", "hotTub"],
+  hotTub: ["hvac", "panel"],
 };
 
 export function loadSpec(kind: LoadKind): LoadSpec {

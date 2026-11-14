@@ -366,6 +366,31 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       fan.position.set(0.35, 0.7, 0);
       group.add(fan);
       for (const x of [-0.75, -0.25, 0.25]) addBox(group, stripe, 0.04, 0.5, 1.5, x, 0, 0.06);
+    } else if (kind === "deck") {
+      // A strapped bundle of decking boards on two timber skids.
+      for (const x of [-0.9, -0.45, 0, 0.45, 0.9]) {
+        for (const y of [-0.1, 0, 0.1]) addBox(group, body, 0.39, 0.085, 3.45, x, y, 0);
+      }
+      for (const z of [-1.25, 1.25]) {
+        addBox(group, steelDark, 2.65, 0.09, 0.18, 0, -0.17, z);
+        addBox(group, stripe, 0.08, 0.42, 0.09, 0, 0.02, z);
+      }
+    } else if (kind === "hotTub") {
+      const water = loadMat(0x3f9aa5);
+      const trim = loadMat(0xe5e0d3);
+      addBox(group, body, 2.3, 1.3, 0.25, 0, 0, -1.025);
+      addBox(group, body, 2.3, 1.3, 0.25, 0, 0, 1.025);
+      addBox(group, body, 0.25, 1.3, 1.8, -1.025, 0, 0);
+      addBox(group, body, 0.25, 1.3, 1.8, 1.025, 0, 0);
+      addBox(group, steelDark, 1.8, 0.16, 1.8, 0, -0.57, 0);
+      addBox(group, water, 1.78, 0.08, 1.78, 0, 0.42, 0);
+      for (const x of [-1.06, 1.06]) addBox(group, trim, 0.18, 0.16, 2.3, x, 0.57, 0);
+      for (const z of [-1.06, 1.06]) addBox(group, trim, 2.3, 0.16, 0.18, 0, 0.57, z);
+      for (const [x, z] of [[-0.55, -0.5], [0.55, -0.5], [-0.55, 0.5], [0.55, 0.5]] as const) {
+        const jet = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 8), trim);
+        jet.position.set(x, 0.48, z);
+        group.add(jet);
+      }
     } else {
       addBox(group, body, 2.4, 2.6, 6.0);
       addBox(group, stripe, 2.42, 0.16, 6.02, 0, 0.9, 0);

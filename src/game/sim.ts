@@ -58,6 +58,7 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: 38, z: 40, hx: 2.4, hz: 4.6 },
   { x: 22, z: -42, hx: 1.8, hz: 2.8 },
 ];
+const RESIDENTIAL_HOUSE_BLOCK = { x: -38, z: 41, hx: 7, hz: 5.5 };
 
 export const LOWBOY_DROP = { x: 4, z: 10 };
 
@@ -68,6 +69,8 @@ export const PADS: Pad[] = [
   { x: -16, z: -4 },
   { x: -8, z: -2 },
   { x: 7, z: -3 },
+  { x: -39, z: 32 },
+  { x: -35, z: 32 },
 ];
 
 const TUNING = {
@@ -658,11 +661,10 @@ export class CraneSim {
   }
 
   spawnNext() {
-    this.phase = "seek";
-    this.attached = false;
-    this.airborne = false;
-    this.landed = false;
-    this.message = this.contractLabel();
+    // A follow leg or new contract can require a different physical load.
+    // Rebuild the stock yard from the active offer instead of leaving the last
+    // delivered piece behind as the next mission's cargo.
+    this.stockYard(false);
   }
 
   step(dt: number, actions: Actions) {
@@ -1136,6 +1138,11 @@ export class CraneSim {
     for (const block of YARD_BLOCKS) {
       if (Math.abs(x - block.x) < block.hx + 1.7 && Math.abs(z - block.z) < block.hz + 3.8) return true;
     }
+    if (
+      this.career.job === "spa" &&
+      Math.abs(x - RESIDENTIAL_HOUSE_BLOCK.x) < RESIDENTIAL_HOUSE_BLOCK.hx + 1.7 &&
+      Math.abs(z - RESIDENTIAL_HOUSE_BLOCK.z) < RESIDENTIAL_HOUSE_BLOCK.hz + 3.8
+    ) return true;
     return false;
   }
 
@@ -1443,10 +1450,11 @@ export class CraneSim {
       this.shiftRoll(0, dt);
     }
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
+      const noun = loadSpec(this.load).noun;
       this.message = this.roofActive
         ? this.roofDeck().y > 10
-          ? "Set the beam on the roof ring."
-          : "Set the beam on the floor ring."
+          ? `Set the ${noun} on the roof ring.`
+          : `Set the ${noun} on the floor ring.`
         : "Set it inside the amber ring.";
     }
   }

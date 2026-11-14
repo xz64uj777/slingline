@@ -389,6 +389,39 @@ describe("vehicle controls", () => {
   });
 });
 
+describe("call cargo progression", () => {
+  it("restocks the next rental job and both backyard spa legs with their own cargo", () => {
+    const sim = new CraneSim();
+
+    sim.career = { ...sim.career, jobsDone: 1 };
+    sim.spawnNext();
+    assert.equal(sim.load, "pipe");
+    assert.equal(sim.pieces[0]?.kind, "pipe");
+
+    sim.career = {
+      ...sim.career,
+      status: "independent",
+      crane: "yard",
+      reputation: 3,
+      job: "spa",
+      leg: 0,
+      roofActive: false,
+    };
+    sim.spawnNext();
+    assert.equal(sim.load, "deck");
+    assert.equal(sim.pieces[0]?.kind, "deck");
+    assert.equal(sim.to, 6);
+    assert.deepEqual(PADS[sim.to], { x: -39, z: 32 });
+
+    sim.career = { ...sim.career, leg: 1 };
+    sim.spawnNext();
+    assert.equal(sim.load, "hotTub");
+    assert.equal(sim.pieces[0]?.kind, "hotTub");
+    assert.equal(sim.to, 7);
+    assert.deepEqual(PADS[sim.to], { x: -35, z: 32 });
+  });
+});
+
 describe("sway", () => {
   it("swings further in hard mode than with the easy-mode assist", () => {
     const easy = new CraneSim();

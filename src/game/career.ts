@@ -31,7 +31,8 @@ export type JobId =
   | "night"
   | "roof"
   | "hvac"
-  | "tracks";
+  | "tracks"
+  | "spa";
 
 export const CAREER_KEY = "slingline-career";
 export const BOSS = "Hargrove Crane";
@@ -198,7 +199,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   panel: {
     id: "panel",
-    no: 6,
+    no: 7,
     title: "PANEL SET",
     kind: "panel",
     pad: 2,
@@ -213,7 +214,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   heavy: {
     id: "heavy",
-    no: 7,
+    no: 8,
     title: "HEAVY PICK",
     kind: "heavy",
     pad: 2,
@@ -228,7 +229,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   container: {
     id: "container",
-    no: 8,
+    no: 9,
     title: "CONTAINER PICK",
     kind: "container",
     pad: 2,
@@ -243,7 +244,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   floor: {
     id: "floor",
-    no: 9,
+    no: 10,
     title: "FLOOR SET",
     kind: "beam",
     pad: 0,
@@ -258,7 +259,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   night: {
     id: "night",
-    no: 10,
+    no: 11,
     title: "NIGHT CALL",
     kind: "beam",
     pad: 4,
@@ -273,7 +274,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   roof: {
     id: "roof",
-    no: 11,
+    no: 12,
     title: "ROOF SET",
     kind: "beam",
     pad: 0,
@@ -288,7 +289,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   hvac: {
     id: "hvac",
-    no: 12,
+    no: 13,
     title: "ROOFTOP UNIT",
     kind: "hvac",
     pad: 0,
@@ -303,7 +304,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   tracks: {
     id: "tracks",
-    no: 13,
+    no: 14,
     title: "TRACK PICK",
     kind: "heavy",
     pad: 2,
@@ -318,7 +319,7 @@ const JOBS: Record<JobId, JobDef> = {
   },
   double: {
     id: "double",
-    no: 14,
+    no: 15,
     title: "DOUBLE RUN",
     kind: "crate",
     pad: 5,
@@ -332,6 +333,22 @@ const JOBS: Record<JobId, JobDef> = {
     repGain: 1,
     ring: 1.9,
   },
+  spa: {
+    id: "spa",
+    no: 6,
+    title: "BACKYARD SPA DECK",
+    kind: "deck",
+    pad: 6,
+    theme: "residential",
+    brief: "A tight backyard renovation: set the wrapped decking bundle on the marked pad, then fly the empty hot tub through the narrow work area onto the new patio. Keep the load level and the swing small beside the house and fence.",
+    pay: 3200,
+    follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
+    rep: 3,
+    crane: "yard",
+    roof: false,
+    repGain: 4,
+    ring: 1.2,
+  },
 };
 
 const JOB_ORDER: JobId[] = [
@@ -340,6 +357,7 @@ const JOB_ORDER: JobId[] = [
   "pad",
   "truss",
   "steel",
+  "spa",
   "panel",
   "heavy",
   "container",
@@ -596,7 +614,7 @@ function takeFor(state: CareerState, gross: number) {
 export function activeOffer(state: CareerState): JobOffer {
   const id = state.status === "hired" ? assignedJob(state) : state.job;
   const def = JOBS[id] ?? JOBS.yard;
-  const leg = id === "double" ? state.leg : 0;
+  const leg = def.follow && state.leg === 1 ? 1 : 0;
   const follow = leg === 1 && def.follow ? def.follow : null;
   const gate = isUnlocked(state, id);
   const gross = grossFor(state, id, leg);
@@ -842,9 +860,9 @@ export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B
     if (gate.ok) message += " You can file Slingline.";
   } else {
     next.reputation += JOBS[offer.id].repGain + gradeRep(grade);
-    if (offer.id === "double" && state.leg === 0) {
+    if (JOBS[offer.id].follow && state.leg === 0) {
       next.leg = 1;
-      message = `First half set. You banked ${money(banked)}. Now ${activeOffer(next).title}.`;
+      message = `First load set. You banked ${money(banked)}. Next: ${activeOffer(next).title}.`;
     } else {
       next.leg = 0;
     }
@@ -1029,7 +1047,7 @@ export function loadCareer(raw: unknown): CareerState {
     next.job = "yard";
     next.leg = 0;
   }
-  next.roofActive = next.status === "independent" && (next.job === "floor" || next.job === "roof");
+  next.roofActive = next.status === "independent" && roofFor(next.job);
   return next;
 }
 

@@ -550,6 +550,16 @@ function dressRise(
     plank.position.set(6.15, y, 0);
     rise.add(plank);
   }
+  const deckWood = new THREE.MeshStandardMaterial({ color: 0x98724f, roughness: 0.86, metalness: 0.02 });
+  const deckWoodAlt = new THREE.MeshStandardMaterial({ color: 0xa9825c, roughness: 0.84, metalness: 0.02 });
+  // The top floor is a finished rooftop terrace: timber boards sit exactly at
+  // the roof-set height, inside the existing parapet rails.
+  for (let i = 0; i < 10; i += 1) {
+    const board = new THREE.Mesh(box, i % 2 === 0 ? deckWood : deckWoodAlt);
+    board.scale.set(1.06, 0.16, 9.0);
+    board.position.set(-4.77 + i * 1.06, 13.03, 0);
+    rise.add(board);
+  }
   const hoist = new THREE.Mesh(box, dark);
   hoist.scale.set(0.35, 14.5, 0.35);
   hoist.position.set(-6.5, 7.2, 3.4);
@@ -583,6 +593,7 @@ const THEME_TINT: Record<SiteTheme, number> = {
   steel: 0xd6cbb9,
   tower: 0xe6e9eb,
   port: 0xcfdbe1,
+  residential: 0xe4ded1,
 };
 
 /**
@@ -601,6 +612,7 @@ function dressThemes(
     steel: new THREE.Group(),
     tower: new THREE.Group(),
     port: new THREE.Group(),
+    residential: new THREE.Group(),
   };
   for (const group of Object.values(groups)) {
     group.visible = false;
@@ -700,6 +712,37 @@ function dressThemes(
     bollard.position.set(-20 + i * 8, 0.45, 54);
     groups.port.add(bollard);
   }
+
+  // A compact suburban remodel: the patio sits just outside the house and has
+  // room for the decking bundle followed by the hot tub.
+  add(groups.residential, mats.shed, 14, 5.6, 10, -38, 3.2, 41);
+  add(groups.residential, mats.roof, 15.2, 0.55, 11.2, -38, 6.25, 41);
+  add(groups.residential, mats.dark, 1.25, 2.5, 0.18, -38, 1.65, 35.92);
+  for (const x of [-42.5, -33.5]) {
+    add(groups.residential, mats.steel, 2.2, 1.7, 0.12, x, 3.7, 35.88);
+    add(groups.residential, mats.paint, 2.45, 0.1, 0.16, x, 4.6, 35.84);
+  }
+  const backyardDeck = new THREE.Group();
+  backyardDeck.position.set(-38, 0, 32);
+  for (let i = 0; i < 10; i += 1) {
+    add(backyardDeck, i % 2 ? mats.pallet : mats.shed, 1.0, 0.04, 8, -4.5 + i, 0.02, 0);
+  }
+  add(backyardDeck, mats.dark, 10.2, 0.12, 0.16, 0, 0.02, -3.95);
+  add(backyardDeck, mats.dark, 10.2, 0.12, 0.16, 0, 0.02, 3.95);
+  for (const x of [-4.95, 4.95]) add(backyardDeck, mats.dark, 0.16, 0.12, 8, x, 0.02, 0);
+  groups.residential.add(backyardDeck);
+  for (const x of [-47, -29]) {
+    add(groups.residential, mats.dark, 0.16, 1.45, 0.16, x, 0.72, 32);
+    add(groups.residential, mats.dark, 0.1, 0.08, 18, x, 1.05, 32);
+  }
+  for (let i = 0; i < 7; i += 1) add(groups.residential, mats.dark, 0.08, 0.8, 0.08, -47 + i * 3, 0.4, 40);
+  add(groups.residential, mats.dark, 18, 0.08, 0.1, -38, 1.05, 40);
+  // Small stairs and a paver path lead from the patio to the yard gate.
+  for (let i = 0; i < 3; i += 1) {
+    add(groups.residential, mats.pallet, 2.8, 0.12, 0.55, -38, 0.08 + i * 0.08, 27.6 - i * 0.5);
+    add(groups.residential, mats.slab, 1.2, 0.06, 0.9, -38, 0.04, 25.8 - i * 1.2);
+  }
+  for (const x of [-45.5, -30.5]) add(groups.residential, mats.paint, 0.8, 0.75, 0.8, x, 0.37, 34.5);
 
   let current: SiteTheme = "yard";
   const tint = new THREE.Color(THEME_TINT.yard);
