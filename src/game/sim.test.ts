@@ -152,6 +152,25 @@ describe("grounded load", () => {
   });
 });
 
+describe("set completion", () => {
+  it("completes the job when a load lands inside the amber ring", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard", cash: 0, reputation: 5 };
+    hookUp(sim, 0);
+    // A target directly under the pickup makes this a pure landing test.
+    PADS.push({ x: sim.hx, z: sim.hz });
+    sim.to = PADS.length - 1;
+    try {
+      run(sim, 1.2, { hoist: 1 });
+      for (let i = 0; i < 1600 && sim.phase !== "done"; i += 1) sim.step(STEP, { ...IDLE, hoist: -0.15 });
+    } finally {
+      PADS.pop();
+    }
+    assert.equal(sim.phase, "done");
+    assert.ok(sim.lastSet, "landing inside the ring should grade and pay the set");
+  });
+});
+
 describe("hook release", () => {
   it("keeps a suspended load on the hook until it is landed", () => {
     const sim = new CraneSim();

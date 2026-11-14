@@ -1387,8 +1387,7 @@ export class CraneSim {
           this.fail();
           return;
         }
-        this.landed = true;
-        this.message = "Load is resting on the building set zone. Press RELEASE LOAD to complete the delivery.";
+        this.succeed(flat);
         return;
       }
     }
@@ -1405,11 +1404,12 @@ export class CraneSim {
         this.fail();
         return;
       }
+      if (off < this.setTolerance) {
+        this.succeed(off);
+        return;
+      }
       this.landed = true;
-      this.message =
-        off < this.setTolerance
-          ? "Load is inside the amber ring. Press RELEASE LOAD to complete this delivery."
-          : "Load is on the ground but outside the amber ring. Move it into the target before releasing.";
+      this.message = "Load is on the ground but outside the amber ring. Move it into the target before releasing.";
       return;
     }
 
