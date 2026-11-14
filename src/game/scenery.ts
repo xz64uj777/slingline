@@ -12,6 +12,8 @@ export type SiteLook = {
   applyNight: (amount: number, floodBoost?: number) => void;
   /** Swap the dressing set for the level's site. Cheap after the first call. */
   setTheme: (theme: SiteTheme) => void;
+  /** Advance site-specific motion without coupling scenery to crane physics. */
+  update: (dt: number) => void;
 };
 
 type Lights = {
@@ -89,7 +91,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
   const coneGeo = new THREE.ConeGeometry(0.28, 0.7, 7);
   const dummy = new THREE.Object3D();
 
-  const skirt = new THREE.Mesh(new THREE.RingGeometry(50, 130, 28), dirt);
+  const skirt = new THREE.Mesh(new THREE.RingGeometry(50, 180, 36), dirt);
   skirt.rotation.x = -Math.PI / 2;
   skirt.position.y = 0.005;
   scene.add(skirt);
@@ -320,6 +322,7 @@ export function dressSite(scene: THREE.Scene, lights: Lights): SiteLook {
       lights.ground.color.copy(daySlab).lerp(nightSlab, t * 0.55).multiply(siteThemes.tint);
     },
     setTheme: siteThemes.setTheme,
+    update: siteThemes.update,
   };
 }
 
@@ -596,6 +599,7 @@ const THEME_TINT: Record<SiteTheme, number> = {
   tower: 0xe6e9eb,
   port: 0xcfdbe1,
   residential: 0xe4ded1,
+  windFarm: 0xdde6dc,
 };
 
 /**
@@ -616,6 +620,7 @@ function dressThemes(
     tower: new THREE.Group(),
     port: new THREE.Group(),
     residential: new THREE.Group(),
+    windFarm: new THREE.Group(),
   };
   for (const group of Object.values(groups)) {
     group.visible = false;
@@ -739,22 +744,31 @@ function dressThemes(
   const foliageMat = new THREE.MeshStandardMaterial({ color: 0x476b43, roughness: 0.98 });
   const markingMat = new THREE.MeshStandardMaterial({ color: 0xe6cf78, roughness: 0.8 });
 
-  // A green residential block carries the street, lawns and two neighboring lots.
-  add(residential, lawnMat, 52, 0.08, 50, homeX, 0.025, 31);
-  add(residential, roadMat, 52, 0.14, 7.2, homeX, 0.1, 8);
-  add(residential, walkMat, 52, 0.16, 0.3, homeX, 0.1, 4.25);
-  add(residential, walkMat, 52, 0.16, 0.3, homeX, 0.1, 11.75);
-  add(residential, walkMat, 52, 0.12, 1.1, homeX, 0.08, 3.35);
-  add(residential, walkMat, 52, 0.12, 1.1, homeX, 0.08, 12.65);
-  for (let i = 0; i < 9; i += 1) {
-    add(residential, markingMat, 2.5, 0.025, 0.12, -126 + i * 6, 0.18, 8);
+  // A five-home residential block makes Maple Lane read as an address, not a prop yard.
+  add(residential, lawnMat, 76, 0.08, 50, homeX, 0.025, 31);
+  add(residential, roadMat, 76, 0.14, 7.2, homeX, 0.1, 8);
+  add(residential, walkMat, 76, 0.16, 0.3, homeX, 0.1, 4.25);
+  add(residential, walkMat, 76, 0.16, 0.3, homeX, 0.1, 11.75);
+  add(residential, walkMat, 76, 0.12, 1.1, homeX, 0.08, 3.35);
+  add(residential, walkMat, 76, 0.12, 1.1, homeX, 0.08, 12.65);
+  for (let i = 0; i < 13; i += 1) {
+    add(residential, markingMat, 2.5, 0.025, 0.12, -138 + i * 6, 0.18, 8);
   }
 
-  // Front drive to the garage and a separate side drive through the backyard gate.
+  // Front drives and a separate wide side drive through the backyard gate.
+  for (const x of [-134, -68]) add(residential, driveMat, 6, 0.12, 18, x, 0.09, 17.5);
   add(residential, driveMat, 7, 0.12, 18, -105, 0.09, 17.5);
   add(residential, driveMat, 8, 0.12, 32, -91.5, 0.09, 24);
+  for (const x of [-137.2, -130.8, -71.2, -64.8]) add(residential, walkMat, 0.16, 0.1, 17, x, 0.08, 17.5);
   for (const x of [-108.7, -101.3]) add(residential, walkMat, 0.16, 0.1, 17, x, 0.08, 17.5);
   for (const x of [-95.5, -87.5]) add(residential, walkMat, 0.16, 0.1, 32, x, 0.08, 24);
+
+  // The crane starts on the street; amber chevrons lead into the parking box.
+  const setupX = -92;
+  const setupZ = 30;
+  for (const z of [-4.5, 4.5]) add(residential, markingMat, 7, 0.035, 0.14, setupX, 0.18, setupZ + z);
+  for (const x of [-3.5, 3.5]) add(residential, markingMat, 0.14, 0.035, 9, setupX + x, 0.18, setupZ);
+  for (const z of [14, 18, 22, 26]) add(residential, markingMat, 1.8, 0.025, 0.16, -91.5, 0.18, z);
 
   // Main Maple Lane home: gabled roof, garage, entry porch and glazed windows.
   add(residential, sidingMat, 14, 6, 10, homeX, 3, homeZ);
@@ -778,8 +792,7 @@ function dressThemes(
   for (const x of [-99.8, -97]) add(residential, trimMat, 0.14, 2.5, 0.14, x, 1.25, 23.2);
 
   // Two lower homes make this read as a neighborhood street, not an isolated prop.
-  const addNeighborHome = (x: number, wall: THREE.Material) => {
-    const z = homeZ;
+  const addNeighborHome = (x: number, wall: THREE.Material, z = homeZ) => {
     add(residential, wall, 9, 4.5, 8, x, 2.25, z);
     const roofL = add(residential, shingleMat, 5.2, 0.35, 8.7, x - 2.3, 5.55, z);
     roofL.rotation.z = 0.48;
@@ -790,9 +803,13 @@ function dressThemes(
       add(residential, trimMat, 1.7, 1.35, 0.14, wx, 3.05, z - 4.08);
       add(residential, windowMat, 1.42, 1.08, 0.08, wx, 3.05, z - 4.19);
     }
+    add(residential, trimMat, 1.45, 2.2, 0.14, x, 1.1, z - 4.08);
+    add(residential, doorMat, 1.15, 1.9, 0.08, x, 1, z - 4.19);
   };
+  addNeighborHome(-134, blueMat);
   addNeighborHome(-120, sageMat);
-  addNeighborHome(-84, blueMat);
+  addNeighborHome(-80, blueMat);
+  addNeighborHome(-68, sageMat);
 
   // Street trees and a mailbox help anchor the driveways and house scale.
   const treeLeaves = new THREE.SphereGeometry(1.9, 10, 8);
@@ -853,6 +870,102 @@ function dressThemes(
     residential.add(shrub);
   }
 
+  // The wind call is a separate ridge address, reached by an access track.
+  const windFarm = groups.windFarm;
+  const ridgeGrass = new THREE.MeshStandardMaterial({ color: 0x778656, roughness: 0.98 });
+  const ridgeRock = new THREE.MeshStandardMaterial({ color: 0x746e60, roughness: 0.97 });
+  const turbinePaint = new THREE.MeshStandardMaterial({ color: 0xe3e6df, roughness: 0.62, metalness: 0.08 });
+  const turbineBlade = new THREE.MeshStandardMaterial({ color: 0xd2d8d5, roughness: 0.52, metalness: 0.12 });
+  const ridge = new THREE.Mesh(new THREE.CircleGeometry(44, 48), ridgeGrass);
+  ridge.rotation.x = -Math.PI / 2;
+  ridge.position.set(92, 0.015, 88);
+  windFarm.add(ridge);
+  add(windFarm, driveMat, 26, 0.16, 23, 92, 0.07, 84);
+
+  const accessTrackA = add(windFarm, roadMat, 5, 0.14, 28, 65, 0.08, 70);
+  accessTrackA.rotation.y = 1.01;
+  const accessTrackB = add(windFarm, roadMat, 5, 0.14, 14, 80, 0.08, 80);
+  accessTrackB.rotation.y = 0.92;
+  for (const z of [72.5, 95.5]) add(windFarm, mats.paint, 25, 0.035, 0.14, 92, 0.19, z);
+  for (const x of [79.5, 104.5]) add(windFarm, mats.paint, 0.14, 0.035, 23, x, 0.19, 84);
+
+  // Two low saddles support the long blade at both the delivery and assembly pads.
+  const addBladeCradle = (x: number, z: number) => {
+    for (const dz of [-4.7, 4.7]) {
+      add(windFarm, mats.dark, 2.5, 0.12, 0.48, x, 0.08, z + dz);
+      for (const dx of [-0.82, 0.82]) {
+        const leg = add(windFarm, mats.dark, 0.13, 0.22, 0.15, x + dx, 0.19, z + dz);
+        leg.rotation.z = dx < 0 ? -0.28 : 0.28;
+      }
+      add(windFarm, mats.paint, 1.15, 0.1, 0.52, x, 0.24, z + dz);
+    }
+  };
+  addBladeCradle(87, 79);
+  addBladeCradle(97, 85);
+
+  // A parked delivery trailer makes the pickup pad read as a real laydown yard.
+  add(windFarm, mats.dark, 3.1, 0.65, 8.6, 87, 0.62, 68.8);
+  add(windFarm, turbinePaint, 2.6, 0.22, 8.2, 87, 1.05, 68.8);
+  for (const z of [66.1, 71.4]) {
+    for (const x of [85.4, 88.6]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.24, 10), mats.dark);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(x, 0.42, z);
+      windFarm.add(wheel);
+    }
+  }
+
+  const windRotors: THREE.Group[] = [];
+  const addTurbine = (x: number, z: number, height: number, bladeLength: number, phase: number) => {
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 1.05, height, 12), turbinePaint);
+    tower.position.set(x, height / 2, z);
+    windFarm.add(tower);
+    const nacelle = new THREE.Mesh(box, turbinePaint);
+    nacelle.scale.set(2.3, 0.78, 1.05);
+    nacelle.position.set(x, height, z);
+    windFarm.add(nacelle);
+    const rotor = new THREE.Group();
+    rotor.position.set(x, height, z + 0.62);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), mats.steel);
+    rotor.add(hub);
+    const hubCap = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.72, 10), mats.dark);
+    hubCap.rotation.x = Math.PI / 2;
+    hubCap.position.z = 0.38;
+    rotor.add(hubCap);
+    const bladeGeometry = new THREE.CylinderGeometry(0.055, 0.34, bladeLength, 8);
+    for (const angle of [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]) {
+      const blade = new THREE.Mesh(bladeGeometry, turbineBlade);
+      blade.position.y = bladeLength / 2;
+      blade.rotation.z = angle;
+      rotor.add(blade);
+    }
+    rotor.rotation.z = phase;
+    windFarm.add(rotor);
+    windRotors.push(rotor);
+  };
+  addTurbine(103, 97, 22, 7.5, 0.18);
+  addTurbine(72, 102, 25, 8.2, 1.12);
+  addTurbine(116, 76, 18, 6.4, -0.56);
+
+  for (const [x, z, sx, sy, sz] of [
+    [61, 104, 8, 3, 5],
+    [122, 105, 9, 4, 6],
+    [64, 69, 7, 2.4, 4],
+    [123, 65, 8, 3.2, 5],
+  ] as const) {
+    const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 1), ridgeRock);
+    boulder.scale.set(sx, sy, sz);
+    boulder.position.set(x, sy * 0.66, z);
+    windFarm.add(boulder);
+  }
+
+  windFarm.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+
   residential.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true;
@@ -862,6 +975,10 @@ function dressThemes(
 
   let current: SiteTheme = "yard";
   const tint = new THREE.Color(THEME_TINT.yard);
+  const update = (dt: number) => {
+    if (current !== "windFarm") return;
+    for (const rotor of windRotors) rotor.rotation.z += dt * 0.2;
+  };
   const setTheme = (next: SiteTheme) => {
     if (next === current) return;
     current = next;
@@ -869,7 +986,7 @@ function dressThemes(
     const showSkyline = next === "yard" || next === "steel" || next === "tower";
     for (const part of skyline) part.visible = showSkyline;
     tint.setHex(THEME_TINT[next]);
-    setFogDensity(next === "residential" ? 0.012 : 0.004);
+    setFogDensity(next === "residential" ? 0.012 : next === "windFarm" ? 0.0028 : 0.004);
   };
-  return { tint, setTheme };
+  return { tint, setTheme, update };
 }

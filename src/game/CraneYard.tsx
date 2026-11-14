@@ -87,7 +87,7 @@ export function CraneYard() {
     const sim = simRef.current;
     sim?.acceptJob(id);
     if (!sim || sim.practicing || sim.career.status !== "independent" || sim.career.job !== id) return;
-    const nextCam: CamView = id === "spa" ? "wide" : "chase";
+    const nextCam: CamView = id === "spa" || id === "wind" ? "wide" : "chase";
     setCam(nextCam);
     yardRef.current?.setView(nextCam);
   };
@@ -209,7 +209,7 @@ export function CraneYard() {
         },
       });
       yardRef.current = yard;
-      const initialCam: CamView = sim.career.job === "spa" ? "wide" : "chase";
+      const initialCam: CamView = sim.career.job === "spa" || sim.career.job === "wind" ? "wide" : "chase";
       setCam(initialCam);
       yard.setView(initialCam);
     } catch (err) {
@@ -350,7 +350,15 @@ export function CraneYard() {
         } else if (sim.state !== "lifting") {
           objective = sim.hauling
             ? "SETUP · Stop the lowboy on its marked pad, then unload."
-            : "SETUP · Stop in the work area, then deploy the pads.";
+            : sim.career.job === "spa" && !sim.atMapleSetup
+              ? "ARRIVE · Follow Maple Lane to the amber side-drive box by the backyard gate."
+              : sim.career.job === "spa"
+                ? Math.abs(sim.speed) > 0.2
+                  ? "PARK · Stop the crane inside the setup box, then deploy the pads."
+                  : "SITE READY · Press DEPLOY from the marked driveway box before lifting."
+                : sim.career.job === "wind"
+                  ? "RIDGE SETUP · Stop on the gravel workpad and deploy the outriggers before the blade pick."
+                  : "SETUP · Stop in the work area, then deploy the pads.";
         } else if (sim.attached && sim.landed) {
           objective = "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
         } else if (sim.attached) {

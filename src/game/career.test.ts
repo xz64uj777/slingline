@@ -15,6 +15,8 @@ import {
   foundCompany,
   freshCareer,
   isUnlocked,
+  LEVEL_COUNT,
+  levelOf,
   loadCareer,
   readCareer,
   resolveFailure,
@@ -322,6 +324,20 @@ describe("job unlocks", () => {
     assert.equal(isUnlocked(owner({ reputation: 12, crane: "crawler", crawlerOnSite: true }), "tracks").ok, true);
     assert.equal(isUnlocked(owner({ reputation: 7, crane: "yard" }), "heavy").ok, false);
     assert.equal(isUnlocked(owner({ reputation: 7, crane: "heavy" }), "heavy").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 13, crane: "heavy" }), "wind").ok, false);
+    assert.match(isUnlocked(owner({ reputation: 13, crane: "heavy" }), "wind").reason, /reputation 14/i);
+    assert.equal(isUnlocked(owner({ reputation: 14, crane: "yard" }), "wind").ok, false);
+    assert.match(isUnlocked(owner({ reputation: 14, crane: "yard" }), "wind").reason, /heavy crane/i);
+    assert.equal(isUnlocked(owner({ reputation: 14, crane: "heavy" }), "wind").ok, true);
+  });
+
+  it("lists the ridge blade lift as Level 16 at a distinct wind-farm site", () => {
+    const wind = levelOf("wind");
+    assert.equal(LEVEL_COUNT, 16);
+    assert.equal(wind.no, 16);
+    assert.equal(wind.kind, "blade");
+    assert.equal(wind.theme, "windFarm");
+    assert.match(wind.title, /BLADE/i);
   });
 
   it("shrinks a yard move when callers are wary and restores it with reputation", () => {

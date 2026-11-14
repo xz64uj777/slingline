@@ -391,6 +391,58 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
         jet.position.set(x, 0.48, z);
         group.add(jet);
       }
+    } else if (kind === "blade") {
+      const stations = 20;
+      const sides = 8;
+      const vertices: number[] = [];
+      const indices: number[] = [];
+      for (let station = 0; station <= stations; station += 1) {
+        const u = station / stations;
+        const taper = Math.pow(1 - u, 0.82);
+        const chord = 0.1 + 1.8 * taper;
+        const thickness = 0.035 + 0.53 * taper;
+        const sweep = u * 0.35;
+        const z = -spec.halfZ + u * spec.halfZ * 2;
+        for (let side = 0; side < sides; side += 1) {
+          const angle = (side / sides) * Math.PI * 2;
+          vertices.push(sweep + Math.cos(angle) * chord * 0.5, Math.sin(angle) * thickness * 0.5, z);
+        }
+      }
+      for (let station = 0; station < stations; station += 1) {
+        for (let side = 0; side < sides; side += 1) {
+          const a = station * sides + side;
+          const b = station * sides + ((side + 1) % sides);
+          const c = (station + 1) * sides + ((side + 1) % sides);
+          const d = (station + 1) * sides + side;
+          indices.push(a, b, d, b, c, d);
+        }
+      }
+      const rootCenter = vertices.length / 3;
+      vertices.push(0, 0, -spec.halfZ);
+      const tipCenter = vertices.length / 3;
+      vertices.push(0.35, 0, spec.halfZ);
+      for (let side = 0; side < sides; side += 1) {
+        const next = (side + 1) % sides;
+        indices.push(rootCenter, next, side);
+        indices.push(tipCenter, stations * sides + side, stations * sides + next);
+      }
+      const bladeGeometry = new THREE.BufferGeometry();
+      bladeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+      bladeGeometry.setIndex(indices);
+      bladeGeometry.computeVertexNormals();
+      const bladeSurface = new THREE.MeshStandardMaterial({
+        color: spec.color,
+        roughness: 0.52,
+        metalness: 0.08,
+        side: THREE.DoubleSide,
+      });
+      group.add(new THREE.Mesh(bladeGeometry, bladeSurface));
+      const rootFlange = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.55, 12), steelDark);
+      rootFlange.rotation.x = Math.PI / 2;
+      rootFlange.position.z = -spec.halfZ + 0.28;
+      group.add(rootFlange);
+      addBox(group, stripe, 1.45, 0.04, 0.12, 0, 0.22, -3.8);
+      addBox(group, stripe, 0.34, 0.05, 0.32, 0.34, 0.03, spec.halfZ - 0.28);
     } else {
       addBox(group, body, 2.4, 2.6, 6.0);
       addBox(group, stripe, 2.42, 0.16, 6.02, 0, 0.9, 0);
@@ -620,6 +672,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     elapsed += frameDt;
     site.applyNight(nightMix, sim.lightsOn ? 1 : 0);
     site.setTheme(levelOf(sim.career.job).theme);
+    site.update(frameDt);
     setBeaconPulse(craneModel, nightMix, elapsed);
     const face = sim.bodyHeading();
     slew.rotation.y = sim.yaw - face;
@@ -786,8 +839,9 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       lookTarget.set(sim.hx, sim.hy, sim.hz);
     } else if (view === "wide") {
       const dist = 28 + pitch;
-      desired.set(sim.truckX + Math.sin(orbit) * dist, 6 + pitch * 0.7, sim.truckZ + Math.cos(orbit) * dist);
-      lookTarget.set(sim.truckX, 5, sim.truckZ);
+      const wideOrbit = orbit + (sim.career.job === "wind" ? 2.4 : 0);
+      desired.set(sim.truckX + Math.sin(wideOrbit) * dist, 6 + pitch * 0.7, sim.truckZ + Math.cos(wideOrbit) * dist);
+      lookTarget.set(sim.truckX, sim.career.job === "wind" ? 10 : 5, sim.truckZ);
     } else if (view === "high") {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);

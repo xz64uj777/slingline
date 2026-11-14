@@ -32,7 +32,8 @@ export type JobId =
   | "roof"
   | "hvac"
   | "tracks"
-  | "spa";
+  | "spa"
+  | "wind";
 
 export const CAREER_KEY = "slingline-career";
 export const BOSS = "Hargrove Crane";
@@ -340,7 +341,7 @@ const JOBS: Record<JobId, JobDef> = {
     kind: "deck",
     pad: 6,
     theme: "residential",
-    brief: "At Maple Lane, work from the residential driveway and side gate: set the decking bundle on the backyard patio, then fly the empty hot tub through the narrow access. Keep it level and clear of the house and fence.",
+    brief: "Start on Maple Lane, drive down the street, and park in the marked side-drive setup box. Deploy before lifting the deck kit and hot tub through the gate to the backyard patio.",
     pay: 3200,
     follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
     rep: 3,
@@ -348,6 +349,21 @@ const JOBS: Record<JobId, JobDef> = {
     roof: false,
     repGain: 4,
     ring: 1.2,
+  },
+  wind: {
+    id: "wind",
+    no: 16,
+    title: "RIDGE BLADE SET",
+    kind: "blade",
+    pad: 11,
+    theme: "windFarm",
+    brief: "At the ridge-top wind farm, lift a 12.8 m turbine blade from the delivery cradle to the assembly stand beside the tower. Heavy crane required; Hard mode exposes the long load to ridge crosswinds.",
+    pay: 14800,
+    rep: 14,
+    crane: "heavy",
+    roof: false,
+    repGain: 4,
+    ring: 1.4,
   },
 };
 
@@ -367,6 +383,7 @@ const JOB_ORDER: JobId[] = [
   "hvac",
   "tracks",
   "double",
+  "wind",
 ];
 
 /** Hargrove's rental shifts, in order. */

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Actions } from "./input.ts";
-import { CraneSim, PADS } from "./sim.ts";
+import { CraneSim, MAPLE_LANE_SETUP, MAPLE_LANE_START, PADS, WIND_FARM_START } from "./sim.ts";
 
 const STEP = 1 / 60;
 
@@ -411,9 +411,9 @@ describe("call cargo progression", () => {
     assert.equal(sim.load, "deck");
     assert.equal(sim.pieces[0]?.kind, "deck");
     assert.equal(sim.to, 6);
-    assert.deepEqual(PADS[sim.to], { x: -103, z: 42 });
+    assert.deepEqual(PADS[sim.to], { x: -101, z: 41 });
     assert.equal(sim.from, 9);
-    assert.deepEqual({ x: sim.truckX, z: sim.truckZ }, { x: -95, z: 39.5 });
+    assert.deepEqual({ x: sim.truckX, z: sim.truckZ }, { x: MAPLE_LANE_START.x, z: MAPLE_LANE_START.z });
     assert.deepEqual(PADS[sim.from], { x: -90, z: 40 });
 
     sim.career = { ...sim.career, leg: 1 };
@@ -423,6 +423,66 @@ describe("call cargo progression", () => {
     assert.equal(sim.to, 7);
     assert.deepEqual(PADS[sim.to], { x: -99, z: 42 });
     assert.equal(sim.from, 9);
+  });
+
+  it("drives from Maple Lane into the marked driveway box before deploying", () => {
+    const sim = new CraneSim();
+    sim.career = {
+      ...sim.career,
+      status: "independent",
+      crane: "yard",
+      reputation: 3,
+      job: "yard",
+      leg: 0,
+      roofActive: false,
+    };
+    sim.acceptJob("spa");
+    assert.deepEqual({ x: sim.truckX, z: sim.truckZ }, { x: MAPLE_LANE_START.x, z: MAPLE_LANE_START.z });
+    assert.equal(sim.atMapleSetup, false);
+
+    sim.requestDeploy();
+    assert.equal(sim.deployDir, 0);
+    assert.match(sim.message, /Drive down Maple Lane/i);
+
+    // Forward east along the street, turn north into the side drive, and stop
+    // inside the amber parking box using the same held controls as the game.
+    run(sim, 6.1, { trolley: 1 });
+    run(sim, 3, { trolley: 1, steer: 1 });
+    run(sim, 2.7, { trolley: 1 });
+    run(sim, 2);
+    assert.ok(Math.hypot(sim.truckX - MAPLE_LANE_SETUP.x, sim.truckZ - MAPLE_LANE_SETUP.z) <= MAPLE_LANE_SETUP.radius);
+    assert.equal(sim.atMapleSetup, true);
+    assert.ok(Math.abs(sim.speed) < 0.2);
+
+    sim.requestDeploy();
+    assert.equal(sim.deployDir, 1);
+    run(sim, 1.8);
+    assert.equal(sim.state, "lifting");
+    assert.equal(sim.bCanLift, true);
+  });
+
+  it("stages the long turbine blade at the separate wind-farm ridge site", () => {
+    const sim = new CraneSim();
+    sim.career = {
+      ...sim.career,
+      status: "independent",
+      crane: "heavy",
+      reputation: 14,
+      job: "yard",
+      leg: 0,
+      roofActive: false,
+    };
+    sim.acceptJob("wind");
+
+    assert.equal(sim.career.job, "wind");
+    assert.equal(sim.crane, "heavy");
+    assert.equal(sim.load, "blade");
+    assert.equal(sim.pieces[0]?.kind, "blade");
+    assert.equal(sim.from, 10);
+    assert.equal(sim.to, 11);
+    assert.deepEqual(PADS[sim.from], { x: 87, z: 79 });
+    assert.deepEqual(PADS[sim.to], { x: 97, z: 85 });
+    assert.deepEqual({ x: sim.truckX, z: sim.truckZ }, { x: WIND_FARM_START.x, z: WIND_FARM_START.z });
   });
 
   it("keeps each of the first six call routes inside the easy-mode reach envelope", () => {

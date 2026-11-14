@@ -58,8 +58,21 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: 38, z: 40, hx: 2.4, hz: 4.6 },
   { x: 22, z: -42, hx: 1.8, hz: 2.8 },
 ];
-const RESIDENTIAL_HOUSE_BLOCK = { x: -102, z: 30, hx: 7, hz: 5 };
-const RESIDENTIAL_TRUCK_START = { x: -95, z: 39.5 };
+const RESIDENTIAL_HOUSE_BLOCKS = [
+  { x: -102, z: 30, hx: 7, hz: 5 },
+  { x: -134, z: 30, hx: 4.5, hz: 4 },
+  { x: -120, z: 30, hx: 4.5, hz: 4 },
+  { x: -80, z: 30, hx: 4.5, hz: 4 },
+  { x: -68, z: 30, hx: 4.5, hz: 4 },
+];
+export const MAPLE_LANE_START = { x: -130, z: 8, heading: Math.PI / 2 } as const;
+export const MAPLE_LANE_SETUP = { x: -92, z: 30, radius: 3.4 } as const;
+export const WIND_FARM_START = { x: 80, z: 79, heading: Math.PI / 2 } as const;
+const WIND_TURBINE_BLOCKS = [
+  { x: 103, z: 97, hx: 1.3, hz: 1.3 },
+  { x: 72, z: 102, hx: 1.1, hz: 1.1 },
+  { x: 116, z: 76, hx: 1.1, hz: 1.1 },
+];
 
 export const LOWBOY_DROP = { x: 4, z: 10 };
 
@@ -70,10 +83,12 @@ export const PADS: Pad[] = [
   { x: -16, z: -4 },
   { x: -8, z: -2 },
   { x: 7, z: -3 },
-  { x: -103, z: 42 },
+  { x: -101, z: 41 },
   { x: -99, z: 42 },
   { x: -4, z: -6 },
   { x: -90, z: 40 },
+  { x: 87, z: 79 },
+  { x: 97, z: 85 },
 ];
 
 const TUNING = {
@@ -195,7 +210,7 @@ export class CraneSim {
   crane: CraneId = "rental";
   message = "You work for Hargrove. Take the wage and set the crate.";
   private flipBilled = false;
-  private currentSite: "yard" | "residential" | null = null;
+  private currentSite: "yard" | "residential" | "windFarm" | null = null;
   warn = false;
   /** Crane work lights, switched on by the player after dark. */
   lightsOn = false;
@@ -274,6 +289,10 @@ export class CraneSim {
   /** Centre tolerance of the active job's set ring, in metres. */
   get setTolerance() {
     return activeOffer(this.career).ring;
+  }
+
+  get atMapleSetup() {
+    return Math.hypot(this.truckX - MAPLE_LANE_SETUP.x, this.truckZ - MAPLE_LANE_SETUP.z) <= MAPLE_LANE_SETUP.radius;
   }
 
   private applyCrane() {
@@ -608,13 +627,14 @@ export class CraneSim {
     // The yard only stocks the call's material plus two decoys. Anything else
     // would be clutter on the sight line and a wasted draw call.
     const residential = this.career.job === "spa";
-    const site = residential ? "residential" : "yard";
+    const windFarm = this.career.job === "wind";
+    const site = residential ? "residential" : windFarm ? "windFarm" : "yard";
     if (this.currentSite !== site) {
       this.currentSite = site;
-      const start = residential ? RESIDENTIAL_TRUCK_START : { x: 0, z: 0 };
+      const start = residential ? MAPLE_LANE_START : windFarm ? WIND_FARM_START : { x: 0, z: 0, heading: 0 };
       this.truckX = start.x;
       this.truckZ = start.z;
-      this.heading = 0;
+      this.heading = start.heading;
       this.speed = 0;
       this.driveSteer = 0;
       this.state = "driving";
@@ -642,9 +662,14 @@ export class CraneSim {
     }
     const wanted = activeOffer(this.career).kind;
     const [decoyA, decoyB] = YARD_DECOYS[wanted];
-    const source = PADS[residential ? 9 : 8]!;
+    const source = PADS[windFarm ? 10 : residential ? 9 : 8]!;
     const main = { kind: wanted, x: source.x, z: source.z };
-    const decoys = residential
+    const decoys = windFarm
+      ? [
+          { kind: decoyA, x: 84, z: 69 },
+          { kind: decoyB, x: 93, z: 72 },
+        ]
+      : residential
       ? [
           { kind: decoyA, x: -85, z: 40 },
           { kind: decoyB, x: -90, z: 33 },
@@ -666,7 +691,7 @@ export class CraneSim {
     this.cx = main.x;
     this.cz = main.z;
     this.cy = this.restY(wanted);
-    this.from = residential ? 9 : 8;
+    this.from = windFarm ? 10 : residential ? 9 : 8;
     this.applyContract();
     this.attached = false;
     this.airborne = false;
@@ -675,11 +700,12 @@ export class CraneSim {
     this.message = this.contractLabel();
     this.warn = false;
     if (!aim) return;
-    const dx = main.x - this.truckX;
-    const dz = main.z - this.truckZ;
+    const aimOrigin = residential ? MAPLE_LANE_SETUP : windFarm ? WIND_FARM_START : { x: this.truckX, z: this.truckZ };
+    const dx = main.x - aimOrigin.x;
+    const dz = main.z - aimOrigin.z;
     const dist = Math.hypot(dx, dz);
     this.yaw = Math.atan2(-dx, -dz);
-    this.heading = this.yaw;
+    if (site === "yard") this.heading = this.yaw;
     this.yawRate = 0;
     this.boomPitch = this.mode === "easy" ? 0.9 : 0.55;
     this.pitchRate = 0;
@@ -844,8 +870,9 @@ export class CraneSim {
         this.windX = Math.cos(ang);
         this.windZ = Math.sin(ang);
       }
-      const mass = this.attached ? 1100 : 400;
-      const acc = tune.wind * this.windAmp * (400 / mass);
+      const mass = this.attached ? (this.load === "blade" ? 1800 : 1100) : 400;
+      const windArea = this.attached && this.load === "blade" ? 2.4 : 1;
+      const acc = tune.wind * this.windAmp * (400 / mass) * windArea;
       this.vx += this.windX * acc * dt;
       this.vz += this.windZ * acc * dt;
     }
@@ -1141,6 +1168,10 @@ export class CraneSim {
       this.message = "Stop the truck first.";
       return;
     }
+    if (this.career.job === "spa" && !this.atMapleSetup) {
+      this.say("Drive down Maple Lane and stop in the amber driveway setup box before deploying.");
+      return;
+    }
     this.deployDir = 1;
     this.message = "Outriggers out, then pads down.";
   }
@@ -1186,11 +1217,16 @@ export class CraneSim {
     for (const block of YARD_BLOCKS) {
       if (Math.abs(x - block.x) < block.hx + 1.7 && Math.abs(z - block.z) < block.hz + 3.8) return true;
     }
-    if (
-      this.career.job === "spa" &&
-      Math.abs(x - RESIDENTIAL_HOUSE_BLOCK.x) < RESIDENTIAL_HOUSE_BLOCK.hx + 1.7 &&
-      Math.abs(z - RESIDENTIAL_HOUSE_BLOCK.z) < RESIDENTIAL_HOUSE_BLOCK.hz + 3.8
-    ) return true;
+    if (this.career.job === "spa") {
+      for (const block of RESIDENTIAL_HOUSE_BLOCKS) {
+        if (Math.abs(x - block.x) < block.hx + 1.7 && Math.abs(z - block.z) < block.hz + 3.8) return true;
+      }
+    }
+    if (this.career.job === "wind") {
+      for (const block of WIND_TURBINE_BLOCKS) {
+        if (Math.abs(x - block.x) < block.hx + 1.7 && Math.abs(z - block.z) < block.hz + 3.8) return true;
+      }
+    }
     return false;
   }
 
@@ -1208,11 +1244,13 @@ export class CraneSim {
     const stopped = this.bStopped();
     const level = Math.abs(this.roll) < (2 * Math.PI) / 180;
     const contact = down >= 0.98 && !this.flipped;
-    this.bCanLift = stopped && reach >= 0.98 && down >= 0.98 && contact && level;
+    const atSite = this.career.job !== "spa" || this.atMapleSetup;
+    this.bCanLift = stopped && reach >= 0.98 && down >= 0.98 && contact && level && atSite;
   }
 
   private gateReason() {
     if (!this.bStopped()) return "Truck is still moving.";
+    if (this.career.job === "spa" && !this.atMapleSetup) return "Drive down Maple Lane and stop in the marked driveway setup box before lifting.";
     if (this.outrigger < 0.57) return "Outriggers are not fully out.";
     if (this.outrigger < 0.98) return "Pads are not down on the ground.";
     if (Math.abs(this.roll) >= (2 * Math.PI) / 180) return "Truck body is not level.";
@@ -1262,8 +1300,13 @@ export class CraneSim {
       const fx = forwardSign * Math.sin(this.heading);
       const fz = forwardSign * Math.cos(this.heading);
       const residential = this.career.job === "spa";
-      const nx = clamp(this.truckX + fx * this.speed * dt, residential ? -126 : -46, residential ? -78 : 46);
-      const nz = clamp(this.truckZ + fz * this.speed * dt, residential ? 5 : -46, residential ? 56 : 46);
+      const windFarm = this.career.job === "wind";
+      const minX = residential ? -142 : windFarm ? 58 : -46;
+      const maxX = residential ? -62 : windFarm ? 126 : 46;
+      const minZ = residential ? 5 : windFarm ? 52 : -46;
+      const maxZ = residential ? 82 : windFarm ? 128 : 46;
+      const nx = clamp(this.truckX + fx * this.speed * dt, minX, maxX);
+      const nz = clamp(this.truckZ + fz * this.speed * dt, minZ, maxZ);
       if (!this.hitsYard(nx, nz)) {
         this.truckX = nx;
         this.truckZ = nz;
