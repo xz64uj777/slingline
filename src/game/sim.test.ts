@@ -115,6 +115,25 @@ describe("hook pickup", () => {
   });
 });
 
+describe("hook alignment guidance", () => {
+  it("reports signed corrections in crane-control axes", () => {
+    const sim = new CraneSim();
+    hangOver(sim, 0);
+    const piece = sim.pieces[0]!;
+    sim.hx = piece.x + 2;
+    sim.hz = piece.z + 3;
+    sim.hy = piece.y + sim.hang - 1;
+
+    const alignment = sim.hookAlignment();
+    assert.ok(alignment);
+    assert.equal(alignment.target, "CRATE");
+    assert.ok(Math.abs(alignment.slew - 2) < 1e-9, "positive slew should mean left/A");
+    assert.ok(Math.abs(alignment.reach - 3) < 1e-9, "positive reach should mean boom out");
+    assert.ok(Math.abs(alignment.hoist - 1) < 1e-9, "positive hoist should mean raise the hook");
+    assert.ok(Math.abs(alignment.distance - Math.sqrt(14)) < 1e-9);
+  });
+});
+
 describe("deployment safety", () => {
   it("raises the boom clear of the interlock when the pads set", () => {
     const sim = new CraneSim();

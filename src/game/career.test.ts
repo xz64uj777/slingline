@@ -123,6 +123,30 @@ describe("wage versus contract", () => {
   });
 });
 
+describe("starter level progression", () => {
+  it("pays the yard move and assigns the distinct pipe-drop challenge next", () => {
+    const first = activeOffer(freshCareer());
+    assert.equal(first.no, 1);
+    assert.equal(first.id, "yard");
+    assert.equal(first.kind, "crate");
+    assert.equal(first.theme, "yard");
+    assert.equal(first.ring, 2.4);
+
+    const completed = resolveSet(freshCareer(), first.kind, "A");
+    assert.equal(completed.matched, true);
+    assert.ok(completed.banked > 0);
+
+    const second = activeOffer(completed.state);
+    assert.equal(second.no, 2);
+    assert.equal(second.id, "pipe");
+    assert.equal(second.kind, "pipe");
+    assert.equal(second.theme, "steel");
+    assert.equal(second.pad, 3);
+    assert.equal(second.ring, 1.6);
+    assert.ok(second.gross > first.gross);
+  });
+});
+
 describe("going independent", () => {
   it("refuses the filing until wages, jobs, and standing are all there", () => {
     assert.equal(canFound(freshCareer()).ok, false);

@@ -980,6 +980,29 @@ export class CraneSim {
     this.message = `Load released ${off.toFixed(1)} m outside the ring. No payment. Reposition and try again.`;
   }
 
+  /** Signed corrections from the hook to the closest pickup, in crane-control axes. */
+  hookAlignment() {
+    if (this.latch == null) return null;
+    const piece = this.pieces[this.latch];
+    if (!piece) return null;
+
+    const dx = piece.x - this.hx;
+    const dz = piece.z - this.hz;
+    const sin = Math.sin(this.yaw);
+    const cos = Math.cos(this.yaw);
+    const vertical = piece.y + this.hang - this.hy;
+    return {
+      target: loadSpec(piece.kind).label,
+      distance: Math.hypot(dx, vertical, dz),
+      // Positive slew follows increasing yaw (A / left); positive reach is
+      // farther out along the boom (Z / extend or lower pitch).
+      slew: -dx * cos + dz * sin,
+      reach: -dx * sin - dz * cos,
+      hoist: vertical,
+      ready: this.hookReady,
+    };
+  }
+
   private updateApproach() {
     this.hookGap = 99;
     this.hookReady = false;
