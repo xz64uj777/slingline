@@ -1,0 +1,17 @@
+{
+  "name": "Slingline",
+  "short_name": "Slingline",
+  "id": "/slingline/",
+  "start_url": "/slingline/",
+  "scope": "/slingline/",
+  "display": "standalone",
+  "background_color": "#121418",
+  "theme_color": "#121418",
+  "icons": [
+    {
+      "src": "/slingline/__grok/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
