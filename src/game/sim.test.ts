@@ -372,12 +372,12 @@ describe("vehicle controls", () => {
     const left = new CraneSim();
     const initialLeftHeading = left.heading;
     run(left, 0.8, { trolley: 1, steer: 1 });
-    assert.ok(left.heading < initialLeftHeading, `left steering changed heading to ${left.heading}`);
+    assert.ok(left.heading > initialLeftHeading, `left steering changed heading to ${left.heading}`);
 
     const right = new CraneSim();
     const initialRightHeading = right.heading;
     run(right, 0.8, { trolley: 1, steer: -1 });
-    assert.ok(right.heading > initialRightHeading, `right steering changed heading to ${right.heading}`);
+    assert.ok(right.heading < initialRightHeading, `right steering changed heading to ${right.heading}`);
   });
 
   it("keeps the lowboy tractor moving toward its drop pad", () => {
@@ -447,7 +447,7 @@ describe("call cargo progression", () => {
     // Forward east along the street, turn north into the side drive, and stop
     // inside the amber parking box using the same held controls as the game.
     run(sim, 6.1, { trolley: 1 });
-    run(sim, 3, { trolley: 1, steer: 1 });
+    run(sim, 3, { trolley: 1, steer: -1 });
     run(sim, 2.7, { trolley: 1 });
     run(sim, 2);
     assert.ok(Math.hypot(sim.truckX - MAPLE_LANE_SETUP.x, sim.truckZ - MAPLE_LANE_SETUP.z) <= MAPLE_LANE_SETUP.radius);

@@ -704,7 +704,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     }
     const spin = (sim.speed * frameDt) / 0.48;
     for (const wheel of wheels) wheel.rotation.x -= spin;
-    for (const hub of craneModel.frontHubs) hub.rotation.y = -sim.driveSteer * 0.5;
+    for (const hub of craneModel.frontHubs) hub.rotation.y = sim.driveSteer * 0.5;
     const showPads = sim.crane !== "crawler";
     const reach = Math.min(1, sim.outrigger / 0.57);
     const down = Math.max(0, (sim.outrigger - 0.57) / 0.43);
@@ -846,10 +846,11 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
     } else if (view === "truck") {
-      const hx = -Math.sin(sim.heading);
-      const hz = -Math.cos(sim.heading);
+      const face = sim.bodyHeading();
+      const hx = Math.sin(face);
+      const hz = Math.cos(face);
       desired.set(sim.truckX - hx * 16, 7.2, sim.truckZ - hz * 16);
-      lookTarget.set(sim.truckX + hx * 10, 2.4, sim.truckZ + hz * 10);
+      lookTarget.set(sim.truckX + hx * 14, 2.2, sim.truckZ + hz * 14);
     } else {
       desired.set(
         sim.truckX + Math.sin(yaw) * 20 + Math.cos(yaw) * 8,

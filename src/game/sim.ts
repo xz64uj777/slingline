@@ -1293,9 +1293,8 @@ export class CraneSim {
       const moving = Math.abs(this.speed) > 0.08;
       if (moving) {
         const tightness = 0.95 / (1 + Math.abs(this.speed) * 0.16);
-        this.heading -= forwardSign * this.driveSteer * tightness * Math.sign(this.speed) * dt;
-      } else if (Math.abs(this.driveSteer) > 0.25 && Math.abs(actions.trolley) < 0.2) {
-        this.heading -= forwardSign * this.driveSteer * 0.4 * pace * dt;
+        // Positive steer is left. Heading grows toward +X, which is left of a cab facing +Z.
+        this.heading += this.driveSteer * tightness * Math.sign(this.speed) * dt;
       }
       const fx = forwardSign * Math.sin(this.heading);
       const fz = forwardSign * Math.cos(this.heading);

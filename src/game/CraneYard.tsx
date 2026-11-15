@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Lightbulb } from "lucide-react";
-import { CraneSim, CRANE_CHOICES, type CraneId, type Mode, type Pace } from "@/game/sim";
+import { CraneSim, CRANE_CHOICES, MAPLE_LANE_SETUP, PADS, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   ECONOMY,
   RENTAL_LEVELS,
@@ -39,13 +39,117 @@ import {
   type Sensitivity,
 } from "@/game/settings";
 
-const STEP = 1 / 60;
+const GUIDE_KEY = "slingline-guide";
+
+function guideSeen() {
+  try {
+    return localStorage.getItem(GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markGuideSeen() {
+  try {
+    localStorage.setItem(GUIDE_KEY, "1");
+  } catch {
+    /* private mode */
+  }
+}
+
+function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = canvas.clientWidth || 220;
+  const h = 156;
+  const pw = Math.floor(w * dpr);
+  const ph = Math.floor(h * dpr);
+  if (canvas.width !== pw || canvas.height !== ph) {
+    canvas.width = pw;
+    canvas.height = ph;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#121418";
+  ctx.fillRect(0, 0, w, h);
+
+  const dest = sim.roofActive ? sim.roofDeck() : PADS[sim.to] ?? PADS[0]!;
+  const spots = [
+    { x: sim.truckX, z: sim.truckZ },
+    { x: dest.x, z: dest.z },
+    ...sim.pieces.map((piece) => ({ x: piece.x, z: piece.z })),
+  ];
+  if (sim.career.job === "spa") spots.push({ x: MAPLE_LANE_SETUP.x, z: MAPLE_LANE_SETUP.z });
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const spot of spots) {
+    minX = Math.min(minX, spot.x);
+    maxX = Math.max(maxX, spot.x);
+    minZ = Math.min(minZ, spot.z);
+    maxZ = Math.max(maxZ, spot.z);
+  }
+  const spanX = Math.max(16, maxX - minX);
+  const spanZ = Math.max(16, maxZ - minZ);
+  const scale = Math.min((w - 36) / spanX, (h - 36) / spanZ);
+  const midX = (minX + maxX) / 2;
+  const midZ = (minZ + maxZ) / 2;
+  const px = (x: number) => w / 2 + (x - midX) * scale;
+  const py = (z: number) => h / 2 + (z - midZ) * scale;
+
+  if (sim.career.job === "spa") {
+    ctx.strokeStyle = "#8a98a8";
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(px(MAPLE_LANE_SETUP.x) - 7, py(MAPLE_LANE_SETUP.z) - 7, 14, 14);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#8a98a8";
+    ctx.font = "10px sans-serif";
+    ctx.fillText("PARK", px(MAPLE_LANE_SETUP.x) + 9, py(MAPLE_LANE_SETUP.z) + 3);
+  }
+
+  const ring = Math.max(8, sim.setTolerance * scale);
+  ctx.strokeStyle = "#e3a23a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(px(dest.x), py(dest.z), ring, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#e3a23a";
+  ctx.font = "10px sans-serif";
+  ctx.fillText(sim.roofActive ? "ROOF" : "SET", px(dest.x) + ring + 2, py(dest.z) - 2);
+
+  for (const piece of sim.pieces) {
+    const job = piece.kind === sim.load;
+    ctx.fillStyle = job ? "#8fc17a" : "#5c656e";
+    ctx.fillRect(px(piece.x) - (job ? 5 : 3), py(piece.z) - (job ? 5 : 3), job ? 10 : 6, job ? 10 : 6);
+    if (job) {
+      ctx.fillStyle = "#f1f1ef";
+      ctx.fillText(loadSpec(piece.kind).label, px(piece.x) + 8, py(piece.z) - 6);
+    }
+  }
+
+  const tx = px(sim.truckX);
+  const tz = py(sim.truckZ);
+  ctx.save();
+  ctx.translate(tx, tz);
+  ctx.rotate(sim.bodyHeading());
+  ctx.fillStyle = "#f1f1ef";
+  ctx.beginPath();
+  ctx.moveTo(0, -7);
+  ctx.lineTo(5, 6);
+  ctx.lineTo(-5, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
 
 const VOLUME_STEPS = [
   { label: "Off", detail: "Muted", value: 0 },
   { label: "Low", detail: "Quiet", value: 0.4 },
   { label: "Full", detail: "Loud", value: 1 },
 ] as const;
+
+const STEP = 1 / 60;
 
 export function CraneYard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,8 +183,6 @@ export function CraneYard() {
   const [boardOpen, setBoardOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
-  const currentOffer = activeOffer(books);
-  const currentCargo = loadSpec(currentOffer.kind).label;
   const careerSnapshotRef = useRef<CareerState | null>(null);
 
   const takeCall = (id: JobId) => {
@@ -106,6 +208,8 @@ export function CraneYard() {
   const driveModeRef = useRef<HTMLSpanElement>(null);
   const objectiveRef = useRef<HTMLParagraphElement>(null);
   const alignmentRef = useRef<HTMLParagraphElement>(null);
+  const mapRef = useRef<HTMLCanvasElement>(null);
+  const mapBoxRef = useRef<HTMLDetailsElement>(null);
   const swayNumRef = useRef<HTMLSpanElement>(null);
   const limitRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
@@ -406,6 +510,7 @@ export function CraneYard() {
           alignmentRef.current.style.color = alignment.ready ? "#8fc17a" : "";
         }
       }
+      if (mapRef.current && mapBoxRef.current?.open) paintJobMap(mapRef.current, sim);
       const debrief = debriefRef.current;
       if (debrief) {
         const report = sim.lastSet;
@@ -600,7 +705,7 @@ export function CraneYard() {
     playingRef.current = true;
     unlockAudio();
     setTrainingStep(0);
-    setTrainingOpen(true);
+    setTrainingOpen(sim.career.jobsDone === 0 && sim.career.status === "hired" && !guideSeen());
     setPlaying(true);
   };
 
@@ -779,9 +884,9 @@ export function CraneYard() {
               ][trainingStep]}
             </p>
             <div className="mt-4 flex gap-2">
-              <button type="button" onClick={() => setTrainingOpen(false)} className="min-h-11 flex-1 border border-line bg-bg px-3 font-display text-sm tracking-wide text-fg">CLOSE GUIDE</button>
+              <button type="button" onClick={() => { markGuideSeen(); setTrainingOpen(false); }} className="min-h-11 flex-1 border border-line bg-bg px-3 font-display text-sm tracking-wide text-fg">CLOSE GUIDE</button>
               {trainingStep > 0 ? <button type="button" onClick={() => setTrainingStep((step) => Math.max(0, step - 1))} className="min-h-11 border border-line bg-bg px-3 font-display text-sm text-fg">BACK</button> : null}
-              <button type="button" onClick={() => { if (trainingStep === 5) setTrainingOpen(false); else setTrainingStep((step) => Math.min(5, step + 1)); }} className="min-h-11 flex-1 bg-primary px-3 font-display text-sm tracking-wide text-bg">{trainingStep === 5 ? "START LIFTING" : "NEXT"}</button>
+              <button type="button" onClick={() => { if (trainingStep === 5) { markGuideSeen(); setTrainingOpen(false); } else setTrainingStep((step) => Math.min(5, step + 1)); }} className="min-h-11 flex-1 bg-primary px-3 font-display text-sm tracking-wide text-bg">{trainingStep === 5 ? "START LIFTING" : "NEXT"}</button>
             </div>
           </section>
         </div>
@@ -809,25 +914,10 @@ export function CraneYard() {
           >
             ALIGN · SLEW · REACH · HOIST
           </p>
-          <details className="pointer-events-auto w-full max-w-[13rem] bg-surface px-3 py-2">
-            <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">SHOW JOB MAP</summary>
-            <div className="mt-2 rounded border border-line bg-bg p-2 text-center text-xs">
-              <p className="font-display tracking-widest text-muted">
-                LIFT ROUTE · {currentOffer.title} · {currentOffer.phase === "company" ? `LV ${String(currentOffer.no).padStart(2, "0")}` : currentOffer.phase === "odd" ? "ODD JOB" : "TUTORIAL"}
-              </p>
-              <div className="my-2 flex items-center justify-between gap-1">
-                <span className="rounded border border-primary px-2 py-2 font-display">
-                  {currentCargo}
-                </span>
-                <span className="text-primary">→</span>
-                <span className="rounded border border-primary px-2 py-2 font-display">
-                  {SITE_THEME_LABEL[currentOffer.theme]} SET
-                </span>
-              </div>
-              <p className="text-muted">
-                {currentOffer.brief} Set within {currentOffer.ring.toFixed(1)} m of the ring center.
-              </p>
-            </div>
+          <details ref={mapBoxRef} className="pointer-events-auto w-full max-w-[16rem] bg-surface px-3 py-2">
+            <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">JOB MAP</summary>
+            <canvas ref={mapRef} className="mt-2 h-[156px] w-full bg-bg" />
+            <p className="mt-1 font-display text-[10px] tracking-widest text-muted">GREEN LOAD · AMBER SET · YOU</p>
           </details>
           <p
             ref={gapRef}
