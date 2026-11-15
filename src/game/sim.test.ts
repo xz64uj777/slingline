@@ -514,11 +514,14 @@ describe("call cargo progression", () => {
     const sim = new CraneSim();
     const easyReach = sim.mountBack + (sim.baseLen + sim.extendMax) * Math.cos((44 * Math.PI) / 180 + 0.08);
     const yardSource = PADS[8]!;
-    for (const padIndex of [5, 3, 0, 4, 1]) {
+    for (const padIndex of [5, 0, 4, 1]) {
       const pad = PADS[padIndex]!;
       const span = Math.hypot(pad.x - yardSource.x, pad.z - yardSource.z);
       assert.ok(span <= easyReach * 2, `yard route to pad ${padIndex} spans ${span.toFixed(2)} m`);
     }
+    const pipeRing = PADS[3]!;
+    const pipeSpan = Math.hypot(pipeRing.x - yardSource.x, pipeRing.z - yardSource.z);
+    assert.ok(pipeSpan > easyReach * 2, `pipe ring should be a drive, span ${pipeSpan.toFixed(2)} m`);
     const residentialSource = PADS[9]!;
     for (const padIndex of [6, 7]) {
       const pad = PADS[padIndex]!;
