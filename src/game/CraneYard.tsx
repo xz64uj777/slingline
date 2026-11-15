@@ -489,7 +489,9 @@ export function CraneYard() {
                   ? "RIDGE SETUP · Stop on the gravel workpad and deploy the outriggers before the blade pick."
                   : "SETUP · Stop in the work area, then deploy the pads.";
         } else if (sim.attached && sim.landed) {
-          objective = "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
+          objective = sim.setSpot().meters <= sim.setTolerance
+            ? "ON THE MARK · Press RELEASE to set the load."
+            : "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
         } else if (sim.attached && sim.setSpot().meters > 16) {
           objective = sim.state === "lifting"
             ? "HAUL · Pads are set. Stow them, then drive the load to the amber ring."

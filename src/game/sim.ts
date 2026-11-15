@@ -852,8 +852,10 @@ export class CraneSim {
     // Holding DOWN must not tension the cable and drag the load sideways. A
     // deliberate hoist-up releases the ground hold so it can be picked back up.
     const grounded = this.attached && (this.landed || !this.airborne);
+    const deck = this.roofActive ? this.roofDeck() : null;
+    const onDeck = !!deck && Math.hypot(this.hx - deck.x, this.hz - deck.z) < this.setTolerance;
+    const floorHook = (onDeck && deck ? deck.y : 0) + this.hang + this.restY(this.load);
     if (grounded && hoist <= 0.02) {
-      const floorHook = this.hang + this.restY(this.load);
       this.hy = floorHook;
       this.cable = Math.max(this.cableMin, Math.hypot(b.x - this.hx, b.y - floorHook, b.z - this.hz));
       this.vx = 0;
@@ -869,7 +871,7 @@ export class CraneSim {
     }
     if (grounded) {
       this.landed = false;
-      this.hy = this.hang + this.restY(this.load);
+      this.hy = floorHook;
       this.vx = 0;
       this.vy = 0;
       this.vz = 0;
@@ -1579,7 +1581,12 @@ export class CraneSim {
           this.fail();
           return;
         }
-        this.succeed(flat);
+        this.landed = true;
+        this.airborne = false;
+        this.vy = 0;
+        if (carried) carried.y = deck.y + this.restY(carried.kind);
+        this.hy = deck.y + this.hang + this.restY(this.load);
+        this.message = "On the mark. Press RELEASE.";
         return;
       }
     }
@@ -1596,11 +1603,11 @@ export class CraneSim {
         this.fail();
         return;
       }
+      this.landed = true;
       if (off < this.setTolerance) {
-        this.succeed(off);
+        this.message = "On the mark. Press RELEASE.";
         return;
       }
-      this.landed = true;
       this.message = "Load is on the ground but outside the amber ring. Hoist it, reposition over the ring, and lower again.";
       return;
     }

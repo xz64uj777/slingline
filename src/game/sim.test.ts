@@ -197,7 +197,7 @@ describe("grounded load", () => {
 });
 
 describe("set completion", () => {
-  it("completes the job when a load lands inside the amber ring", () => {
+  it("stays hooked when a load lands inside the amber ring until RELEASE", () => {
     const sim = new CraneSim();
     sim.career = { ...sim.career, status: "independent", job: "yard", cash: 0, reputation: 5 };
     hookUp(sim, 0);
@@ -206,12 +206,16 @@ describe("set completion", () => {
     sim.to = PADS.length - 1;
     try {
       run(sim, 1.2, { hoist: 1 });
-      for (let i = 0; i < 1600 && sim.phase !== "done"; i += 1) sim.step(STEP, { ...IDLE, hoist: -0.15 });
+      for (let i = 0; i < 1600 && !sim.landed; i += 1) sim.step(STEP, { ...IDLE, hoist: -0.15 });
+      assert.equal(sim.landed, true);
+      assert.equal(sim.attached, true);
+      assert.notEqual(sim.phase, "done");
+      sim.requestRelease();
     } finally {
       PADS.pop();
     }
     assert.equal(sim.phase, "done");
-    assert.ok(sim.lastSet, "landing inside the ring should grade and pay the set");
+    assert.ok(sim.lastSet, "release inside the ring should grade and pay the set");
   });
 });
 
