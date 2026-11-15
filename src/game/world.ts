@@ -667,7 +667,7 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
-    const wantNight = sim.career.job === "night" || sim.night ? 1 : 0;
+    const wantNight = sim.night ? 1 : 0;
     nightMix += (wantNight - nightMix) * Math.min(1, frameDt * 1.4);
     elapsed += frameDt;
     site.applyNight(nightMix, sim.lightsOn ? 1 : 0);

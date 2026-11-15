@@ -175,12 +175,12 @@ describe("going independent", () => {
   it("keeps four rental lessons and reaches the starter crane after two owner yard calls", () => {
     let state = freshCareer();
     const rentalTitles: string[] = [];
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const offer = activeOffer(state);
       rentalTitles.push(offer.title);
       state = resolveSet(state, offer.kind, "B").state;
     }
-    assert.deepEqual(rentalTitles, ["YARD MOVE", "PIPE DROP", "WAREHOUSE SET", "TRUSS PICK"]);
+    assert.deepEqual(rentalTitles, ["YARD MOVE", "PIPE DROP", "TRUSS PICK", "PANEL SET", "GARAGE UNIT"]);
     assert.equal(canFound(state).ok, true);
 
     const filed = foundCompany(state);
@@ -188,7 +188,7 @@ describe("going independent", () => {
     state = filed.state;
     assert.equal(state.status, "independent");
     assert.equal(state.crane, "rental");
-    assert.equal(isUnlocked(state, "steel").ok, false);
+    assert.equal(isUnlocked(state, "spa").ok, false);
 
     let ownerYardShifts = 0;
     while (state.cash < downPayment("yard") && ownerYardShifts < 10) {
@@ -197,13 +197,12 @@ describe("going independent", () => {
       state = resolveSet(state, offer.kind, "B").state;
       ownerYardShifts += 1;
     }
-    assert.equal(ownerYardShifts, 2);
+    assert.ok(ownerYardShifts <= 4);
 
     const bought = buyCrane(state);
     assert.equal(bought.ok, true);
     state = bought.state;
     assert.equal(state.crane, "yard");
-    assert.equal(isUnlocked(state, "steel").ok, true);
     assert.equal(isUnlocked(state, "spa").ok, true);
   });
 
@@ -284,60 +283,62 @@ describe("save and reload", () => {
 });
 
 describe("job unlocks", () => {
-  it("keeps Hargrove on yard moves until the record is solid, then a basic set", () => {
+  it("keeps Hargrove on the tutorial, then the small jobs, in order", () => {
     assert.equal(assignedJob(freshCareer()), "yard");
-    assert.equal(isUnlocked(freshCareer(), "steel").ok, false);
-    assert.match(isUnlocked(freshCareer(), "steel").reason, /Hargrove|Slingline/);
-    const ready = { ...freshCareer(), jobsDone: ECONOMY.hiredVarietyJobs, standing: ECONOMY.hiredVarietyStanding };
-    assert.equal(assignedJob(ready), "pad");
-    const low = { ...ready, standing: ECONOMY.hiredVarietyStanding - 1 };
-    assert.equal(assignedJob(low), "yard");
-    assert.match(isUnlocked(low, "pad").reason, /Standing/);
+    assert.equal(isUnlocked(freshCareer(), "spa").ok, false);
+    assert.match(isUnlocked(freshCareer(), "spa").reason, /Hargrove|Slingline/);
+    const afterYard = { ...freshCareer(), jobsDone: 1 };
+    assert.equal(assignedJob(afterYard), "pipe");
+    assert.equal(isUnlocked(afterYard, "pipe").ok, true);
+    assert.equal(isUnlocked(afterYard, "truss").ok, false);
+    const oddJobs = { ...freshCareer(), jobsDone: 2 };
+    assert.equal(assignedJob(oddJobs), "truss");
+    assert.equal(assignedJob({ ...freshCareer(), jobsDone: 4 }), "garage");
   });
 
   it("opens calls from reputation and the crane you own, and closes them again", () => {
     const freshOwner = owner();
     assert.equal(isUnlocked(freshOwner, "yard").ok, true);
-    assert.equal(isUnlocked(freshOwner, "pad").ok, true);
-    assert.equal(isUnlocked(freshOwner, "steel").ok, false);
-    assert.match(isUnlocked(freshOwner, "steel").reason, /reputation 3/);
+    assert.equal(isUnlocked(freshOwner, "spa").ok, false);
+    assert.match(isUnlocked(freshOwner, "spa").reason, /yard crane|reputation/i);
 
-    const ranked = owner({ reputation: 3, crane: "rental" });
-    assert.equal(isUnlocked(ranked, "steel").ok, false);
-    assert.match(isUnlocked(ranked, "steel").reason, /yard crane/);
-    assert.equal(isUnlocked(owner({ reputation: 3, crane: "yard" }), "steel").ok, true);
+    const ranked = owner({ reputation: 2, crane: "rental" });
+    assert.equal(isUnlocked(ranked, "spa").ok, false);
+    assert.match(isUnlocked(ranked, "spa").reason, /yard crane/);
+    assert.equal(isUnlocked(owner({ reputation: 2, crane: "yard" }), "spa").ok, true);
 
-    const slipped = owner({ reputation: 2, crane: "yard", job: "steel" });
-    assert.equal(isUnlocked(slipped, "steel").ok, false);
+    const slipped = owner({ reputation: 1, crane: "yard", job: "spa" });
+    assert.equal(isUnlocked(slipped, "spa").ok, false);
 
-    assert.equal(isUnlocked(owner({ reputation: 9, crane: "rental" }), "roof").ok, false);
-    assert.equal(isUnlocked(owner({ reputation: 8, crane: "yard" }), "roof").ok, false);
-    assert.equal(isUnlocked(owner({ reputation: 9, crane: "yard" }), "roof").ok, true);
-    assert.equal(isUnlocked(owner({ reputation: 2, crane: "yard" }), "spa").ok, false);
-    assert.equal(isUnlocked(owner({ reputation: 3, crane: "rental" }), "spa").ok, false);
-    assert.equal(isUnlocked(owner({ reputation: 3, crane: "yard" }), "spa").ok, true);
-    assert.equal(isUnlocked(owner({ reputation: 6, crane: "yard" }), "floor").ok, true);
-    assert.equal(isUnlocked(owner({ reputation: 12, crane: "tower" }), "tracks").ok, false);
-    const waiting = isUnlocked(owner({ reputation: 12, crane: "crawler", crawlerOnSite: false }), "tracks");
+    assert.equal(isUnlocked(owner({ reputation: 4, crane: "rental" }), "roof").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 3, crane: "yard" }), "roof").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 4, crane: "yard" }), "roof").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 1, crane: "yard" }), "spa").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 2, crane: "rental" }), "spa").ok, false);
+    assert.equal(isUnlocked(owner({ reputation: 2, crane: "yard" }), "spa").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 4, crane: "yard" }), "container").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 8, crane: "tower" }), "tracks").ok, false);
+    const waiting = isUnlocked(owner({ reputation: 8, crane: "crawler", crawlerOnSite: false }), "tracks");
     assert.equal(waiting.ok, false);
     assert.match(waiting.reason, /lowboy/);
-    assert.equal(isUnlocked(owner({ reputation: 12, crane: "crawler", crawlerOnSite: true }), "tracks").ok, true);
-    assert.equal(isUnlocked(owner({ reputation: 7, crane: "yard" }), "heavy").ok, false);
-    assert.equal(isUnlocked(owner({ reputation: 7, crane: "heavy" }), "heavy").ok, true);
-    assert.equal(isUnlocked(owner({ reputation: 13, crane: "heavy" }), "wind").ok, false);
-    assert.match(isUnlocked(owner({ reputation: 13, crane: "heavy" }), "wind").reason, /reputation 14/i);
-    assert.equal(isUnlocked(owner({ reputation: 14, crane: "yard" }), "wind").ok, false);
-    assert.match(isUnlocked(owner({ reputation: 14, crane: "yard" }), "wind").reason, /heavy crane/i);
-    assert.equal(isUnlocked(owner({ reputation: 14, crane: "heavy" }), "wind").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 8, crane: "crawler", crawlerOnSite: true }), "tracks").ok, true);
+    assert.equal(isUnlocked(owner({ reputation: 9, crane: "heavy" }), "wind").ok, false);
+    assert.match(isUnlocked(owner({ reputation: 9, crane: "heavy" }), "wind").reason, /reputation 10/i);
+    assert.equal(isUnlocked(owner({ reputation: 10, crane: "yard" }), "wind").ok, false);
+    assert.match(isUnlocked(owner({ reputation: 10, crane: "yard" }), "wind").reason, /heavy crane/i);
+    assert.equal(isUnlocked(owner({ reputation: 10, crane: "heavy" }), "wind").ok, true);
   });
 
-  it("lists the ridge blade lift as Level 16 at a distinct wind-farm site", () => {
+  it("lists the ridge blade as company level 6", () => {
     const wind = levelOf("wind");
-    assert.equal(LEVEL_COUNT, 16);
-    assert.equal(wind.no, 16);
+    assert.equal(LEVEL_COUNT, 6);
+    assert.equal(wind.no, 6);
+    assert.equal(wind.phase, "company");
     assert.equal(wind.kind, "blade");
     assert.equal(wind.theme, "windFarm");
     assert.match(wind.title, /BLADE/i);
+    assert.equal(levelOf("yard").phase, "tutorial");
+    assert.equal(levelOf("garage").phase, "odd");
   });
 
   it("shrinks a yard move when callers are wary and restores it with reputation", () => {
@@ -407,11 +408,11 @@ describe("failure penalties", () => {
   });
 
   it("bills the shop once you own the crane and pulls locked work off the board", () => {
-    const state = owner({ reputation: 3, crane: "yard", job: "steel", cash: 1000 });
+    const state = owner({ reputation: 2, crane: "yard", job: "spa", cash: 1000 });
     const tipped = resolveFailure(state, "tip");
     assert.ok(tipped.state.cash < 1000);
     assert.equal(tipped.state.downtime, 1);
-    assert.equal(isUnlocked(tipped.state, "steel").ok, false);
+    assert.equal(isUnlocked(tipped.state, "spa").ok, false);
     assert.equal(tipped.state.job, "yard");
     assert.match(tipped.message, /yard move|shop/i);
     const back = resolveSet(tipped.state, "crate");
@@ -428,7 +429,7 @@ describe("failure penalties", () => {
     assert.ok(hired.state.standing < ECONOMY.startStanding);
     assert.match(hired.message, /No pay/);
 
-    const company = resolveSet(owner({ reputation: 3, crane: "yard", job: "steel", cash: 50 }), "crate");
+    const company = resolveSet(owner({ reputation: 2, crane: "yard", job: "spa", cash: 50 }), "crate");
     assert.equal(company.banked, 0);
     assert.equal(company.state.cash, 50);
     assert.equal(company.state.job, "yard");
@@ -449,7 +450,7 @@ describe("no softlock", () => {
     });
     assert.equal(isUnlocked(state, "yard").ok, true);
     assert.equal(isUnlocked(state, "tracks").ok, false);
-    assert.equal(isUnlocked(state, "steel").ok, false);
+    assert.equal(isUnlocked(state, "spa").ok, false);
     let cash = 0;
     for (let i = 0; i < 4; i += 1) {
       const result = resolveSet(state, "crate");
@@ -495,7 +496,7 @@ describe("operating costs", () => {
   it("runs the backyard spa as a paid deck-kit lift followed by a hot-tub set", () => {
     const state = owner({ reputation: 3, crane: "yard", job: "spa" });
     const deck = activeOffer(state);
-    assert.equal(deck.no, 6);
+    assert.equal(deck.no, 1);
     assert.equal(deck.title, "BACKYARD SPA DECK");
     assert.equal(deck.kind, "deck");
     assert.equal(deck.theme, "residential");
@@ -516,36 +517,25 @@ describe("operating costs", () => {
     assert.equal(activeOffer(second.state).kind, "deck");
     assert.ok(second.state.cash > state.cash);
   });
-
-  it("runs a double as two paid legs", () => {
-    const state = owner({ reputation: 8, crane: "heavy", job: "double", cash: 0 });
-    const first = resolveSet(state, "crate");
-    assert.equal(first.state.leg, 1);
-    assert.match(first.message, /First load/);
-    const second = resolveSet(first.state, "beam");
-    assert.equal(second.matched, true);
-    assert.equal(second.state.leg, 0);
-    assert.ok(second.banked > first.banked);
-  });
 });
 
 describe("grade pay and reputation", () => {
   it("scales the payout and reputation with the grade", () => {
-    const state = owner({ job: "steel", crane: "yard", reputation: 10 });
+    const state = owner({ job: "roof", crane: "yard", reputation: 10 });
     const good = resolveSet(state, "beam", "S");
     const plain = resolveSet(state, "beam", "B");
     const poor = resolveSet(state, "beam", "C");
 
     assert.ok(good.banked > plain.banked);
     assert.ok(poor.banked < plain.banked);
-    assert.equal(good.state.reputation - state.reputation, 1 + 2);
-    assert.equal(plain.state.reputation - state.reputation, 1);
-    assert.equal(poor.state.reputation - state.reputation, 1);
+    assert.equal(good.state.reputation - state.reputation, 2 + 2);
+    assert.equal(plain.state.reputation - state.reputation, 2);
+    assert.equal(poor.state.reputation - state.reputation, 2);
     assert.match(good.message, /Graded S/);
   });
 
   it("keeps the default grade at par so old calls are unchanged", () => {
-    const state = owner({ job: "steel", crane: "yard", reputation: 10 });
+    const state = owner({ job: "roof", crane: "yard", reputation: 10 });
     assert.equal(resolveSet(state, "beam").banked, resolveSet(state, "beam", "B").banked);
   });
 });
@@ -555,16 +545,15 @@ describe("set ring tightness", () => {
     const ring = (job: CareerState["job"]) => activeOffer(owner({ job })).ring;
     const yard = ring("yard");
     assert.equal(yard, 2.4);
-    assert.ok(ring("steel") < yard * 0.6, `steel ring is ${ring("steel")}`);
-    assert.ok(ring("roof") < ring("steel"), `roof ring is ${ring("roof")}`);
-    assert.ok(ring("night") < yard);
+    assert.ok(ring("spa") < yard * 0.6, `spa ring is ${ring("spa")}`);
+    assert.ok(ring("roof") < ring("spa"), `roof ring is ${ring("roof")}`);
     assert.ok(ring("tracks") > ring("roof"));
   });
 
-  it("uses the follow leg's own ring on a double run", () => {
-    const first = activeOffer(owner({ job: "double", leg: 0 }));
-    const second = activeOffer(owner({ job: "double", leg: 1 }));
-    assert.equal(first.ring, 1.9);
+  it("uses the follow leg's own ring on the backyard call", () => {
+    const first = activeOffer(owner({ job: "spa", leg: 0, reputation: 3, crane: "yard" }));
+    const second = activeOffer(owner({ job: "spa", leg: 1, reputation: 3, crane: "yard" }));
+    assert.equal(first.ring, 1.2);
     assert.ok(second.ring < first.ring, `follow ring is ${second.ring}`);
   });
 

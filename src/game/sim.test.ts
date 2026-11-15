@@ -298,7 +298,7 @@ describe("load chart", () => {
   it("puts a heavy block over the rental chart at short reach", () => {
     const sim = new CraneSim();
     // The yard now stocks the call's material: put the heavy call on the pad.
-    sim.career = { ...sim.career, status: "independent", job: "heavy" };
+    sim.career = { ...sim.career, status: "independent", job: "tracks", crane: "crawler", crawlerOnSite: true, reputation: 8 };
     sim.stockYard(true);
     hookUp(sim, 0);
     run(sim, 1.2, { hoist: 1 });
@@ -575,8 +575,8 @@ describe("set ring tolerance", () => {
     sim.career = { ...sim.career, status: "independent", job: "yard" };
     assert.equal(sim.setTolerance, 2.4);
 
-    sim.career = { ...sim.career, job: "steel" };
-    assert.ok(sim.setTolerance < 1.4, `steel ring is ${sim.setTolerance} m`);
+    sim.career = { ...sim.career, job: "spa" };
+    assert.ok(sim.setTolerance < 1.4, `spa ring is ${sim.setTolerance} m`);
 
     sim.career = { ...sim.career, job: "roof" };
     assert.ok(sim.setTolerance < 1, `roof ring is ${sim.setTolerance} m`);
@@ -631,7 +631,7 @@ describe("set grading", () => {
 
   it("pays a sloppy steel set less than a clean one", () => {
     const clean = new CraneSim();
-    clean.career = { ...clean.career, status: "independent", job: "steel", reputation: 10, cash: 0 };
+    clean.career = { ...clean.career, status: "independent", job: "roof", reputation: 10, cash: 0 };
     clean.load = "beam";
     clean.peakSway = 0.5;
     clean.hookSpeed = 0.1;
@@ -651,7 +651,7 @@ describe("set grading", () => {
 
   it("only grades the set that actually matched the call", () => {
     const sim = new CraneSim();
-    sim.career = { ...sim.career, status: "independent", job: "steel", reputation: 10, cash: 0 };
+    sim.career = { ...sim.career, status: "independent", job: "roof", reputation: 10, cash: 0 };
     sim.load = "crate";
     land(sim, 0.1);
 

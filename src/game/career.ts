@@ -20,20 +20,17 @@ export type CareerStatus = "hired" | "independent";
 export type JobId =
   | "yard"
   | "pipe"
-  | "pad"
   | "truss"
-  | "steel"
   | "panel"
-  | "double"
-  | "heavy"
+  | "garage"
   | "container"
-  | "floor"
-  | "night"
   | "roof"
   | "hvac"
   | "tracks"
   | "spa"
   | "wind";
+
+export type JobPhase = "tutorial" | "odd" | "company";
 
 export const CAREER_KEY = "slingline-career";
 export const BOSS = "Hargrove Crane";
@@ -50,14 +47,10 @@ export const ECONOMY = {
   shortWageShare: 0.6,
   waryShare: 0.8,
   foundCash: 1900,
-  foundJobs: 4,
+  foundJobs: 5,
   foundStanding: 60,
   foundFee: 1000,
   startStanding: 70,
-  hiredVarietyJobs: 2,
-  hiredVarietyStanding: 45,
-  hiredTrussJobs: 3,
-  hiredTrussStanding: 55,
   noteFraction: 0.4,
   noteSlice: 0.1,
   noteCap: 0.4,
@@ -102,6 +95,7 @@ type JobDef = {
   id: JobId;
   /** Campaign number, shown on the board and the HUD. */
   no: number;
+  phase: JobPhase;
   title: string;
   kind: LoadKind;
   pad: number;
@@ -118,19 +112,21 @@ type JobDef = {
 };
 
 /**
- * The campaign. Levels 1-4 are Hargrove's rental shifts: the player takes a
- * wage, learns each control, and earns the filing fee. From level 5 the
- * player owns the call, picks the crane, and each site changes with the work.
+ * Hired work is two tutorials and three small jobs. The wages pay the filing
+ * fee. After Slingline is filed, the board is only calls that change the work:
+ * a backyard, the docks, one roof, a rooftop unit, the crawler, and a blade.
+ * The yard move stays as the shop shift so a bad streak cannot trap the player.
  */
 const JOBS: Record<JobId, JobDef> = {
   yard: {
     id: "yard",
     no: 1,
+    phase: "tutorial",
     title: "YARD MOVE",
     kind: "crate",
     pad: 5,
     theme: "yard",
-    brief: "A crate has to cross the yard. Hook it, keep the sway down, and set it inside the amber ring.",
+    brief: "Tutorial. Hook the crate, keep the sway down, and set it inside the amber ring.",
     pay: 900,
     rep: 0,
     crane: "rental",
@@ -141,11 +137,12 @@ const JOBS: Record<JobId, JobDef> = {
   pipe: {
     id: "pipe",
     no: 2,
+    phase: "tutorial",
     title: "PIPE DROP",
     kind: "pipe",
     pad: 3,
     theme: "steel",
-    brief: "Line pipe is stacked by the rack. Long loads swing wide — bring it across flat and set it without rolling the ring.",
+    brief: "Tutorial. A long pipe swings wide. Bring it across flat and set it in the tighter ring.",
     pay: 1500,
     rep: 0,
     crane: "rental",
@@ -153,136 +150,98 @@ const JOBS: Record<JobId, JobDef> = {
     repGain: 1,
     ring: 1.6,
   },
-  pad: {
-    id: "pad",
-    no: 3,
-    title: "WAREHOUSE SET",
-    kind: "crate",
-    pad: 0,
-    theme: "warehouse",
-    brief: "A delivery crate comes off the truck and goes through the warehouse door. Short picks, tight set.",
-    pay: 1200,
-    rep: 1,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 2.2,
-  },
   truss: {
     id: "truss",
-    no: 4,
+    no: 3,
+    phase: "odd",
     title: "TRUSS PICK",
     kind: "truss",
     pad: 4,
-    theme: "tower",
-    brief: "A roof truss is waiting at the laydown. It is long, light, and catches every gust — keep the tag line steady.",
-    pay: 2200,
-    rep: 1,
+    theme: "steel",
+    brief: "Small job. A light truss catches every gust. The wage goes toward filing Slingline.",
+    pay: 1400,
+    rep: 0,
     crane: "rental",
     roof: false,
-    repGain: 2,
-    ring: 1.2,
-  },
-  steel: {
-    id: "steel",
-    no: 5,
-    title: "STEEL SET",
-    kind: "beam",
-    pad: 1,
-    theme: "steel",
-    brief: "Structural beams for the frame. Set the beam square in the ring — a rolled beam is a rework bill.",
-    pay: 2400,
-    rep: 3,
-    crane: "yard",
-    roof: false,
     repGain: 1,
-    ring: 1.1,
+    ring: 1.2,
   },
   panel: {
     id: "panel",
-    no: 7,
+    no: 4,
+    phase: "odd",
     title: "PANEL SET",
     kind: "panel",
     pad: 2,
-    theme: "tower",
-    brief: "Precast wall panels come off the rack flat. Keep the load level; a panel that tips is scrap.",
-    pay: 5200,
-    rep: 5,
-    crane: "heavy",
+    theme: "warehouse",
+    brief: "Small job. A flat panel tips if you rush it. Short pay, and it counts toward the fee.",
+    pay: 1600,
+    rep: 0,
+    crane: "rental",
     roof: false,
-    repGain: 2,
+    repGain: 1,
     ring: 1.3,
   },
-  heavy: {
-    id: "heavy",
-    no: 8,
-    title: "HEAVY PICK",
-    kind: "heavy",
-    pad: 2,
-    theme: "yard",
-    brief: "A machine base on the skids. Over the chart it will pull the boom and the yard with it.",
-    pay: 5000,
-    rep: 7,
-    crane: "heavy",
+  garage: {
+    id: "garage",
+    no: 5,
+    phase: "odd",
+    title: "GARAGE UNIT",
+    kind: "hvac",
+    pad: 1,
+    theme: "warehouse",
+    brief: "Small job. A condenser for the shop office. Short swing, and this wage should clear the filing fee.",
+    pay: 1800,
+    rep: 0,
+    crane: "rental",
     roof: false,
-    repGain: 2,
-    ring: 1.5,
+    repGain: 1,
+    ring: 1.4,
+  },
+  spa: {
+    id: "spa",
+    no: 1,
+    phase: "company",
+    title: "BACKYARD SPA DECK",
+    kind: "deck",
+    pad: 6,
+    theme: "residential",
+    brief: "Drive down Maple Lane and park in the marked setup box. Then set the deck kit and the hot tub in the backyard.",
+    pay: 3200,
+    follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
+    rep: 2,
+    crane: "yard",
+    roof: false,
+    repGain: 4,
+    ring: 1.2,
   },
   container: {
     id: "container",
-    no: 9,
-    title: "CONTAINER PICK",
+    no: 2,
+    phase: "company",
+    title: "DOCK BOX",
     kind: "container",
     pad: 2,
     theme: "port",
-    brief: "A loaded box off the stack at the docks. Long and heavy, and it catches the wind off the water.",
+    brief: "A loaded box at the docks. Long, heavy, and it catches the wind off the water.",
     pay: 4600,
-    rep: 8,
-    crane: "heavy",
+    rep: 3,
+    crane: "yard",
     roof: false,
     repGain: 2,
     ring: 1.4,
   },
-  floor: {
-    id: "floor",
-    no: 10,
-    title: "FLOOR SET",
-    kind: "beam",
-    pad: 0,
-    theme: "tower",
-    brief: "Beams for the next floor of the rise. The load goes over the parapet and down between the columns.",
-    pay: 3600,
-    rep: 6,
-    crane: "yard",
-    roof: true,
-    repGain: 2,
-    ring: 1,
-  },
-  night: {
-    id: "night",
-    no: 11,
-    title: "NIGHT CALL",
-    kind: "beam",
-    pad: 4,
-    theme: "yard",
-    brief: "The yard runs all night under the floods. Same beam, less light, and the work lights are yours to switch.",
-    pay: 3000,
-    rep: 5,
-    crane: "yard",
-    roof: false,
-    repGain: 1,
-    ring: 1,
-  },
   roof: {
     id: "roof",
-    no: 12,
+    no: 3,
+    phase: "company",
     title: "ROOF SET",
     kind: "beam",
     pad: 0,
     theme: "tower",
-    brief: "A beam for the roof line. This crane can just reach it, and the ring is small.",
+    brief: "One beam for the roof line. The ring is small and the boom is near its limit.",
     pay: 7000,
-    rep: 9,
+    rep: 4,
     crane: "yard",
     roof: true,
     repGain: 2,
@@ -290,14 +249,15 @@ const JOBS: Record<JobId, JobDef> = {
   },
   hvac: {
     id: "hvac",
-    no: 13,
+    no: 4,
+    phase: "company",
     title: "ROOFTOP UNIT",
     kind: "hvac",
     pad: 0,
     theme: "tower",
-    brief: "A packaged rooftop unit for the high-rise. Over the parapet, down on the curb, and do not clip the edge.",
+    brief: "A packaged unit over the parapet. Do not clip the edge on the way down.",
     pay: 8200,
-    rep: 11,
+    rep: 6,
     crane: "lattice",
     roof: true,
     repGain: 3,
@@ -305,61 +265,31 @@ const JOBS: Record<JobId, JobDef> = {
   },
   tracks: {
     id: "tracks",
-    no: 14,
+    no: 5,
+    phase: "company",
     title: "TRACK PICK",
     kind: "heavy",
     pad: 2,
     theme: "yard",
-    brief: "Crawler pick on the lowboy pad. Walk the tracks in, set the pads, and lift the base off the deck.",
+    brief: "The crawler arrives on the lowboy. Deliver it, then lift the base off the deck.",
     pay: 8600,
-    rep: 12,
+    rep: 8,
     crane: "crawler",
     roof: false,
     repGain: 3,
     ring: 1.3,
   },
-  double: {
-    id: "double",
-    no: 15,
-    title: "DOUBLE RUN",
-    kind: "crate",
-    pad: 5,
-    theme: "warehouse",
-    brief: "Two loads, one call. Set the crate, then the beam, and keep the clock and the sway on your side.",
-    pay: 1100,
-    follow: { title: "DOUBLE RUN 2", kind: "beam", pad: 3, pay: 4400, ring: 1 },
-    rep: 6,
-    crane: "heavy",
-    roof: false,
-    repGain: 1,
-    ring: 1.9,
-  },
-  spa: {
-    id: "spa",
-    no: 6,
-    title: "BACKYARD SPA DECK",
-    kind: "deck",
-    pad: 6,
-    theme: "residential",
-    brief: "Start on Maple Lane, drive down the street, and park in the marked side-drive setup box. Deploy before lifting the deck kit and hot tub through the gate to the backyard patio.",
-    pay: 3200,
-    follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
-    rep: 3,
-    crane: "yard",
-    roof: false,
-    repGain: 4,
-    ring: 1.2,
-  },
   wind: {
     id: "wind",
-    no: 16,
+    no: 6,
+    phase: "company",
     title: "RIDGE BLADE SET",
     kind: "blade",
     pad: 11,
     theme: "windFarm",
-    brief: "At the ridge-top wind farm, lift a 12.8 m turbine blade from the delivery cradle to the assembly stand beside the tower. Heavy crane required; Hard mode exposes the long load to ridge crosswinds.",
+    brief: "Lift a turbine blade from the delivery cradle to the stand beside the tower. Hard mode adds the ridge wind.",
     pay: 14800,
-    rep: 14,
+    rep: 10,
     crane: "heavy",
     roof: false,
     repGain: 4,
@@ -367,29 +297,14 @@ const JOBS: Record<JobId, JobDef> = {
   },
 };
 
-const JOB_ORDER: JobId[] = [
-  "yard",
-  "pipe",
-  "pad",
-  "truss",
-  "steel",
-  "spa",
-  "panel",
-  "heavy",
-  "container",
-  "floor",
-  "night",
-  "roof",
-  "hvac",
-  "tracks",
-  "double",
-  "wind",
-];
+/** Shop shift plus the company calls. Tutorials and odd jobs are not on this board. */
+export const COMPANY_JOBS: JobId[] = ["yard", "spa", "container", "roof", "hvac", "tracks", "wind"];
 
-/** Hargrove's rental shifts, in order. */
-export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "pad", "truss"];
+/** Two tutorials, then three small jobs. That is the whole hired list. */
+export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "truss", "panel", "garage"];
 
-export const LEVEL_COUNT = JOB_ORDER.length;
+/** Company calls only. The yard move is a shop shift, not a level. */
+export const LEVEL_COUNT = 6;
 
 /** Level card data for the board and the HUD. */
 export function levelOf(job: JobId) {
@@ -397,6 +312,7 @@ export function levelOf(job: JobId) {
   return {
     id: def.id,
     no: def.no,
+    phase: def.phase,
     title: def.title,
     kind: def.kind,
     theme: def.theme,
@@ -439,6 +355,7 @@ export type CareerState = {
 export type JobOffer = {
   id: JobId;
   no: number;
+  phase: JobPhase;
   title: string;
   kind: LoadKind;
   theme: SiteTheme;
@@ -519,7 +436,7 @@ function isCrane(value: unknown): value is CraneId {
 }
 
 function isJob(value: unknown): value is JobId {
-  return JOB_ORDER.includes(value as JobId);
+  return typeof value === "string" && value in JOBS;
 }
 
 function copy(state: CareerState): CareerState {
@@ -535,17 +452,9 @@ function veteranBump(state: CareerState) {
 }
 
 export function assignedJob(state: CareerState): JobId {
-  // A rental shift is picked by the record, not by the player: one new lesson
-  // per clean job, and a yard move is always the way out of downtime.
   if (state.downtime > 0) return "yard";
-  if (state.jobsDone >= ECONOMY.hiredTrussJobs) {
-    return state.standing >= ECONOMY.hiredTrussStanding ? "truss" : "yard";
-  }
-  if (state.jobsDone >= ECONOMY.hiredVarietyJobs) {
-    return state.standing >= ECONOMY.hiredVarietyStanding ? "pad" : "yard";
-  }
-  if (state.jobsDone >= 1) return "pipe";
-  return "yard";
+  const index = Math.min(state.jobsDone, RENTAL_LEVELS.length - 1);
+  return RENTAL_LEVELS[index] ?? "yard";
 }
 
 function callersWary(state: CareerState) {
@@ -561,26 +470,9 @@ export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reaso
     if (state.downtime > 0 && job !== "yard") {
       return { ok: false, reason: "You are on downtime. Only a yard move is open." };
     }
-    if (job === "pipe" && state.jobsDone < 1) {
-      return { ok: false, reason: "Hargrove puts the pipe drop on your list after the first clean yard move." };
-    }
-    if (job === "pad") {
-      if (state.jobsDone < ECONOMY.hiredVarietyJobs) {
-        return { ok: false, reason: `Hargrove assigns a warehouse set after ${ECONOMY.hiredVarietyJobs - state.jobsDone} more clean job${ECONOMY.hiredVarietyJobs - state.jobsDone === 1 ? "" : "s"}.` };
-      }
-      if (state.standing < ECONOMY.hiredVarietyStanding) {
-        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredVarietyStanding} before a warehouse set.` };
-      }
-      return { ok: true, reason: "Hargrove put a warehouse set on your list." };
-    }
-    if (job === "truss") {
-      if (state.jobsDone < ECONOMY.hiredTrussJobs) {
-        return { ok: false, reason: `Hargrove assigns the truss pick after ${ECONOMY.hiredTrussJobs - state.jobsDone} more clean job${ECONOMY.hiredTrussJobs - state.jobsDone === 1 ? "" : "s"}.` };
-      }
-      if (state.standing < ECONOMY.hiredTrussStanding) {
-        return { ok: false, reason: `Standing is ${state.standing}. Hargrove wants ${ECONOMY.hiredTrussStanding} before a truss pick.` };
-      }
-      return { ok: true, reason: "Hargrove put a truss pick on your list." };
+    const today = assignedJob(state);
+    if (job !== today) {
+      return { ok: false, reason: `Today is ${JOBS[today].title}. Finish that one.` };
     }
     if (state.downtime > 0) return { ok: true, reason: "Short wage. A clean yard move clears one downtime." };
     return { ok: true, reason: "" };
@@ -596,13 +488,10 @@ export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reaso
     return { ok: false, reason: `Needs the ${CRANES[def.crane].label.toLowerCase()} crane. You own the ${CRANES[state.crane].label.toLowerCase()}.` };
   }
   if (job === "roof" && !reachesRoof(state.crane)) {
-    return { ok: false, reason: "This crane cannot reach the roof. The floor set is the one that fits." };
+    return { ok: false, reason: "This crane cannot reach the roof." };
   }
   if (job === "tracks" && !state.crawlerOnSite) {
     return { ok: false, reason: "Crawler is on the lowboy. Deliver it to the pad, then this pick pays." };
-  }
-  if (job === "heavy" && craneRank(state.crane) < craneRank("lattice")) {
-    return { ok: true, reason: "This block is over the heavy crane's chart. It can still come up, and it can pull you over." };
   }
   if (job === "yard" && callersWary(state)) {
     return { ok: true, reason: "Callers are wary. This yard move pays less until reputation is back." };
@@ -639,6 +528,7 @@ export function activeOffer(state: CareerState): JobOffer {
   return {
     id,
     no: def.no,
+    phase: def.phase,
     title: follow ? follow.title : def.title,
     kind: follow ? follow.kind : def.kind,
     theme: def.theme,
@@ -658,13 +548,15 @@ export function activeOffer(state: CareerState): JobOffer {
 }
 
 export function jobBoard(state: CareerState): JobOffer[] {
-  return JOB_ORDER.map((id) => {
+  const ids = state.status === "hired" ? RENTAL_LEVELS : COMPANY_JOBS;
+  return ids.map((id) => {
     const gate = isUnlocked(state, id);
     const gross = grossFor(state, id, 0);
     const current = (state.status === "hired" ? assignedJob(state) : state.job) === id;
     return {
       id,
       no: JOBS[id].no,
+      phase: JOBS[id].phase,
       title: JOBS[id].title,
       kind: JOBS[id].kind,
       theme: JOBS[id].theme,
@@ -883,7 +775,7 @@ export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B
     } else {
       next.leg = 0;
     }
-    if (offer.id === "floor" || offer.id === "roof") next.roofDone = true;
+    if (offer.id === "roof") next.roofDone = true;
     next.roofActive = roofFor(next.job);
     if (next.downtime > 0 && offer.id === "yard") {
       next.downtime -= 1;
@@ -1021,7 +913,7 @@ function migrateLegacy(input: { cash: number; crane: CraneId; reputation: number
   next.standing = 80;
   next.jobsDone = input.reputation;
   if (input.roofActive && !input.roofDone) {
-    next.job = reachesRoof(input.crane) ? "roof" : "floor";
+    next.job = reachesRoof(input.crane) ? "roof" : "yard";
     next.roofActive = true;
   } else {
     next.job = "yard";
@@ -1059,7 +951,10 @@ export function loadCareer(raw: unknown): CareerState {
   else next.crawlerOnSite = crane !== "crawler";
   if (isJob(record.job)) next.job = record.job;
   if (next.status === "hired") next.job = assignedJob(next);
-  if (next.job === "roof" && !reachesRoof(next.crane)) next.job = "floor";
+  if (next.job === "roof" && !reachesRoof(next.crane)) {
+    next.job = "yard";
+    next.roofActive = false;
+  }
   if (next.status === "independent" && !isUnlocked(next, next.job).ok) {
     next.job = "yard";
     next.leg = 0;

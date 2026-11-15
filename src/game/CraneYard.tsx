@@ -467,7 +467,7 @@ export function CraneYard() {
       if (downRef.current) downRef.current.classList.toggle("hold-hot", hot === "hold-hot");
       const lampBtn = lightsBtnRef.current;
       if (lampBtn) {
-        const dark = nightRef.current || sim.career.job === "night";
+        const dark = nightRef.current;
         // Lights go out with the night rather than staying on into daylight.
         if (!dark && sim.lightsOn) {
           lightsRef.current = false;
@@ -813,7 +813,7 @@ export function CraneYard() {
             <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">SHOW JOB MAP</summary>
             <div className="mt-2 rounded border border-line bg-bg p-2 text-center text-xs">
               <p className="font-display tracking-widest text-muted">
-                LIFT ROUTE · {currentOffer.title} · LV {String(currentOffer.no).padStart(2, "0")}
+                LIFT ROUTE · {currentOffer.title} · {currentOffer.phase === "company" ? `LV ${String(currentOffer.no).padStart(2, "0")}` : currentOffer.phase === "odd" ? "ODD JOB" : "TUTORIAL"}
               </p>
               <div className="my-2 flex items-center justify-between gap-1">
                 <span className="rounded border border-primary px-2 py-2 font-display">
@@ -1037,8 +1037,7 @@ export function CraneYard() {
             <p className="font-display text-sm tracking-widest text-primary">SLINGLINE CAREER</p>
             <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">Ready for work?</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              You start on Hargrove&apos;s rental: four paid shifts, one new load at a time. File Slingline, then buy your own crane and take the
-              contracts that pay.
+              Two tutorials, then three small jobs. The wages pay the filing fee. After that the calls change: a backyard, the docks, a roof, and a wind blade.
             </p>
             <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
               {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
@@ -1081,7 +1080,7 @@ export function CraneYard() {
                       className={`flex items-baseline justify-between gap-2 border px-2 py-1 text-xs ${next ? "border-primary text-fg" : "border-line text-muted"}`}
                     >
                       <span className="font-display tracking-wide">
-                        {String(lv.no).padStart(2, "0")} · {lv.title}
+                        {lv.phase === "tutorial" ? "TUTORIAL" : "ODD JOB"} · {lv.title}
                       </span>
                       <span className="font-display text-[10px] tracking-widest">{done ? "DONE" : next ? "NEXT" : "—"}</span>
                     </li>
@@ -1413,7 +1412,7 @@ function JobButton({
       }
     >
       <span className="block font-display text-[10px] tracking-widest text-steel">
-        LV {String(offer.no).padStart(2, "0")} · {SITE_THEME_LABEL[offer.theme]} · {loadSpec(offer.kind).label}
+        {offer.phase === "tutorial" ? "TUTORIAL" : offer.phase === "odd" ? "ODD JOB" : offer.id === "yard" ? "SHOP" : `LV ${String(offer.no).padStart(2, "0")}`} · {SITE_THEME_LABEL[offer.theme]} · {loadSpec(offer.kind).label}
       </span>
       <span className="block font-display text-xl leading-none text-fg">{offer.title}</span>
       <span className={`mt-1 block text-xs leading-snug ${offer.locked ? "text-muted" : "text-steel"}`}>
