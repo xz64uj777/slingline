@@ -822,8 +822,9 @@ function dressThemes(
     crown.position.set(x, 5.5, z);
     residential.add(trunk, crown);
   }
-  add(residential, trimMat, 0.14, 1.45, 0.14, -91.5, 0.73, 16);
-  add(residential, doorMat, 0.82, 0.48, 0.48, -91.5, 1.45, 16);
+  // Mailbox sits on the lawn beside the side drive, not in the lane the crane uses.
+  add(residential, trimMat, 0.14, 1.45, 0.14, -97.4, 0.73, 11.2);
+  add(residential, doorMat, 0.82, 0.48, 0.48, -97.4, 1.45, 11.2);
   add(residential, trimMat, 0.16, 3.1, 0.16, -77.5, 1.55, 8.5);
   add(residential, doorMat, 1.75, 0.7, 0.12, -77.5, 3.05, 8.5);
 
@@ -863,10 +864,11 @@ function dressThemes(
   for (const x of [-5.95, 5.95]) add(backyardDeck, mats.dark, 0.16, 0.12, 8, x, 0.05, 0);
   residential.add(backyardDeck);
   for (const z of [36.7, 38.1]) add(residential, walkMat, 1.8, 0.1, 0.8, -103, 0.08, z);
-  for (const x of [-113, -92]) {
+  // Shrubs flank the front walk. The side drive and the setup box stay clear.
+  for (const x of [-109.8, -99.2]) {
     const shrub = new THREE.Mesh(treeLeaves, foliageMat);
     shrub.scale.set(0.75, 0.45, 0.65);
-    shrub.position.set(x, 0.75, 30);
+    shrub.position.set(x, 0.75, 22.2);
     residential.add(shrub);
   }
 

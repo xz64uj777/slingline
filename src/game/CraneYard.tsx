@@ -96,7 +96,8 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   const midX = (minX + maxX) / 2;
   const midZ = (minZ + maxZ) / 2;
   const px = (x: number) => w / 2 + (x - midX) * scale;
-  const py = (z: number) => h / 2 + (z - midZ) * scale;
+  // World +Z is north. North is up on the map.
+  const py = (z: number) => h / 2 - (z - midZ) * scale;
 
   if (sim.career.job === "spa") {
     ctx.strokeStyle = "#8a98a8";
@@ -108,6 +109,11 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
     ctx.fillText("PARK", px(MAPLE_LANE_SETUP.x) + 9, py(MAPLE_LANE_SETUP.z) + 3);
   }
 
+  ctx.fillStyle = "#8a98a8";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("N", w / 2 - 4, 12);
+
+  const jobKind = activeOffer(sim.career).kind;
   const ring = Math.max(8, sim.setTolerance * scale);
   ctx.strokeStyle = "#e3a23a";
   ctx.lineWidth = 2;
@@ -119,7 +125,7 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   ctx.fillText(sim.roofActive ? "ROOF" : "SET", px(dest.x) + ring + 2, py(dest.z) - 2);
 
   for (const piece of sim.pieces) {
-    const job = piece.kind === sim.load;
+    const job = piece.kind === jobKind;
     ctx.fillStyle = job ? "#8fc17a" : "#5c656e";
     ctx.fillRect(px(piece.x) - (job ? 5 : 3), py(piece.z) - (job ? 5 : 3), job ? 10 : 6, job ? 10 : 6);
     if (job) {
@@ -917,7 +923,7 @@ export function CraneYard() {
           <details ref={mapBoxRef} className="pointer-events-auto w-full max-w-[16rem] bg-surface px-3 py-2">
             <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">JOB MAP</summary>
             <canvas ref={mapRef} className="mt-2 h-[156px] w-full bg-bg" />
-            <p className="mt-1 font-display text-[10px] tracking-widest text-muted">GREEN LOAD · AMBER SET · YOU</p>
+            <p className="mt-1 font-display text-[10px] tracking-widest text-muted">NORTH UP · GREEN LOAD · AMBER SET · YOU</p>
           </details>
           <p
             ref={gapRef}
