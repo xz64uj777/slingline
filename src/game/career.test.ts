@@ -83,15 +83,15 @@ describe("wage versus contract", () => {
     const offer = activeOffer(freshCareer());
     assert.equal(offer.wage, true);
     assert.equal(offer.title, "YARD MOVE");
-    assert.equal(offer.gross, 900);
+    assert.equal(offer.gross, 1800);
     assert.equal(offer.take, Math.round(offer.gross * ECONOMY.wageShare));
     assert.ok(offer.take < offer.gross / 2);
     assert.ok(offer.take > 0);
     const label = contractLabel(freshCareer());
     assert.match(label, /WAGE/);
     assert.match(label, /OF/);
-    assert.match(label, /\$315/);
-    assert.match(label, /\$900/);
+    assert.match(label, /\$810/);
+    assert.match(label, /\$1,800/);
   });
 
   it("keeps the full contract after the company is filed", () => {
@@ -107,12 +107,12 @@ describe("wage versus contract", () => {
   it("banks the wage, not the contract, and does not raise reputation while hired", () => {
     const result = resolveSet(freshCareer(), "crate");
     assert.equal(result.matched, true);
-    assert.equal(result.banked, 315);
-    assert.equal(result.state.cash, 315);
+    assert.equal(result.banked, 810);
+    assert.equal(result.state.cash, 810);
     assert.equal(result.state.reputation, 0);
     assert.equal(result.state.status, "hired");
     assert.match(result.message, /wage/i);
-    assert.match(result.message, /\$900/);
+    assert.match(result.message, /\$1,800/);
   });
 
   it("cuts the wage on downtime and still pays something", () => {
@@ -368,10 +368,10 @@ describe("job unlocks", () => {
     const wary = owner({ reputation: 0, failures: 2, job: "yard" });
     const offer = activeOffer(wary);
     assert.equal(offer.wary, true);
-    assert.equal(offer.gross, Math.round(900 * ECONOMY.waryShare));
+    assert.equal(offer.gross, Math.round(1800 * ECONOMY.waryShare));
     assert.match(contractLabel(wary), /WARY/);
     const restored = owner({ reputation: 1, failures: 2, job: "yard" });
-    assert.equal(activeOffer(restored).gross, 900);
+    assert.equal(activeOffer(restored).gross, 1800);
   });
 });
 
@@ -392,7 +392,7 @@ describe("purchase and upgrade", () => {
     assert.equal(bought.state.cash, 0);
     assert.equal(bought.state.note, financedAmount("yard"));
     assert.equal(bought.haul, false);
-    assert.ok(downPayment("yard") > 315 * 4);
+    assert.ok(downPayment("yard") > 810);
 
     const tracks = buyCrane(owner({ crane: "tower", cash: downPayment("crawler") + 50 }));
     assert.equal(tracks.ok, true);
@@ -415,17 +415,17 @@ describe("purchase and upgrade", () => {
 
 describe("failure penalties", () => {
   it("docks a hired hand and can put them on downtime", () => {
-    const dropped = resolveFailure({ ...freshCareer(), cash: 400, standing: 70 }, "drop");
+    const dropped = resolveFailure({ ...freshCareer(), cash: 2000, standing: 70 }, "drop");
     assert.ok(dropped.state.standing < 70);
-    assert.ok(dropped.state.cash < 400);
-    assert.equal(dropped.state.cash, 400 - Math.round(315 * 0.5));
+    assert.ok(dropped.state.cash < 2000);
+    assert.equal(dropped.state.cash, 2000 - Math.round(810 * 0.5));
     assert.match(dropped.message, /docked/i);
     assert.equal(isUnlocked(dropped.state, "yard").ok, true);
 
-    const tipped = resolveFailure({ ...freshCareer(), cash: 400, standing: 70 }, "tip");
+    const tipped = resolveFailure({ ...freshCareer(), cash: 2000, standing: 70 }, "tip");
     assert.equal(tipped.state.downtime, 1);
     assert.ok(tipped.state.standing <= 70 - ECONOMY.standingTip);
-    assert.equal(tipped.state.cash, 400 - 315);
+    assert.equal(tipped.state.cash, 2000 - 810);
     assert.match(tipped.message, /yard move/i);
     assert.equal(assignedJob(tipped.state), "yard");
   });
@@ -508,8 +508,8 @@ describe("operating costs", () => {
   it("takes fuel and a note payment without eating the whole contract", () => {
     const state = owner({ note: 5000, cash: 0, job: "yard" });
     const result = resolveSet(state, "crate");
-    const notePaid = Math.min(5000, Math.round(900 * ECONOMY.noteSlice), Math.round(900 * ECONOMY.noteCap));
-    assert.equal(result.banked, 900 - UPKEEP.rental - notePaid);
+    const notePaid = Math.min(5000, Math.round(1800 * ECONOMY.noteSlice), Math.round(1800 * ECONOMY.noteCap));
+    assert.equal(result.banked, 1800 - UPKEEP.rental - notePaid);
     assert.ok(result.banked > 0);
     assert.equal(result.state.note, 5000 - notePaid);
     assert.match(result.message, /Fuel/);

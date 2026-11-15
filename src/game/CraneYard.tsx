@@ -918,7 +918,7 @@ export function CraneYard() {
       {playing ? (
         <div className="pointer-events-none absolute left-3 top-36 flex max-w-[11.5rem] flex-col items-start gap-2 sm:max-w-xs">
           <p ref={callRef} className="bg-surface px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">
-            YARD MOVE: CRATE · WAGE $315 OF $900
+            YARD MOVE: CRATE · WAGE $810 OF $1,800
           </p>
           <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
             Find the marked load. Lower the hook until it is over the crate, attach it, then carry it to the amber set ring.

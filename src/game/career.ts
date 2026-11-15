@@ -43,7 +43,7 @@ export const BOSS = "Hargrove Crane";
  * it costs, so a bad streak cannot trap the player.
  */
 export const ECONOMY = {
-  wageShare: 0.35,
+  wageShare: 0.45,
   shortWageShare: 0.6,
   waryShare: 0.8,
   foundCash: 1900,
@@ -127,7 +127,7 @@ const JOBS: Record<JobId, JobDef> = {
     pad: 5,
     theme: "yard",
     brief: "Tutorial. Hook the crate, keep the sway down, and set it inside the amber ring.",
-    pay: 900,
+    pay: 1800,
     rep: 0,
     crane: "rental",
     roof: false,
@@ -143,7 +143,7 @@ const JOBS: Record<JobId, JobDef> = {
     pad: 3,
     theme: "steel",
     brief: "Tutorial. Set the pads before you lift the pipe, or it leans the crane. The ring is across the yard. Stow, drive to it, set the pads again, and lower the pipe in.",
-    pay: 1500,
+    pay: 2800,
     rep: 0,
     crane: "rental",
     roof: false,
@@ -159,7 +159,7 @@ const JOBS: Record<JobId, JobDef> = {
     pad: 4,
     theme: "steel",
     brief: "Tutorial. A light truss catches every gust. Set it in the ring, or skip ahead if you already know the controls.",
-    pay: 1400,
+    pay: 2600,
     rep: 0,
     crane: "rental",
     roof: false,
@@ -175,7 +175,7 @@ const JOBS: Record<JobId, JobDef> = {
     pad: 2,
     theme: "warehouse",
     brief: "Small job. A flat panel tips if you rush it. Short pay, and it counts toward the fee.",
-    pay: 1600,
+    pay: 3000,
     rep: 0,
     crane: "rental",
     roof: false,
@@ -191,7 +191,7 @@ const JOBS: Record<JobId, JobDef> = {
     pad: 1,
     theme: "warehouse",
     brief: "Small job. A condenser for the shop office. Short swing, and this wage should clear the filing fee.",
-    pay: 1800,
+    pay: 3400,
     rep: 0,
     crane: "rental",
     roof: false,
@@ -631,7 +631,7 @@ export function foundCompany(state: CareerState): CareerResult {
   next.job = "yard";
   next.leg = 0;
   next.roofActive = false;
-  next.reputation = Math.max(1, next.reputation);
+  next.reputation = Math.max(2, next.reputation);
   next.standing = 100;
   return { ok: true, state: next, message: FOUNDING_MESSAGE, haul: false, banked: 0, matched: false };
 }
