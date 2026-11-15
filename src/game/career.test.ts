@@ -18,6 +18,7 @@ import {
   isUnlocked,
   LEVEL_COUNT,
   levelOf,
+  skipTutorial,
   loadCareer,
   readCareer,
   resolveFailure,
@@ -339,7 +340,28 @@ describe("job unlocks", () => {
     assert.equal(wind.theme, "windFarm");
     assert.match(wind.title, /BLADE/i);
     assert.equal(levelOf("yard").phase, "tutorial");
+    assert.equal(levelOf("pipe").phase, "tutorial");
+    assert.equal(levelOf("truss").phase, "tutorial");
     assert.equal(levelOf("garage").phase, "odd");
+  });
+
+  it("skips a tutorial without a wage and stops once the paid jobs start", () => {
+    const first = skipTutorial(freshCareer());
+    assert.equal(first.ok, true);
+    assert.equal(first.banked, 0);
+    assert.equal(first.state.cash, 0);
+    assert.equal(first.state.jobsDone, 1);
+    assert.equal(assignedJob(first.state), "pipe");
+
+    const second = skipTutorial(first.state);
+    const third = skipTutorial(second.state);
+    assert.equal(assignedJob(third.state), "panel");
+    assert.equal(third.state.cash, 0);
+
+    const blocked = skipTutorial(third.state);
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.state.jobsDone, 3);
+    assert.match(blocked.message, /not a tutorial/i);
   });
 
   it("shrinks a yard move when callers are wary and restores it with reputation", () => {

@@ -903,7 +903,7 @@ export function CraneYard() {
                 "Lower with DOWN or E/F. The load does not hook itself. Press HOOK when the hook is on it. After it is on the hook, the slew and boom cues point at the set.",
                 "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
-                "Lower with DOWN until the load is resting in the marked amber ring. A clean placement inside the ring completes the job; if you set it down outside, hoist it and lower it again inside.",
+                "Lower with DOWN until the load is resting in the marked amber ring. Press RELEASE to finish the set. If you set it down outside, hoist it and lower it again inside.",
               ][trainingStep]}
             </p>
             <div className="mt-4 flex gap-2">
@@ -956,6 +956,18 @@ export function CraneYard() {
             0.0 m
           </p>
           <div className="pointer-events-auto flex flex-wrap gap-1">
+            {summary.tutorial ? (
+              <button
+                type="button"
+                onClick={() => {
+                  simRef.current?.skipTutorial();
+                  refreshBooks();
+                }}
+                className="h-11 border border-line bg-surface px-3 font-display text-sm tracking-wide text-fg"
+              >
+                SKIP TUTORIAL
+              </button>
+            ) : null}
             <button
               ref={soloRef}
               type="button"
@@ -1156,11 +1168,23 @@ export function CraneYard() {
             <p className="font-display text-sm tracking-widest text-primary">SLINGLINE CAREER</p>
             <h2 className="mt-1 font-display text-4xl leading-none sm:text-5xl">Ready for work?</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Two tutorials, then three small jobs. The wages pay the filing fee. After that the calls change: a backyard, the docks, a roof, and a wind blade.
+              Three tutorials, then two small jobs. You can skip a tutorial. The wages pay the filing fee. After that the calls change: a backyard, the docks, a roof, and a wind blade.
             </p>
             <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
               {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
             </button>
+            {summary.tutorial ? (
+              <button
+                type="button"
+                className="mt-2 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg"
+                onClick={() => {
+                  simRef.current?.skipTutorial();
+                  refreshBooks();
+                }}
+              >
+                SKIP TUTORIAL
+              </button>
+            ) : null}
             <details className="mt-3 border border-line bg-bg p-3">
               <summary className="cursor-pointer font-display text-base tracking-wide">CAREER DETAILS · {summary.company}</summary>
             <p className="mt-2 text-sm leading-relaxed text-muted">{summary.employer}</p>

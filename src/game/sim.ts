@@ -16,6 +16,7 @@ import {
   readCareerStore,
   resolveFailure,
   resolveSet,
+  skipTutorial as skipCareerTutorial,
   statusLine,
   writeCareerStore,
   type CareerState,
@@ -347,6 +348,26 @@ export class CraneSim {
     this.currentSite = null;
     this.stockYard(true);
     if (this.crane === "crawler" && !this.career.crawlerOnSite) this.beginHaul();
+  }
+
+  skipTutorial() {
+    const result = skipCareerTutorial(this.career);
+    if (!result.ok) {
+      this.message = result.message;
+      return;
+    }
+    this.adopt(result.state);
+    this.writeCareer();
+    this.state = "driving";
+    this.speed = 0;
+    this.outrigger = 0;
+    this.deployDir = 0;
+    this.flipped = false;
+    this.roll = 0;
+    this.rollRate = 0;
+    this.currentSite = null;
+    this.stockYard(true);
+    this.message = result.message;
   }
 
   private beginHaul() {

@@ -112,7 +112,7 @@ type JobDef = {
 };
 
 /**
- * Hired work is two tutorials and three small jobs. The wages pay the filing
+ * Hired work is three tutorials and two small jobs. The wages pay the filing
  * fee. After Slingline is filed, the board is only calls that change the work:
  * a backyard, the docks, one roof, a rooftop unit, the crawler, and a blade.
  * The yard move stays as the shop shift so a bad streak cannot trap the player.
@@ -153,12 +153,12 @@ const JOBS: Record<JobId, JobDef> = {
   truss: {
     id: "truss",
     no: 3,
-    phase: "odd",
+    phase: "tutorial",
     title: "TRUSS PICK",
     kind: "truss",
     pad: 4,
     theme: "steel",
-    brief: "Small job. A light truss catches every gust. The wage goes toward filing Slingline.",
+    brief: "Tutorial. A light truss catches every gust. Set it in the ring, or skip ahead if you already know the controls.",
     pay: 1400,
     rep: 0,
     crane: "rental",
@@ -300,7 +300,7 @@ const JOBS: Record<JobId, JobDef> = {
 /** Shop shift plus the company calls. Tutorials and odd jobs are not on this board. */
 export const COMPANY_JOBS: JobId[] = ["yard", "spa", "container", "roof", "hvac", "tracks", "wind"];
 
-/** Two tutorials, then three small jobs. That is the whole hired list. */
+/** Three tutorials, then two small jobs. That is the whole hired list. */
 export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "truss", "panel", "garage"];
 
 /** Company calls only. The yard move is a shop shift, not a level. */
@@ -786,6 +786,34 @@ export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B
   return { ok: true, state: next, message, haul: false, banked, matched: true };
 }
 
+/** Skip the current hired tutorial. No wage. The next assigned job starts immediately. */
+export function skipTutorial(state: CareerState): CareerResult {
+  if (state.status !== "hired") {
+    return { ok: false, state, message: "Tutorials are finished.", haul: false, banked: 0, matched: false };
+  }
+  if (state.downtime > 0) {
+    return { ok: false, state, message: "Clear downtime with a yard move before you skip.", haul: false, banked: 0, matched: false };
+  }
+  const current = assignedJob(state);
+  if (JOBS[current].phase !== "tutorial") {
+    return { ok: false, state, message: "This one pays. It is not a tutorial.", haul: false, banked: 0, matched: false };
+  }
+  const next = copy(state);
+  next.jobsDone += 1;
+  next.contract += 1;
+  next.leg = 0;
+  next.job = assignedJob(next);
+  next.roofActive = false;
+  return {
+    ok: true,
+    state: next,
+    message: `Skipped ${JOBS[current].title}. Next is ${JOBS[next.job].title}. No wage.`,
+    haul: false,
+    banked: 0,
+    matched: false,
+  };
+}
+
 export function resolveWrongLoad(state: CareerState): CareerResult {
   const next = copy(state);
   next.failures += 1;
@@ -889,6 +917,7 @@ export function careerSummary(state: CareerState) {
     levelCount: LEVEL_COUNT,
     rentalStep: state.status === "hired" ? Math.min(RENTAL_LEVELS.length, state.jobsDone + 1) : 0,
     rentalTotal: RENTAL_LEVELS.length,
+    tutorial: state.status === "hired" && offer.phase === "tutorial",
     found,
     hired: state.status === "hired",
   };
