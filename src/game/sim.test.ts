@@ -684,6 +684,30 @@ describe("set grading", () => {
   });
 });
 
+describe("pipe haul", () => {
+  it("keeps a rigged pipe upright and puts the ring out of boom reach", () => {
+    const sim = new CraneSim();
+    sim.practicing = true;
+    sim.career = { ...sim.career, job: "pipe", jobsDone: 1 };
+    sim.clockIn();
+    assert.equal(sim.load, "pipe");
+    const source = sim.pieces[0]!;
+    const spot = sim.setSpot();
+    assert.ok(Math.hypot(spot.x - source.x, spot.z - source.z) > 20, "the pipe ring has to be a drive");
+
+    sim.outrigger = 1;
+    sim.state = "lifting";
+    hookUp(sim, 0);
+    sim.outrigger = 1;
+    sim.boomPitch = 0.9;
+    sim.extension = 0;
+    run(sim, 1.2, { hoist: 1 });
+    assert.equal(sim.attached, true);
+    assert.notEqual(sim.limitState, "over");
+    assert.ok(Math.abs(sim.roll) < 0.05, `rigged pipe leaned ${sim.roll}`);
+  });
+});
+
 describe("operator load chart", () => {
   it("reads radius from the slewing axis, not the yard origin", () => {
     const sim = new CraneSim();

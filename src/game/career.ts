@@ -142,7 +142,7 @@ const JOBS: Record<JobId, JobDef> = {
     kind: "pipe",
     pad: 3,
     theme: "steel",
-    brief: "Tutorial. A long pipe swings wide. Bring it across flat and set it in the tighter ring.",
+    brief: "Tutorial. Set the pads before you lift the pipe, or it leans the crane. The ring is across the yard. Stow, drive to it, set the pads again, and lower the pipe in.",
     pay: 1500,
     rep: 0,
     crane: "rental",

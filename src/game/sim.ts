@@ -82,7 +82,7 @@ export const PADS: Pad[] = [
   { x: 0, z: -9 },
   { x: 13, z: -8 },
   { x: 12, z: 14 },
-  { x: -16, z: -4 },
+  { x: 4, z: 30 },
   { x: -8, z: -2 },
   { x: 7, z: -3 },
   { x: -101, z: 41 },
@@ -786,6 +786,7 @@ export class CraneSim {
       this.safetyLock = false;
       this.safetyBypass = false;
       this.pinHook();
+      this.rideLoad();
       this.noteStructure(dt);
       return;
     }
@@ -1066,7 +1067,13 @@ export class CraneSim {
     this.peakSway = 0;
     this.peakChart = 0;
     const noun = loadSpec(piece.kind).noun;
-    this.message = this.limitState === "ok" ? `${noun} on the hook. Set it in the amber ring.` : this.message;
+    const spot = this.setSpot();
+    const haul = Math.hypot(piece.x - spot.x, piece.z - spot.z) > 18;
+    this.message = this.limitState === "ok"
+      ? haul
+        ? `${noun} on the hook. Stow the pads and drive it to the ring.`
+        : `${noun} on the hook. Set it in the amber ring.`
+      : this.message;
   }
 
   requestRelease() {
@@ -1455,6 +1462,15 @@ export class CraneSim {
     this.hookSpeed = 0;
   }
 
+  private rideLoad() {
+    if (!this.attached || this.carry == null) return;
+    const piece = this.pieces[this.carry];
+    if (!piece) return;
+    piece.x = this.hx;
+    piece.z = this.hz;
+    piece.y = Math.max(this.restY(piece.kind), this.hy - this.hang);
+  }
+
   private loadDemand() {
     // An empty hook has no suspended load. Nearby yard pieces are candidates,
     // not cargo; never apply their weight to the live load chart until hooked.
@@ -1477,7 +1493,8 @@ export class CraneSim {
                 : 3.2;
     const angle = 0.4 + 0.6 * Math.sin(this.boomPitch);
     const reach = this.extension / Math.max(1, this.extendMax);
-    return rating * angle * (1 - 0.62 * reach);
+    const planted = this.usesOutriggers() && this.outrigger >= 0.98 ? 1.55 : 1;
+    return rating * angle * (1 - 0.62 * reach) * planted;
   }
 
   private updateChart(dt: number) {
@@ -1597,11 +1614,15 @@ export class CraneSim {
     }
     if (this.airborne && this.limitState === "ok" && Math.abs(this.roll) < 0.08) {
       const noun = loadSpec(this.load).noun;
+      const spot = this.setSpot();
+      const haul = Math.hypot(this.hx - spot.x, this.hz - spot.z) > 16;
       this.message = this.roofActive
         ? this.roofDeck().y > 10
           ? `Set the ${noun} on the roof ring.`
           : `Set the ${noun} on the floor ring.`
-        : "Set it inside the amber ring.";
+        : haul
+          ? "Pads are holding the pipe. Stow them and drive to the ring."
+          : "Set it inside the amber ring.";
     }
   }
 

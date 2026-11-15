@@ -490,6 +490,10 @@ export function CraneYard() {
                   : "SETUP · Stop in the work area, then deploy the pads.";
         } else if (sim.attached && sim.landed) {
           objective = "SET · Load is outside the amber ring. Hoist it, reposition, and lower it inside.";
+        } else if (sim.attached && sim.setSpot().meters > 16) {
+          objective = sim.state === "lifting"
+            ? "HAUL · Pads are set. Stow them, then drive the load to the amber ring."
+            : "DRIVE · Take the load to the amber ring, stop, and deploy again before you set it.";
         } else if (sim.attached) {
           objective = `DELIVER · Carry the ${liveCargo} into the amber ring; slow down and let it settle.`;
         } else if (sim.hookReady) {
