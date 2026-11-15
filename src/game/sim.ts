@@ -1171,10 +1171,6 @@ export class CraneSim {
 
   requestDeploy() {
     if (this.flipped) return;
-    if (this.attached) {
-      this.message = "Set the load down before you stow the pads.";
-      return;
-    }
     if (this.hauling) {
       if (!this.bStopped()) {
         this.message = "Stop the lowboy first.";
@@ -1225,7 +1221,9 @@ export class CraneSim {
       this.state = "driving";
       this.deployDir = -1;
       this.speed = 0;
-      this.message = "Stowing the pads. The boom folds for travel.";
+      this.message = this.attached
+        ? "Stowing the pads. The load stays on the hook."
+        : "Stowing the pads. The boom folds for travel.";
       return;
     }
     if (!this.bStopped()) {

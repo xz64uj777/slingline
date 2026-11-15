@@ -709,6 +709,23 @@ describe("pipe haul", () => {
     assert.notEqual(sim.limitState, "over");
     assert.ok(Math.abs(sim.roll) < 0.05, `rigged pipe leaned ${sim.roll}`);
   });
+
+  it("stows the pads while the pipe stays on the hook", () => {
+    const sim = new CraneSim();
+    sim.outrigger = 1;
+    sim.state = "lifting";
+    hookUp(sim, 0);
+    sim.outrigger = 1;
+    sim.state = "lifting";
+    sim.requestDeploy();
+    assert.equal(sim.attached, true);
+    assert.equal(sim.deployDir, -1);
+    run(sim, 2.2);
+    assert.ok(sim.outrigger < 0.05, `pads still out at ${sim.outrigger}`);
+    assert.equal(sim.attached, true);
+    const piece = sim.pieces[sim.carry!]!;
+    assert.ok(Math.hypot(piece.x - sim.truckX, piece.z - sim.truckZ) < 14, "the pipe should ride with the truck");
+  });
 });
 
 describe("operator load chart", () => {
