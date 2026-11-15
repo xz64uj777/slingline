@@ -32,7 +32,7 @@ export type JobId =
 
 export type JobPhase = "tutorial" | "odd" | "company";
 
-export const CAREER_KEY = "slingline-career";
+export const CAREER_KEY = "slingline-career-v3";
 export const BOSS = "Hargrove Crane";
 
 /**

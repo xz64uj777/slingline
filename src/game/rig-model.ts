@@ -637,7 +637,13 @@ export function applyCraneLook(model: CraneModel, crane: CraneId, shown: number,
   const gantry = crane === "crawler" || crane === "lattice";
   p.aLeft.visible = gantry && !packed;
   p.aRight.visible = p.aLeft.visible;
-  if (gantry) {
+  if (crane === "lattice") {
+    // Live mast stands on the house and leans back over the counterweight.
+    put(p.aLeft, -0.36, 2.35, 0.55, 0.07, 2.7, 0.07);
+    put(p.aRight, 0.36, 2.35, 0.55, 0.07, 2.7, 0.07);
+    p.aLeft.rotation.x = -0.7;
+    p.aRight.rotation.x = -0.7;
+  } else if (gantry) {
     put(p.aLeft, -0.45, 1.35, 0.15, 0.08, 1.5, 0.08);
     put(p.aRight, 0.45, 1.35, 0.15, 0.08, 1.5, 0.08);
     p.aLeft.rotation.x = -0.45;
@@ -676,11 +682,30 @@ export function applyCraneLook(model: CraneModel, crane: CraneId, shown: number,
   }
 
   if (lattice) {
-    showTruss(p.truss, shown, crane === "crawler" ? 0.42 : 0.38, crane === "crawler" ? 0.7 : 0.85, 0.05);
-  } else hideTruss(p.truss);
+    const halfX = crane === "crawler" ? 0.46 : 0.4;
+    const rise = crane === "crawler" ? 0.62 : 0.78;
+    const y0 = crane === "crawler" ? 0.78 : 1.16;
+    showTruss(p.truss, shown, halfX, rise, y0);
+    const headY = y0 + rise * 0.42;
+    model.tip.position.set(0, headY, -shown);
+    const block = model.tip.children[0] as THREE.Mesh;
+    const sheave = model.tip.children[1] as THREE.Mesh;
+    block.scale.set(halfX * 1.9, rise * 0.96, 0.18);
+    block.position.set(0, 0, 0);
+    sheave.scale.set(halfX * 0.75, rise * 0.32, halfX * 0.75);
+    sheave.position.set(0, -rise * 0.2, 0.05);
+  } else {
+    hideTruss(p.truss);
+    model.tip.position.set(0, tele ? 0.22 : 0.28, -shown);
+    const block = model.tip.children[0] as THREE.Mesh;
+    const sheave = model.tip.children[1] as THREE.Mesh;
+    block.scale.set(0.34, 0.16, 0.28);
+    block.position.set(0, 0, 0);
+    sheave.scale.set(0.22, 0.16, 0.22);
+    sheave.position.set(0, -0.02, 0);
+  }
   if (tower && !packed) showTruss(p.jib, shown, 0.46, 0.32, 0.15);
   else hideTruss(p.jib);
 
-  model.tip.position.set(0, tele ? 0.22 : 0.28, -shown);
   model.tip.visible = true;
 }

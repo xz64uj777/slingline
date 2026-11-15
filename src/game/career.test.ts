@@ -7,6 +7,7 @@ import {
   assignedJob,
   buyCrane,
   canFound,
+  CAREER_KEY,
   companyName,
   contractLabel,
   downPayment,
@@ -238,7 +239,7 @@ describe("save and reload", () => {
     hired = resolveSet(hired, activeOffer(hired).kind).state;
     writeCareer(hired, hiredSave.storage);
     assert.deepEqual(readCareer(hiredSave.storage), hired);
-    const raw = JSON.parse(hiredSave.mem.get("slingline-career") ?? "{}") as { v?: number; status?: string };
+    const raw = JSON.parse(hiredSave.mem.get(CAREER_KEY) ?? "{}") as { v?: number; status?: string };
     assert.equal(raw.v, 2);
     assert.equal(raw.status, "hired");
 
