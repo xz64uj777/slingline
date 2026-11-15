@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Lightbulb } from "lucide-react";
-import { CraneSim, CRANE_CHOICES, MAPLE_LANE_SETUP, PADS, type CraneId, type Mode, type Pace } from "@/game/sim";
+import { CraneSim, CRANE_CHOICES, HOUSES, MAPLE_LANE_SETUP, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   ECONOMY,
   RENTAL_LEVELS,
@@ -73,13 +73,19 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   ctx.fillStyle = "#121418";
   ctx.fillRect(0, 0, w, h);
 
-  const dest = sim.roofActive ? sim.roofDeck() : PADS[sim.to] ?? PADS[0]!;
+  const spot = sim.setSpot();
+  const dest = { x: spot.x, z: spot.z };
   const spots = [
     { x: sim.truckX, z: sim.truckZ },
-    { x: dest.x, z: dest.z },
+    dest,
     ...sim.pieces.map((piece) => ({ x: piece.x, z: piece.z })),
   ];
-  if (sim.career.job === "spa") spots.push({ x: MAPLE_LANE_SETUP.x, z: MAPLE_LANE_SETUP.z });
+  if (sim.career.job === "spa") {
+    spots.push({ x: MAPLE_LANE_SETUP.x, z: MAPLE_LANE_SETUP.z });
+    for (const house of HOUSES) {
+      spots.push({ x: house.x - house.hx, z: house.z - house.hz }, { x: house.x + house.hx, z: house.z + house.hz });
+    }
+  }
   let minX = Infinity;
   let maxX = -Infinity;
   let minZ = Infinity;
@@ -100,6 +106,13 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   const py = (z: number) => h / 2 - (z - midZ) * scale;
 
   if (sim.career.job === "spa") {
+    ctx.strokeStyle = "#6a5848";
+    ctx.lineWidth = 1;
+    for (const house of HOUSES) {
+      const left = px(house.x - house.hx);
+      const top = py(house.z + house.hz);
+      ctx.strokeRect(left, top, px(house.x + house.hx) - left, py(house.z - house.hz) - top);
+    }
     ctx.strokeStyle = "#8a98a8";
     ctx.setLineDash([3, 3]);
     ctx.strokeRect(px(MAPLE_LANE_SETUP.x) - 7, py(MAPLE_LANE_SETUP.z) - 7, 14, 14);
@@ -115,14 +128,23 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
 
   const jobKind = activeOffer(sim.career).kind;
   const ring = Math.max(8, sim.setTolerance * scale);
+  const dx = px(dest.x);
+  const dz = py(dest.z);
   ctx.strokeStyle = "#e3a23a";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(px(dest.x), py(dest.z), ring, 0, Math.PI * 2);
+  ctx.arc(dx, dz, ring, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(dx - 7, dz);
+  ctx.lineTo(dx + 7, dz);
+  ctx.moveTo(dx, dz - 7);
+  ctx.lineTo(dx, dz + 7);
   ctx.stroke();
   ctx.fillStyle = "#e3a23a";
   ctx.font = "10px sans-serif";
-  ctx.fillText(sim.roofActive ? "ROOF" : "SET", px(dest.x) + ring + 2, py(dest.z) - 2);
+  ctx.fillText(`${spot.name} ${spot.where}`, dx + 8, dz - 8);
+  ctx.fillText(spot.meters < sim.setTolerance ? "ON THE MARK" : `${spot.meters.toFixed(1)} m`, dx + 8, dz + 4);
 
   for (const piece of sim.pieces) {
     const job = piece.kind === jobKind;
@@ -225,6 +247,7 @@ export function CraneYard() {
   const hookLabelRef = useRef<HTMLSpanElement>(null);
   const hookBtnRef = useRef<HTMLButtonElement>(null);
   const gapRef = useRef<HTMLParagraphElement>(null);
+  const setRef = useRef<HTMLParagraphElement>(null);
   const dotRef = useRef<HTMLSpanElement>(null);
   const swayWrapRef = useRef<HTMLDivElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -444,6 +467,17 @@ export function CraneYard() {
         const show = !sim.attached && sim.hookGap < 12;
         gapRef.current.style.display = show ? "block" : "none";
         if (show) gapRef.current.textContent = `${sim.hookLabel} · ${sim.hookGap.toFixed(1)} m to hook`;
+      }
+      if (setRef.current) {
+        const place = sim.setSpot();
+        const show = sim.phase !== "done" && sim.phase !== "broke";
+        setRef.current.style.display = show ? "block" : "none";
+        if (show) {
+          setRef.current.textContent =
+            place.meters < sim.setTolerance
+              ? `${place.name} · ON THE MARK`
+              : `${place.name} ${place.where} · ${place.meters.toFixed(1)} m`;
+        }
       }
       const liveOffer = activeOffer(sim.career);
       const liveCargo = loadSpec(liveOffer.kind).label;
@@ -923,8 +957,14 @@ export function CraneYard() {
           <details ref={mapBoxRef} className="pointer-events-auto w-full max-w-[16rem] bg-surface px-3 py-2">
             <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">JOB MAP</summary>
             <canvas ref={mapRef} className="mt-2 h-[156px] w-full bg-bg" />
-            <p className="mt-1 font-display text-[10px] tracking-widest text-muted">NORTH UP · GREEN LOAD · AMBER SET · YOU</p>
+            <p className="mt-1 font-display text-[10px] tracking-widest text-muted">NORTH UP · CROSS IS THE EXACT SET</p>
           </details>
+          <p
+            ref={setRef}
+            className="bg-surface px-3 py-2 text-left font-display text-lg tracking-wide text-primary"
+          >
+            SET · 0.0 m
+          </p>
           <p
             ref={gapRef}
             style={{ display: "none" }}

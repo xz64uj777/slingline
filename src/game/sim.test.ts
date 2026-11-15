@@ -690,3 +690,37 @@ describe("operator load chart", () => {
     assert.equal(retracted.extendMax, sim.extendMax);
   });
 });
+
+describe("house damage", () => {
+  it("charges for an outrigger in the house and more when the boom is deeper", () => {
+    const graze = new CraneSim();
+    graze.career = { ...graze.career, status: "independent", job: "spa", cash: 5000, reputation: 4, crane: "yard" };
+    graze.truckX = -93.2;
+    graze.truckZ = 30;
+    graze.heading = Math.PI;
+    graze.yaw = Math.PI;
+    graze.outrigger = 1;
+    graze.state = "driving";
+    graze.boomPitch = 0.05;
+    graze.extension = 0;
+    run(graze, 0.1);
+    const grazeBill = 5000 - graze.cash;
+    assert.ok(grazeBill > 0, "a pad in the wall should cost money");
+    assert.match(graze.message, /house/i);
+
+    const through = new CraneSim();
+    through.career = { ...through.career, status: "independent", job: "spa", cash: 5000, reputation: 4, crane: "yard" };
+    through.truckX = -90;
+    through.truckZ = 30;
+    through.heading = Math.PI / 2;
+    through.yaw = Math.PI / 2;
+    through.outrigger = 0;
+    through.state = "lifting";
+    through.boomPitch = 0.35;
+    through.extension = through.extendMax;
+    run(through, 0.1);
+    const throughBill = 5000 - through.cash;
+    assert.ok(throughBill > grazeBill, `boom bill ${throughBill} should exceed pad bill ${grazeBill}`);
+    assert.match(through.message, /Boom through the house/);
+  });
+});

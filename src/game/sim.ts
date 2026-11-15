@@ -12,6 +12,7 @@ import {
   employerLine,
   foundCompany as foundCareer,
   freshCareer,
+  money,
   readCareerStore,
   resolveFailure,
   resolveSet,
@@ -59,12 +60,13 @@ export const YARD_BLOCKS: { x: number; z: number; hx: number; hz: number }[] = [
   { x: 22, z: -42, hx: 1.8, hz: 2.8 },
 ];
 const RESIDENTIAL_HOUSE_BLOCKS = [
-  { x: -102, z: 30, hx: 7, hz: 5 },
-  { x: -134, z: 30, hx: 4.5, hz: 4 },
-  { x: -120, z: 30, hx: 4.5, hz: 4 },
-  { x: -80, z: 30, hx: 4.5, hz: 4 },
-  { x: -68, z: 30, hx: 4.5, hz: 4 },
+  { x: -102, z: 30, hx: 7, hz: 5, top: 8.4 },
+  { x: -134, z: 30, hx: 4.5, hz: 4, top: 6.4 },
+  { x: -120, z: 30, hx: 4.5, hz: 4, top: 6.4 },
+  { x: -80, z: 30, hx: 4.5, hz: 4, top: 6.4 },
+  { x: -68, z: 30, hx: 4.5, hz: 4, top: 6.4 },
 ];
+export const HOUSES = RESIDENTIAL_HOUSE_BLOCKS;
 export const MAPLE_LANE_START = { x: -130, z: 8, heading: Math.PI / 2 } as const;
 export const MAPLE_LANE_SETUP = { x: -92, z: 30, radius: 3.4 } as const;
 export const WIND_FARM_START = { x: 80, z: 79, heading: Math.PI / 2 } as const;
@@ -210,6 +212,10 @@ export class CraneSim {
   crane: CraneId = "rental";
   message = "You work for Hargrove. Take the wage and set the crate.";
   private flipBilled = false;
+  private padStrike = 0;
+  private boomStrike = 0;
+  private padClear = 0;
+  private boomClear = 0;
   private currentSite: "yard" | "residential" | "windFarm" | null = null;
   warn = false;
   /** Crane work lights, switched on by the player after dark. */
@@ -524,6 +530,32 @@ export class CraneSim {
     return FLOOR;
   }
 
+  /** Exact place the current load has to land, and how far the hook is from it. */
+  setSpot() {
+    const offer = activeOffer(this.career);
+    const name = loadSpec(offer.kind).label;
+    if (this.roofActive) {
+      const deck = this.roofDeck();
+      return {
+        x: deck.x,
+        z: deck.z,
+        y: deck.y,
+        name,
+        where: deck.y > 10 ? "ROOF" : "FLOOR",
+        meters: Math.hypot(this.hx - deck.x, this.hz - deck.z),
+      };
+    }
+    const pad = PADS[this.to] ?? PADS[0]!;
+    return {
+      x: pad.x,
+      z: pad.z,
+      y: 0,
+      name,
+      where: "SET",
+      meters: Math.hypot(this.hx - pad.x, this.hz - pad.z),
+    };
+  }
+
   private adopt(state: CareerState) {
     const craneChanged = !this.practicing && state.crane !== this.crane;
     this.career = state;
@@ -659,6 +691,10 @@ export class CraneSim {
       this.ready = false;
       this.safetyLock = false;
       this.safetyBypass = false;
+      this.padStrike = 0;
+      this.boomStrike = 0;
+      this.padClear = 0;
+      this.boomClear = 0;
     }
     const wanted = activeOffer(this.career).kind;
     const [decoyA, decoyB] = YARD_DECOYS[wanted];
@@ -750,6 +786,7 @@ export class CraneSim {
       this.safetyLock = false;
       this.safetyBypass = false;
       this.pinHook();
+      this.noteStructure(dt);
       return;
     }
     const tune = this.tuning();
@@ -965,6 +1002,7 @@ export class CraneSim {
       this.deliverFlash -= dt;
       if (this.deliverFlash <= 0) this.spawnNext();
     }
+    this.noteStructure(dt);
   }
 
   setWorkLights(on: boolean) {
@@ -1690,6 +1728,108 @@ export class CraneSim {
     this.cy = this.loadRest();
     this.cx = PADS[this.to]!.x;
     this.cz = PADS[this.to]!.z;
+  }
+
+  private noteStructure(dt: number) {
+    if (this.career.job !== "spa") {
+      this.padStrike = 0;
+      this.boomStrike = 0;
+      return;
+    }
+    let padPen = 0;
+    if (this.usesOutriggers() && this.outrigger > 0.2) {
+      for (const pad of this.outriggerFeet()) padPen = Math.max(padPen, this.housePenetration(pad.x, pad.z, 0.4));
+    }
+    let boomPen = 0;
+    const tip = this.boom();
+    const origin = this.rigOrigin();
+    const face = this.bodyHeading();
+    const root = {
+      x: origin.x - this.mountBack * Math.sin(face),
+      y: this.liveMount(),
+      z: origin.z - this.mountBack * Math.cos(face),
+    };
+    for (const t of [0.35, 0.65, 1]) {
+      const x = root.x + (tip.x - root.x) * t;
+      const y = root.y + (tip.y - root.y) * t;
+      const z = root.z + (tip.z - root.z) * t;
+      boomPen = Math.max(boomPen, this.housePenetration(x, z, y));
+    }
+    const lines: string[] = [];
+    lines.push(...this.chargeStrike("pad", padPen, dt));
+    lines.push(...this.chargeStrike("boom", boomPen, dt));
+    if (lines.length) this.say(lines.join(" "));
+    else if (padPen >= 0.15 || boomPen >= 0.15) {
+      const stuck = [
+        padPen >= 0.15 ? "Outrigger through the house." : "",
+        boomPen >= 0.15 ? "Boom through the house." : "",
+      ].filter(Boolean);
+      this.message = stuck.join(" ");
+    }
+  }
+
+  private outriggerFeet() {
+    const reach = Math.min(1, this.outrigger / 0.57);
+    const outer = 1.35 + reach * 1.8 - 0.02;
+    const origin = this.rigOrigin();
+    const h = this.bodyHeading();
+    const c = Math.cos(h);
+    const s = Math.sin(h);
+    const feet: { x: number; z: number }[] = [];
+    for (const [sign, lz] of [
+      [1, 1.6],
+      [-1, 1.6],
+      [1, -0.9],
+      [-1, -0.9],
+    ] as const) {
+      const lx = sign * outer;
+      feet.push({
+        x: origin.x + lx * c + lz * s,
+        z: origin.z - lx * s + lz * c,
+      });
+    }
+    return feet;
+  }
+
+  private housePenetration(x: number, z: number, y: number) {
+    let pen = 0;
+    for (const house of RESIDENTIAL_HOUSE_BLOCKS) {
+      if (y > house.top) continue;
+      const dx = house.hx - Math.abs(x - house.x);
+      const dz = house.hz - Math.abs(z - house.z);
+      if (dx > 0 && dz > 0) pen = Math.max(pen, Math.min(dx, dz));
+    }
+    return pen;
+  }
+
+  private chargeStrike(kind: "pad" | "boom", pen: number, dt: number) {
+    const deep = kind === "boom";
+    const billed = deep ? this.boomStrike : this.padStrike;
+    if (pen < 0.15) {
+      if (deep) this.boomClear += dt;
+      else this.padClear += dt;
+      if ((deep ? this.boomClear : this.padClear) > 0.8) {
+        if (deep) this.boomStrike = 0;
+        else this.padStrike = 0;
+      }
+      return [];
+    }
+    if (deep) this.boomClear = 0;
+    else this.padClear = 0;
+    const due = deep ? Math.min(2800, Math.round(420 + pen * 1100)) : Math.min(1100, Math.round(160 + pen * 480));
+    if (due <= billed + 40) return [];
+    const extra = due - billed;
+    if (deep) this.boomStrike = due;
+    else this.padStrike = due;
+    if (this.practicing) {
+      return [deep ? "Boom through the house. Practice. No bill." : "Outrigger through the house. Practice. No bill."];
+    }
+    const paid = Math.min(this.career.cash, extra);
+    this.career = { ...this.career, cash: this.career.cash - paid };
+    this.writeCareer();
+    const what = deep ? "Boom through the house." : "Outrigger through the house.";
+    const bill = paid > 0 ? `Damage ${money(paid)}.` : `Damage ${money(extra)} and you had nothing left.`;
+    return [`${what} ${bill} You have ${money(this.career.cash)}.`];
   }
 
   private fail() {
