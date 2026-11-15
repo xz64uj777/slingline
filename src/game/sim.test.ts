@@ -101,6 +101,15 @@ describe("hook pickup", () => {
     assert.match(sim.message, /closer/i);
   });
 
+  it("does not hook a load just because the hook is on it", () => {
+    const sim = new CraneSim();
+    hangOver(sim, 0);
+    assert.equal(sim.hookReady, true);
+    run(sim, 0.5);
+    assert.equal(sim.attached, false);
+    assert.equal(sim.carry, null);
+  });
+
   it("only offers a hook, never a distant load", () => {
     const sim = new CraneSim();
     hangOver(sim, 0);
@@ -131,6 +140,22 @@ describe("hook alignment guidance", () => {
     assert.ok(Math.abs(alignment.reach - 3) < 1e-9, "positive reach should mean boom out");
     assert.ok(Math.abs(alignment.hoist - 1) < 1e-9, "positive hoist should mean raise the hook");
     assert.ok(Math.abs(alignment.distance - Math.sqrt(14)) < 1e-9);
+  });
+
+  it("points the same cues at the set only after the load is hooked", () => {
+    const sim = new CraneSim();
+    assert.equal(sim.carryAlignment(), null);
+    hookUp(sim, 0);
+    const spot = sim.setSpot();
+    sim.hx = spot.x + 2;
+    sim.hz = spot.z + 3;
+    sim.hy = spot.y + sim.hang + 1;
+    const alignment = sim.carryAlignment();
+    assert.ok(alignment);
+    assert.match(alignment.target, /SET/);
+    assert.ok(Math.abs(alignment.slew - 2) < 1e-6);
+    assert.ok(Math.abs(alignment.reach - 3) < 1e-6);
+    assert.ok(alignment.hoist < 0);
   });
 });
 

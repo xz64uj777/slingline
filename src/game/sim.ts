@@ -1118,6 +1118,25 @@ export class CraneSim {
     };
   }
 
+  /** Same corrections, but from the hanging load to the set point. Only after a manual hook. */
+  carryAlignment() {
+    if (!this.attached) return null;
+    const spot = this.setSpot();
+    const dx = spot.x - this.hx;
+    const dz = spot.z - this.hz;
+    const sin = Math.sin(this.yaw);
+    const cos = Math.cos(this.yaw);
+    const targetY = spot.y + this.hang + this.restY(this.load);
+    return {
+      target: `${spot.name} ${spot.where}`,
+      distance: Math.hypot(dx, dz),
+      slew: -dx * cos + dz * sin,
+      reach: -dx * sin - dz * cos,
+      hoist: targetY - this.hy,
+      ready: Math.hypot(dx, dz) < this.setTolerance,
+    };
+  }
+
   private updateApproach() {
     this.hookGap = 99;
     this.hookReady = false;

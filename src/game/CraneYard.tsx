@@ -517,36 +517,30 @@ export function CraneYard() {
         objectiveRef.current.textContent = objective;
       }
       if (alignmentRef.current) {
-        const alignment = sim.hookAlignment();
-        const show =
-          sim.state === "lifting" &&
-          !sim.attached &&
-          sim.hookGap < 12 &&
-          alignment != null;
+        const alignment = sim.carryAlignment();
+        const show = sim.state === "lifting" && sim.attached && alignment != null;
         alignmentRef.current.style.display = show ? "block" : "none";
         if (show && alignment) {
           const corrections: string[] = [];
-          if (Math.abs(alignment.slew) > 0.3) {
+          if (Math.abs(alignment.slew) > 0.35) {
             corrections.push(
               `${alignment.slew > 0 ? "SLEW LEFT" : "SLEW RIGHT"} ${Math.abs(alignment.slew).toFixed(1)} m`,
             );
           }
-          if (Math.abs(alignment.reach) > 0.3) {
+          if (Math.abs(alignment.reach) > 0.35) {
             corrections.push(
-              `${alignment.reach > 0 ? "REACH OUT" : "REACH IN"} ${Math.abs(alignment.reach).toFixed(1)} m`,
+              `${alignment.reach > 0 ? "EXTEND BOOM" : "BOOM IN"} ${Math.abs(alignment.reach).toFixed(1)} m`,
             );
           }
-          if (Math.abs(alignment.hoist) > 0.18) {
+          if (Math.abs(alignment.hoist) > 0.25) {
             corrections.push(
               `${alignment.hoist > 0 ? "HOIST UP" : "HOIST DOWN"} ${Math.abs(alignment.hoist).toFixed(1)} m`,
             );
           }
           alignmentRef.current.textContent = alignment.ready
-            ? `${alignment.target} CENTERED · HOOK READY`
-            : `${alignment.target} ALIGN · ${corrections.join(" · ") || "Center the hook"}`;
-          alignmentRef.current.dataset.ready = alignment.ready
-            ? "true"
-            : "false";
+            ? `${alignment.target} · ON THE MARK`
+            : `${alignment.target} · ${corrections.join(" · ") || "Hold it over the mark"}`;
+          alignmentRef.current.dataset.ready = alignment.ready ? "true" : "false";
           alignmentRef.current.style.color = alignment.ready ? "#8fc17a" : "";
         }
       }
@@ -917,7 +911,7 @@ export function CraneYard() {
               {[
                 "Drive forward with W/↑, reverse with S/↓, and steer left/right with A/← and D/→. Stop in the work area. Once lifting, those axes control boom pitch and slew instead.",
                 "Slew left/right with the stick or A/D. Pitch the boom with forward/back or W/S; telescope with the right-side arrows or Z/C. Raise/lower the hook with Q/R or E/F. The on-screen controls work too.",
-                "Lower with DOWN or E/F. Use the HOOK view and live alignment cue. HOOK only connects when centered: within 0.3 m horizontally and 0.25 m vertically.",
+                "Lower with DOWN or E/F. The load does not hook itself. Press HOOK when the hook is on it. After it is on the hook, the slew and boom cues point at the set.",
                 "Use UP or Q/R gently to lift clear. Watch the load-limit percentage and sway meter. Easy mode keeps its 44° safety interlock; raise the boom to clear it. The angle stop is separate from the load-chart limit.",
                 "Move the load with small joystick inputs. Let it settle before changing direction. Slow pace gives you finer control; avoid dragging a swinging load across the site.",
                 "Lower with DOWN until the load is resting in the marked amber ring. A clean placement inside the ring completes the job; if you set it down outside, hoist it and lower it again inside.",
