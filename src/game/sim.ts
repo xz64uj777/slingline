@@ -1524,9 +1524,7 @@ export class CraneSim {
       const chart =
         this.limitState === "over" ? " Over the chart for this load." : this.limitState === "near" ? " Near the limit." : "";
       if (this.hookGap < 12) {
-        this.message = this.hookReady
-          ? `${this.hookLabel} ${this.hookGap.toFixed(1)} m.${chart} Tap HOOK.`
-          : `${this.hookLabel} ${this.hookGap.toFixed(1)} m away.${chart}`;
+        this.message = this.hookReady ? `Tap HOOK.${chart}` : this.contractLabel();
       } else if (this.limitState === "over") this.message = "That load is over the chart. Shorten the boom before you lift.";
       else if (this.limitState === "near") this.message = "That load is near the limit. Watch the angle and the length.";
       else this.message = this.contractLabel();

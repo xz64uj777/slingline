@@ -143,8 +143,7 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   ctx.stroke();
   ctx.fillStyle = "#e3a23a";
   ctx.font = "10px sans-serif";
-  ctx.fillText(`${spot.name} ${spot.where}`, dx + 8, dz - 8);
-  ctx.fillText(spot.meters < sim.setTolerance ? "ON THE MARK" : `${spot.meters.toFixed(1)} m`, dx + 8, dz + 4);
+  ctx.fillText(spot.name, dx + 8, dz - 4);
 
   for (const piece of sim.pieces) {
     const job = piece.kind === jobKind;
@@ -463,22 +462,8 @@ export function CraneYard() {
         hookBtnRef.current.dataset.on = sim.attached ? "true" : "false";
         if (hookLabelRef.current) hookLabelRef.current.textContent = sim.attached ? "RELEASE" : "HOOK";
       }
-      if (gapRef.current) {
-        const show = !sim.attached && sim.hookGap < 12;
-        gapRef.current.style.display = show ? "block" : "none";
-        if (show) gapRef.current.textContent = `${sim.hookLabel} · ${sim.hookGap.toFixed(1)} m to hook`;
-      }
-      if (setRef.current) {
-        const place = sim.setSpot();
-        const show = sim.phase !== "done" && sim.phase !== "broke";
-        setRef.current.style.display = show ? "block" : "none";
-        if (show) {
-          setRef.current.textContent =
-            place.meters < sim.setTolerance
-              ? `${place.name} · ON THE MARK`
-              : `${place.name} ${place.where} · ${place.meters.toFixed(1)} m`;
-        }
-      }
+      if (gapRef.current) gapRef.current.style.display = "none";
+      if (setRef.current) setRef.current.style.display = "none";
       const liveOffer = activeOffer(sim.career);
       const liveCargo = loadSpec(liveOffer.kind).label;
       if (objectiveRef.current) {
@@ -517,29 +502,27 @@ export function CraneYard() {
         objectiveRef.current.textContent = objective;
       }
       if (alignmentRef.current) {
-        const alignment = sim.carryAlignment();
-        const show = sim.state === "lifting" && sim.attached && alignment != null;
+        const pickup = !sim.attached ? sim.hookAlignment() : null;
+        const carry = sim.attached ? sim.carryAlignment() : null;
+        const alignment = pickup ?? carry;
+        const show = sim.state === "lifting" && alignment != null && (sim.attached || sim.hookGap < 18);
         alignmentRef.current.style.display = show ? "block" : "none";
         if (show && alignment) {
           const corrections: string[] = [];
-          if (Math.abs(alignment.slew) > 0.35) {
-            corrections.push(
-              `${alignment.slew > 0 ? "SLEW LEFT" : "SLEW RIGHT"} ${Math.abs(alignment.slew).toFixed(1)} m`,
-            );
+          if (Math.abs(alignment.slew) > 0.3) {
+            corrections.push(`${alignment.slew > 0 ? "SLEW LEFT" : "SLEW RIGHT"} ${Math.abs(alignment.slew).toFixed(1)} m`);
           }
-          if (Math.abs(alignment.reach) > 0.35) {
-            corrections.push(
-              `${alignment.reach > 0 ? "EXTEND BOOM" : "BOOM IN"} ${Math.abs(alignment.reach).toFixed(1)} m`,
-            );
+          if (Math.abs(alignment.reach) > 0.3) {
+            corrections.push(`${alignment.reach > 0 ? "EXTEND" : "BRING IN"} ${Math.abs(alignment.reach).toFixed(1)} m`);
           }
-          if (Math.abs(alignment.hoist) > 0.25) {
-            corrections.push(
-              `${alignment.hoist > 0 ? "HOIST UP" : "HOIST DOWN"} ${Math.abs(alignment.hoist).toFixed(1)} m`,
-            );
+          if (Math.abs(alignment.hoist) > 0.18) {
+            corrections.push(`${alignment.hoist > 0 ? "HOIST UP" : "HOIST DOWN"} ${Math.abs(alignment.hoist).toFixed(1)} m`);
           }
           alignmentRef.current.textContent = alignment.ready
-            ? `${alignment.target} · ON THE MARK`
-            : `${alignment.target} · ${corrections.join(" · ") || "Hold it over the mark"}`;
+            ? sim.attached
+              ? "ON THE MARK"
+              : "HOOK READY"
+            : corrections.join(" · ") || "HOLD";
           alignmentRef.current.dataset.ready = alignment.ready ? "true" : "false";
           alignmentRef.current.style.color = alignment.ready ? "#8fc17a" : "";
         }
