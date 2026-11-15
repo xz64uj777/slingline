@@ -206,6 +206,8 @@ export class CraneSim {
   best = 0;
   career: CareerState = readCareerStore();
   practicing = false;
+  /** Real career, held aside while a test job is loaded. */
+  private careerHold: CareerState | null = null;
   careerBeat: string | null = null;
   boardPause = false;
   toast = "";
@@ -324,7 +326,53 @@ export class CraneSim {
     this.message = `${CRANES[id].label} practice. Nothing is saved.`;
   }
 
+  /** Load any job on any crane. The saved career is put back when the shift ends. */
+  practiceJob(job: JobId, crane: CraneId) {
+    if (!this.careerHold) this.careerHold = this.career;
+    const held = this.careerHold;
+    this.practicing = true;
+    this.career = {
+      ...held,
+      status: "independent",
+      job,
+      leg: 0,
+      roofActive: job === "roof" || job === "hvac",
+      downtime: 0,
+      reputation: Math.max(held.reputation, 10),
+      crawlerOnSite: !(crane === "crawler" && job === "tracks"),
+    };
+    this.crane = crane;
+    this.applyCrane();
+    this.extension = 0;
+    this.hauling = false;
+    this.crawlerOnSite = this.career.crawlerOnSite;
+    this.flipped = false;
+    this.flipBilled = false;
+    this.roll = 0;
+    this.rollRate = 0;
+    this.speed = 0;
+    this.state = "driving";
+    this.attached = false;
+    this.airborne = false;
+    this.landed = false;
+    this.phase = "seek";
+    this.carry = null;
+    this.currentSite = null;
+    if (crane === "crawler" && job === "tracks") {
+      this.beginHaul();
+      this.message = "Test the track pick. The crawler starts on the lowboy. Nothing is saved.";
+      return;
+    }
+    this.stockYard(true);
+    const offer = activeOffer(this.career);
+    this.message = `Test ${offer.title} on the ${CRANES[crane].label}. Nothing is saved.`;
+  }
+
   clockIn() {
+    if (this.careerHold) {
+      this.career = this.careerHold;
+      this.careerHold = null;
+    }
     if (!this.practicing) {
       this.message = this.contractLabel();
       return;
@@ -484,6 +532,7 @@ export class CraneSim {
   /** Wipe the career save and put the yard back to a brand-new hire. */
   resetCareer() {
     this.practicing = false;
+    this.careerHold = null;
     this.career = freshCareer();
     this.crane = this.career.crane;
     this.crawlerOnSite = this.career.crawlerOnSite;

@@ -303,6 +303,9 @@ export const COMPANY_JOBS: JobId[] = ["yard", "spa", "container", "roof", "hvac"
 /** Three tutorials, then two small jobs. That is the whole hired list. */
 export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "truss", "panel", "garage"];
 
+/** Every call, in play order, so a test can open one without owning it. */
+export const ALL_JOBS: JobId[] = ["yard", "pipe", "truss", "panel", "garage", "spa", "container", "roof", "hvac", "tracks", "wind"];
+
 /** Company calls only. The yard move is a shop shift, not a level. */
 export const LEVEL_COUNT = 6;
 

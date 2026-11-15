@@ -797,3 +797,26 @@ describe("house damage", () => {
     assert.match(through.message, /Boom through the house/);
   });
 });
+
+describe("test any job", () => {
+  it("loads the chosen job and crane, then puts the career back", () => {
+    const sim = new CraneSim();
+    const savedJob = sim.career.job;
+    const savedCrane = sim.career.crane;
+    sim.practiceJob("roof", "lattice");
+    assert.equal(sim.career.job, "roof");
+    assert.equal(sim.crane, "lattice");
+    assert.equal(sim.roofActive, true);
+    assert.equal(sim.load, "beam");
+    assert.match(sim.message, /Nothing is saved/);
+    sim.practiceJob("spa", "heavy");
+    assert.equal(sim.career.job, "spa");
+    assert.equal(sim.crane, "heavy");
+    assert.equal(sim.load, "deck");
+    sim.clockIn();
+    assert.equal(sim.practicing, false);
+    assert.equal(sim.career.job, savedJob);
+    assert.equal(sim.career.crane, savedCrane);
+    assert.equal(sim.crane, savedCrane);
+  });
+});

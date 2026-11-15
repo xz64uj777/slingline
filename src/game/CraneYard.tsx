@@ -3,6 +3,7 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, L
 import { CraneSim, CRANE_CHOICES, HOUSES, MAPLE_LANE_SETUP, type CraneId, type Mode, type Pace } from "@/game/sim";
 import {
   ECONOMY,
+  ALL_JOBS,
   RENTAL_LEVELS,
   activeOffer,
   canFound,
@@ -207,6 +208,8 @@ export function CraneYard() {
   const [glError, setGlError] = useState("");
   const [books, setBooks] = useState<CareerState>(() => freshCareer());
   const [practiceId, setPracticeId] = useState<CraneId | null>(null);
+  const [testCrane, setTestCrane] = useState<CraneId>("rental");
+  const [testOpen, setTestOpen] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
   const [beat, setBeat] = useState<string | null>(null);
   const summary = careerSummary(books);
@@ -742,6 +745,23 @@ export function CraneYard() {
     setPlaying(true);
   };
 
+  const startTest = (job: JobId) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.practiceJob(job, testCrane);
+    setPracticeId(testCrane);
+    setCrane(testCrane);
+    setTestOpen(false);
+    setSettingsOpen(false);
+    setBoardOpen(false);
+    const nextCam: CamView = job === "spa" || job === "wind" ? "wide" : "chase";
+    setCam(nextCam);
+    yardRef.current?.setView(nextCam);
+    playingRef.current = true;
+    unlockAudio();
+    setPlaying(true);
+  };
+
   const cycleCrane = () => {
     const ids = CRANE_CHOICES.map((choice) => choice.id);
     const index = ids.indexOf(simRef.current?.crane ?? crane);
@@ -999,6 +1019,13 @@ export function CraneYard() {
           >
             <Lightbulb size={20} />
           </button>
+          <button
+            type="button"
+            onClick={() => setTestOpen(true)}
+            className="border border-primary bg-surface px-2 py-1.5 font-display text-xs tracking-widest text-primary shadow-lg"
+          >
+            TEST JOB
+          </button>
           <details className="pointer-events-auto relative">
             <summary className="cursor-pointer border border-line bg-surface px-2 py-1.5 font-display text-xs tracking-widest text-fg shadow-lg">
               CAM · {cam === "operator" ? "SEAT" : cam.toUpperCase()}
@@ -1036,6 +1063,7 @@ export function CraneYard() {
                 <h2 className="font-display text-base tracking-wide">GAME OPTIONS</h2>
                 <button type="button" onClick={() => setSettingsOpen(false)} className="min-h-10 border border-line px-3 font-display text-sm">CLOSE</button>
               </div>
+              <button type="button" onClick={() => { setTestOpen(true); setSettingsOpen(false); }} className="mt-2 min-h-9 w-full border border-primary bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-primary">TEST ANY JOB</button>
               <button ref={jobsRef} type="button" onClick={() => setBoardOpen(true)} className="mt-2 min-h-9 w-full border border-primary bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-fg">JOBS &amp; CONTRACTS</button>
               <button type="button" onClick={() => { setTrainingStep(0); setTrainingOpen(true); setSettingsOpen(false); }} className="mt-2 min-h-9 w-full border border-line bg-bg px-2 py-1 text-left font-display text-xs tracking-wide text-fg">OPERATOR TRAINING</button>
               <p className="mt-2 font-display text-[10px] tracking-widest text-muted">DIFFICULTY</p>
@@ -1172,6 +1200,13 @@ export function CraneYard() {
             </p>
             <button type="button" className="mt-4 h-14 w-full bg-primary font-display text-2xl tracking-wide text-bg" onClick={startCareer}>
               {summary.hired ? "START CAREER" : "CONTINUE CAREER"}
+            </button>
+            <button
+              type="button"
+              className="mt-2 h-12 w-full border border-primary bg-bg font-display text-lg tracking-wide text-primary"
+              onClick={() => setTestOpen(true)}
+            >
+              TEST ANY JOB OR CRANE
             </button>
             {summary.tutorial ? (
               <button
@@ -1446,6 +1481,45 @@ export function CraneYard() {
           </div>
         </div>
       )}
+      {testOpen ? (
+        <div className="absolute inset-0 z-30 flex items-end justify-center bg-bg/80 p-3 sm:items-center">
+          <section className="max-h-[86dvh] w-full max-w-md overflow-y-auto border border-line border-t-4 border-t-primary bg-surface p-4">
+            <p className="font-display text-xs tracking-widest text-primary">TEST · NOT SAVED</p>
+            <h2 className="mt-1 font-display text-3xl leading-none">Any job, any crane</h2>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {CRANE_CHOICES.map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  onClick={() => setTestCrane(choice.id)}
+                  className={`min-h-11 border px-2 font-display text-sm tracking-wide ${testCrane === choice.id ? "border-primary bg-primary text-bg" : "border-line bg-bg text-fg"}`}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-1">
+              {ALL_JOBS.map((id) => {
+                const lv = levelOf(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => startTest(id)}
+                    className="min-h-11 border border-line bg-bg px-3 py-2 text-left"
+                  >
+                    <span className="block font-display text-lg leading-none text-fg">{lv.title}</span>
+                    <span className="mt-1 block text-[10px] tracking-widest text-muted">{loadSpec(lv.kind).label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button type="button" onClick={() => setTestOpen(false)} className="mt-3 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg">
+              CLOSE
+            </button>
+          </section>
+        </div>
+      ) : null}
       {boardOpen ? (
         <JobSheet
           offers={jobBoard(simRef.current?.career ?? books)}
