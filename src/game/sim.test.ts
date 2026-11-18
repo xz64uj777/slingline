@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Actions } from "./input.ts";
 import { CraneSim, MAPLE_LANE_SETUP, MAPLE_LANE_START, PADS, WIND_FARM_START } from "./sim.ts";
+import { JOBS } from "./jobs.ts";
+import { loadSpec } from "./loads.ts";
+import { dailyRun } from "./daily.ts";
 
 const STEP = 1 / 60;
 
@@ -613,6 +616,94 @@ describe("set ring tolerance", () => {
     sim.career = { ...sim.career, job: "roof" };
     assert.ok(sim.setTolerance < 1, `roof ring is ${sim.setTolerance} m`);
   });
+
+  it("scores a two-pad girder set on both bearings, not its centre", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "girder", reputation: 20 };
+    sim.stockYard(false);
+
+    const first = PADS[JOBS.girder.pad]!;
+    const second = PADS[JOBS.girder.pad2!]!;
+    const axis = Math.atan2(second.x - first.x, second.z - first.z);
+    sim.yaw = axis;
+    sim.hx = (first.x + second.x) / 2;
+    sim.hz = (first.z + second.z) / 2;
+
+    assert.ok(sim.setSpot().meters < 0.01, `square set reads ${sim.setSpot().meters} m`);
+    // End for end is still the same girder across the same two pads.
+    sim.yaw = axis + Math.PI;
+    assert.ok(sim.setSpot().meters < 0.01);
+    // Lying square-on leaves both bearings unserved.
+    sim.yaw = axis + Math.PI / 2;
+    assert.ok(sim.setSpot().meters > 1.5, `square-on set reads ${sim.setSpot().meters} m`);
+
+    sim.yaw = axis;
+    sim.attached = true;
+    sim.landed = true;
+    assert.equal(sim.canRelease, true);
+  });
+
+  it("scores the culvert pipe on both saddles and its heading together", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "culvert", reputation: 24 };
+    sim.stockYard(false);
+
+    const first = PADS[JOBS.culvert.pad]!;
+    const second = PADS[JOBS.culvert.pad2!]!;
+    // The saddles are exactly the pipe's length apart, so a square set spans them.
+    assert.ok(Math.abs(Math.hypot(second.x - first.x, second.z - first.z) - 2 * loadSpec("pipe").halfZ) < 0.01);
+
+    const axis = Math.atan2(second.x - first.x, second.z - first.z);
+    sim.yaw = axis;
+    sim.hx = (first.x + second.x) / 2;
+    sim.hz = (first.z + second.z) / 2;
+    assert.ok(sim.setSpot().meters < 0.01, `spanning set reads ${sim.setSpot().meters} m`);
+    assert.ok((sim.headingError() ?? 99) < 0.001);
+
+    // Crosswise across the saddles: both ends miss and the heading is wrong.
+    sim.yaw = axis + Math.PI / 2;
+    assert.ok(sim.setSpot().meters > 1.5, `crosswise set reads ${sim.setSpot().meters} m`);
+    assert.ok((sim.headingError() ?? 0) > 80);
+  });
+
+  it("sets the curtain-wall panel on the high deck, square to the facade", () => {
+    const sim = new CraneSim();
+    // acceptJob sets roofActive from the job's roof flag on the way in.
+    sim.career = { ...sim.career, status: "independent", job: "curtain", reputation: 24, roofActive: true };
+    sim.stockYard(false);
+    const beam = new CraneSim();
+    beam.career = { ...beam.career, status: "independent", job: "roof", reputation: 24 };
+
+    assert.equal(sim.roofActive, true);
+    assert.equal(sim.roofDeck().y, beam.roofDeck().y);
+    assert.equal(sim.headingTarget, 0);
+    sim.yaw = 0;
+    assert.ok((sim.headingError() ?? 99) < 0.001);
+    sim.yaw = Math.PI / 2;
+    assert.ok((sim.headingError() ?? 0) > 89);
+  });
+
+  it("gives a curtain-wall practice run the same roof deck as the career call", () => {
+    const sim = new CraneSim();
+    sim.practiceJob("curtain", "lattice");
+    assert.equal(sim.roofActive, true);
+    assert.ok(sim.roofDeck().y > 10, `practice deck is ${sim.roofDeck().y} m`);
+  });
+
+  it("reads the panel heading off the casting-bed guides", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "wall", reputation: 20 };
+    sim.stockYard(false);
+    assert.equal(sim.headingTarget, Math.PI / 2);
+
+    sim.yaw = Math.PI / 2;
+    assert.ok((sim.headingError() ?? 99) < 0.001);
+    // End for end is the same wall on the same guides.
+    sim.yaw = Math.PI / 2 + Math.PI;
+    assert.ok((sim.headingError() ?? 99) < 0.001);
+    sim.yaw = 0;
+    assert.ok((sim.headingError() ?? 0) > 89);
+  });
 });
 
 describe("work lights", () => {
@@ -688,6 +779,22 @@ describe("set grading", () => {
     land(sim, 0.1);
 
     assert.equal(sim.lastSet, null);
+  });
+
+  it("marks a panel down when it lands off square", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "wall", reputation: 20, cash: 0 };
+    sim.stockYard(false);
+    sim.load = "panel";
+    sim.yaw = Math.PI / 2 + 0.35; // about 20° off the guides
+    sim.peakSway = 0.5;
+    sim.peakChart = 0.4;
+    sim.hookSpeed = 0.1;
+
+    land(sim, 0.1);
+
+    assert.equal(sim.lastSet!.parts.heading, "C");
+    assert.equal(sim.lastSet!.cost, "HEADING");
   });
 });
 
@@ -818,5 +925,113 @@ describe("test any job", () => {
     assert.equal(sim.career.job, savedJob);
     assert.equal(sim.career.crane, savedCrane);
     assert.equal(sim.crane, savedCrane);
+  });
+});
+
+describe("release readiness", () => {
+  it("arms RELEASE only when the load is down inside the ring", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard" };
+    hookUp(sim, 0);
+    run(sim, 1.2, { hoist: 1 });
+
+    assert.equal(sim.attached, true);
+    assert.equal(sim.landed, false);
+    assert.equal(sim.canRelease, false, "a load in the air is not releasable");
+
+    sim.landed = true;
+    sim.hx = PADS[sim.to]!.x;
+    sim.hz = PADS[sim.to]!.z;
+    assert.equal(sim.canRelease, true);
+
+    sim.hx += sim.setTolerance + 1;
+    assert.equal(sim.canRelease, false, "a load outside the ring is not releasable");
+  });
+});
+
+describe("debrief hold", () => {
+  const land = (sim: CraneSim, off: number): void => {
+    (sim as unknown as { succeed(off: number): void }).succeed(off);
+  };
+
+  it("keeps the debrief up until the player dismisses it", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "yard", reputation: 5, cash: 0 };
+    sim.peakSway = 0.4;
+    sim.hookSpeed = 0.1;
+    land(sim, 0.2);
+
+    assert.ok(sim.lastSet);
+    assert.equal(sim.debriefHold, true);
+    const shown = sim.debriefLeft;
+    run(sim, 3);
+    assert.equal(sim.debriefLeft, shown, "a held debrief should not time out");
+
+    sim.dismissDebrief();
+    assert.equal(sim.debriefLeft, 0);
+    assert.equal(sim.debriefHold, false);
+  });
+
+  it("names the metric that cost the grade and coaches it", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "roof", reputation: 10, cash: 0 };
+    sim.load = "beam";
+    sim.peakSway = 0.4;
+    sim.hookSpeed = 0.1;
+    land(sim, sim.setTolerance * 0.9);
+
+    assert.ok(sim.lastSet);
+    assert.equal(sim.lastSet!.parts.off, "C");
+    assert.equal(sim.lastSet!.cost, "RING");
+    assert.match(sim.lastSet!.tip, /mark|lower/i);
+  });
+});
+
+describe("wind forecast", () => {
+  it("lists the next two gusts while lifting in hard mode only", () => {
+    const sim = new CraneSim(seeded(5));
+    sim.mode = "hard";
+    hangOver(sim, 0);
+
+    const forecast = sim.windForecast();
+    assert.equal(forecast.length, 2);
+    assert.ok(forecast[0]!.seconds <= 4);
+    assert.ok(forecast[1]!.seconds > forecast[0]!.seconds);
+
+    sim.mode = "easy";
+    assert.deepEqual(sim.windForecast(), []);
+  });
+
+  it("repeats the forecast exactly for the same seed", () => {
+    const first = new CraneSim(seeded(11));
+    first.mode = "hard";
+    hangOver(first, 0);
+    const second = new CraneSim(seeded(11));
+    second.mode = "hard";
+    hangOver(second, 0);
+
+    assert.deepEqual(first.windForecast(), second.windForecast());
+    run(first, 5, { steer: 0.4 });
+    run(second, 5, { steer: 0.4 });
+    assert.deepEqual(first.windForecast(), second.windForecast());
+  });
+});
+
+describe("daily shift", () => {
+  it("loads the seeded call and restores the career afterwards", () => {
+    const sim = new CraneSim();
+    const before = { ...sim.career };
+    const runInfo = dailyRun(new Date("2026-11-17T10:00:00Z"));
+
+    sim.practiceDaily(runInfo);
+    assert.equal(sim.practicing, true);
+    assert.equal(sim.daily?.day, runInfo.day);
+    assert.equal(sim.career.job, runInfo.job);
+    assert.equal(sim.crane, runInfo.crane);
+
+    sim.clockIn();
+    assert.equal(sim.practicing, false);
+    assert.equal(sim.daily, null);
+    assert.deepEqual(sim.career, before);
   });
 });

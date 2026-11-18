@@ -173,6 +173,80 @@
   box-shadow: 0 0 0 1px var(--color-primary);
 }
 
+/* On the mark: the trigger becomes a lit RELEASE button, not a grey HOOK. */
+.machine-trigger[data-ready="mark"] {
+  border-color: var(--color-primary);
+  background: linear-gradient(180deg, #3a2f16, #221c10);
+  box-shadow:
+    0 0 0 1px var(--color-primary),
+    0 0 18px rgba(227, 162, 58, 0.55);
+  animation: release-pulse 1.1s ease-in-out infinite;
+}
+
+.machine-trigger[data-ready="mark"] .machine-lever {
+  background: radial-gradient(circle at 34% 28%, #fff0c2, #e3a23a 62%, #9a6416);
+  border-color: var(--color-primary);
+  transform: rotate(-18deg);
+}
+
+.machine-trigger[data-ready="mark"] span:last-child {
+  color: var(--color-primary);
+}
+
+@keyframes release-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--color-primary),
+      0 0 10px rgba(227, 162, 58, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px var(--color-primary),
+      0 0 22px rgba(227, 162, 58, 0.7);
+  }
+}
+
+/* The in-app switch mirrors the system preference. */
+.yard[data-reduce-motion="true"] *,
+.yard[data-reduce-motion="true"] *::before,
+.yard[data-reduce-motion="true"] *::after {
+  animation: none !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Phones keep the objective card to what changes the next input. */
+@media (max-width: 640px) {
+  .coach-line[data-live="false"] {
+    display: none !important;
+  }
+}
+
+/* Short windows (landscape phones, split screens) drop the optional panels. */
+@media (max-height: 640px) {
+  .short-hide {
+    display: none !important;
+  }
+}
+
+/* Honour the system/player preference for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .machine-trigger[data-ready="mark"] {
+    animation: none;
+    box-shadow:
+      0 0 0 2px var(--color-primary),
+      0 0 14px rgba(227, 162, 58, 0.5);
+  }
+}
+
 .machine-seg {
   border: 1px solid var(--color-line);
   background: #0d1114;
@@ -187,4 +261,22 @@
 
 .machine-lamp[data-day="true"] {
   opacity: 0.45;
+}
+
+/* Audio-cue captions. Positioned above the control decks, never over the load. */
+.caption-line {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(0, 0, 0, 0.7);
+  letter-spacing: 0.14em;
+}
+
+/* A gust that is about to hit reads before it moves the load. */
+.wind-row[data-soon="true"] {
+  color: var(--color-primary);
+}
+
+/* First-shift checklist ticks. */
+[data-done="true"] {
+  color: var(--color-ok);
 }

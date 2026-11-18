@@ -3,7 +3,21 @@
  * physics (resting height, sling corners) and the yard model, so a pipe sits on
  * the ground and hangs from its own ends instead of borrowing the crate box.
  */
-export type LoadKind = "crate" | "beam" | "heavy" | "pipe" | "truss" | "panel" | "hvac" | "container" | "deck" | "hotTub" | "blade";
+export type LoadKind =
+  | "crate"
+  | "beam"
+  | "heavy"
+  | "pipe"
+  | "truss"
+  | "panel"
+  | "hvac"
+  | "container"
+  | "deck"
+  | "hotTub"
+  | "girder"
+  | "blade"
+  | "nacelle"
+  | "rotor";
 
 export type LoadSpec = {
   /** Half extents in metres, centred on the load's middle. */
@@ -18,20 +32,27 @@ export type LoadSpec = {
   color: number;
   /** Suspended weight used by the load chart, in tonnes. */
   weight: number;
+  /** Cracks or chips on a hard landing: the impact limit is tighter. */
+  fragile?: boolean;
+  /** Keeps rolling after touchdown, so a hurried set slides off the mark. */
+  rolling?: boolean;
 };
 
 export const LOAD_SPECS: Record<LoadKind, LoadSpec> = {
   crate: { halfX: 0.8, halfY: 0.8, halfZ: 0.8, label: "CRATE", noun: "crate", color: 0xc4894a, weight: 0.8 },
   beam: { halfX: 0.32, halfY: 0.3, halfZ: 2.15, label: "BEAM", noun: "steel beam", color: 0x8d98a4, weight: 4.1 },
   heavy: { halfX: 1.12, halfY: 1.12, halfZ: 1.12, label: "BLOCK", noun: "heavy block", color: 0x4a4038, weight: 8.2 },
-  pipe: { halfX: 0.34, halfY: 0.34, halfZ: 3.2, label: "PIPE", noun: "pipe section", color: 0xb0b9c1, weight: 2.2 },
+  pipe: { halfX: 0.34, halfY: 0.34, halfZ: 3.2, label: "PIPE", noun: "pipe section", color: 0xb0b9c1, weight: 2.2, rolling: true },
   truss: { halfX: 0.55, halfY: 0.5, halfZ: 2.6, label: "TRUSS", noun: "steel truss", color: 0xb45a35, weight: 0.8 },
-  panel: { halfX: 1.7, halfY: 0.14, halfZ: 0.9, label: "PANEL", noun: "precast panel", color: 0xc5ced6, weight: 3.2 },
+  panel: { halfX: 1.7, halfY: 0.14, halfZ: 0.9, label: "PANEL", noun: "precast panel", color: 0xc5ced6, weight: 3.2, fragile: true },
+  girder: { halfX: 0.45, halfY: 0.42, halfZ: 2.6, label: "GIRDER", noun: "bridge girder", color: 0x7f8c99, weight: 5.4 },
   hvac: { halfX: 1.0, halfY: 0.65, halfZ: 0.8, label: "HVAC", noun: "rooftop unit", color: 0x9aa6b1, weight: 3.6 },
   container: { halfX: 1.2, halfY: 1.3, halfZ: 3.0, label: "CONTAINER", noun: "container", color: 0x2f6d7a, weight: 3.6 },
   deck: { halfX: 1.35, halfY: 0.22, halfZ: 1.8, label: "DECK KIT", noun: "decking bundle", color: 0xa8784b, weight: 1.7 },
   hotTub: { halfX: 1.15, halfY: 0.65, halfZ: 1.15, label: "HOT TUB", noun: "hot tub", color: 0x577d82, weight: 0.85 },
-  blade: { halfX: 1, halfY: 0.3, halfZ: 6.4, label: "TURBINE BLADE", noun: "turbine blade", color: 0xe1e5df, weight: 3.5 },
+  blade: { halfX: 1, halfY: 0.3, halfZ: 6.4, label: "TURBINE BLADE", noun: "turbine blade", color: 0xe1e5df, weight: 3.5, fragile: true },
+  nacelle: { halfX: 1.5, halfY: 1.4, halfZ: 2.0, label: "NACELLE", noun: "nacelle", color: 0xd7dde2, weight: 7.2 },
+  rotor: { halfX: 1.9, halfY: 1.9, halfZ: 1.2, label: "ROTOR", noun: "rotor hub", color: 0xe7e4d8, weight: 6.4 },
 };
 
 export const LOAD_KINDS = Object.keys(LOAD_SPECS) as LoadKind[];
@@ -44,11 +65,14 @@ export const YARD_DECOYS: Record<LoadKind, [LoadKind, LoadKind]> = {
   pipe: ["beam", "truss"],
   truss: ["pipe", "panel"],
   panel: ["hvac", "beam"],
+  girder: ["beam", "container"],
   hvac: ["panel", "crate"],
   container: ["heavy", "crate"],
   deck: ["beam", "hotTub"],
   hotTub: ["hvac", "panel"],
   blade: ["pipe", "container"],
+  nacelle: ["container", "heavy"],
+  rotor: ["blade", "hvac"],
 };
 
 export function loadSpec(kind: LoadKind): LoadSpec {
