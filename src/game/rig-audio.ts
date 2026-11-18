@@ -38,7 +38,18 @@ let lastCable = 0;
 let lastBeep = 0;
 let lastClank = 0;
 let lastWinch = 0;
+let lastWindAmp = 0;
+let lastGust = 0;
 let started = false;
+let ambienceGain: GainNode | null = null;
+let ambienceFilter: BiquadFilterNode | null = null;
+let cueTotal = 0;
+const lastCue: Record<string, number> = {};
+
+/** How many confirmation cues have played, for the dev probe. */
+export function cueCount() {
+  return cueTotal;
+}
 
 export function audioContext() {
   const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -128,6 +139,70 @@ function boot(audio: AudioContext) {
   hum.connect(humGain);
   humGain.connect(master);
   hum.start();
+
+  // One site bed: a filtered noise loop that reads as yard hum in town and as
+  // ridge wind on the turbine pad. The level follows the live gust strength.
+  ambienceFilter = audio.createBiquadFilter();
+  ambienceFilter.type = "bandpass";
+  ambienceFilter.frequency.value = 300;
+  ambienceFilter.Q.value = 0.6;
+  ambienceGain = audio.createGain();
+  ambienceGain.gain.value = 0;
+  const bed = audio.createBufferSource();
+  bed.buffer = noise;
+  bed.loop = true;
+  bed.connect(ambienceFilter);
+  ambienceFilter.connect(ambienceGain);
+  ambienceGain.connect(master);
+  bed.start();
+}
+
+export type Cue = "latch" | "release" | "ready" | "grade";
+
+/** What the grade cue should say. A clean set gets a brighter, longer sting. */
+export type CueDetail = { grade?: "S" | "A" | "B" | "C"; error?: number; limit?: number };
+
+/**
+ * Short confirmation sounds for the controls: spliced, set, ready, graded.
+ * Throttled per cue so a bouncing state cannot machine-gun the output.
+ */
+export function rigCue(kind: Cue, now = performance.now(), detail: CueDetail = {}) {
+  const audio = audioContext();
+  if (!audio) return;
+  if (audio.state === "suspended") void audio.resume();
+  boot(audio);
+  if (now - (lastCue[kind] ?? 0) < 180) return;
+  lastCue[kind] = now;
+  cueTotal += 1;
+  if (kind === "latch") {
+    clank(audio, 0.05);
+    tone(audio, 170, 90, 0.03, "triangle");
+  } else if (kind === "release") {
+    clank(audio, 0.035);
+    tone(audio, 96, 180, 0.035, "sine");
+  } else if (kind === "ready") {
+    tone(audio, 760, 110, 0.03, "sine");
+    window.setTimeout(() => tone(audio, 1140, 150, 0.028, "sine"), 120);
+  } else {
+    // The grade sting carries the result before the debrief is read: S is a
+    // rising major third, A a smaller rise, B a flat pair, C a low thud.
+    const error = Math.max(0, Math.min(1, detail.error ?? 0.5));
+    const base = 700 - error * 220;
+    if (detail.grade === "S") {
+      tone(audio, base, 150, 0.034, "triangle");
+      window.setTimeout(() => tone(audio, base * 1.26, 170, 0.032, "triangle"), 110);
+      window.setTimeout(() => tone(audio, base * 1.5, 240, 0.03, "sine"), 230);
+    } else if (detail.grade === "A") {
+      tone(audio, base, 140, 0.032, "triangle");
+      window.setTimeout(() => tone(audio, base * 1.19, 190, 0.03, "triangle"), 120);
+    } else if (detail.grade === "C") {
+      tone(audio, base * 0.62, 230, 0.036, "sine");
+      window.setTimeout(() => tone(audio, base * 0.5, 260, 0.03, "sine"), 140);
+    } else {
+      tone(audio, base, 140, 0.03, "triangle");
+      window.setTimeout(() => tone(audio, base, 170, 0.028, "triangle"), 130);
+    }
+  }
 }
 
 function tone(audio: AudioContext, freq: number, ms: number, volume: number, type: OscillatorType) {
@@ -197,6 +272,25 @@ export function rigAudio(sim: CraneSim, now: number) {
   const hydOn = voice.hyd > 0 && (work > 0.04 || sim.deployDir !== 0);
   hyd.frequency.setTargetAtTime(voice.hyd + work * 90 + hoist * 40, t, 0.08);
   hydGain.gain.setTargetAtTime(hydOn ? alive * 0.0055 * voice.body : 0, t, 0.08);
+
+  if (ambienceGain && ambienceFilter) {
+    const site = sim.career.job;
+    const outdoor = site === "wind" || site === "rotor" || site === "container" || site === "tracks";
+    const wind = sim.mode === "hard" ? sim.windAmp : 0.25;
+    const level = outdoor ? 0.005 + wind * 0.007 : 0.0035;
+    ambienceGain.gain.setTargetAtTime(alive * level, t, 0.5);
+    ambienceFilter.frequency.setTargetAtTime(outdoor ? 380 + wind * 320 : 150, t, 0.5);
+    ambienceFilter.Q.setTargetAtTime(outdoor ? 0.7 : 1.1, t, 0.5);
+  }
+
+  // A rising gust gets a low swell before it reaches the load, so the HUD
+  // forecast has an audible twin for players watching the hook.
+  if (sim.mode === "hard" && sim.windAmp > lastWindAmp + 0.2 && now - lastGust > 900) {
+    lastGust = now;
+    tone(audio, 120, 320, 0.018, "sine");
+    clank(audio, 0.01);
+  }
+  lastWindAmp = sim.windAmp;
 
   if (voice.backup && sim.state === "driving" && sim.speed < -0.35 && now - lastBeep > 720) {
     lastBeep = now;

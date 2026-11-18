@@ -7,15 +7,88 @@ const GAME_KEYS = new Set([
   "KeyE",
   "KeyR",
   "KeyF",
+  "KeyZ",
+  "KeyC",
   "KeyH",
   "ArrowUp",
   "ArrowDown",
   "ArrowLeft",
   "ArrowRight",
   "Space",
+  "Enter",
+  "Escape",
 ]);
 
+/** Every action a player can rebind. */
+export const BIND_ACTIONS = [
+  "slewLeft",
+  "slewRight",
+  "driveForward",
+  "driveBack",
+  "hoistUp",
+  "hoistDown",
+  "extendOut",
+  "extendIn",
+  "hook",
+  "deploy",
+] as const;
+
+export type ActionId = (typeof BIND_ACTIONS)[number];
+export type KeyBinds = Record<ActionId, string[]>;
+
+export const DEFAULT_BINDS: KeyBinds = {
+  slewLeft: ["KeyA", "ArrowLeft"],
+  slewRight: ["KeyD", "ArrowRight"],
+  driveForward: ["KeyW", "ArrowUp"],
+  driveBack: ["KeyS", "ArrowDown"],
+  hoistUp: ["KeyQ", "KeyR"],
+  hoistDown: ["KeyE", "KeyF"],
+  extendOut: ["KeyZ"],
+  extendIn: ["KeyC"],
+  hook: ["Space"],
+  deploy: ["Enter"],
+};
+
+const ACTION_LABEL: Record<ActionId, string> = {
+  slewLeft: "Slew / steer left",
+  slewRight: "Slew / steer right",
+  driveForward: "Drive / boom up",
+  driveBack: "Reverse / boom down",
+  hoistUp: "Hoist up",
+  hoistDown: "Hoist down",
+  extendOut: "Telescope out",
+  extendIn: "Telescope in",
+  hook: "Hook / release",
+  deploy: "Deploy / stow pads",
+};
+
+export function bindLabel(action: ActionId): string {
+  return ACTION_LABEL[action];
+}
+
+/** Render a browser key code as the legend printed on a key cap. */
+export function keyLabel(code: string): string {
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Arrow")) return code.slice(5).toUpperCase();
+  if (code === "Space") return "SPACE";
+  if (code === "Enter") return "ENTER";
+  if (code === "Escape") return "ESC";
+  return code.toUpperCase();
+}
+
+let binds: KeyBinds = { ...DEFAULT_BINDS };
+
+export function setKeyBinds(next: KeyBinds) {
+  binds = { ...DEFAULT_BINDS, ...next };
+}
+
+export function currentKeyBinds(): KeyBinds {
+  return binds;
+}
+
 const realKeys = new Set<string>();
+const pending = new Set<string>();
 let qaKeys: Set<string> | null = null;
 let steerOverride: number | null = null;
 let touchSensitivity = 1;
@@ -31,12 +104,14 @@ function radialDeadzone(x: number, y: number, dz = 0.15) {
 
 export function installInput() {
   const down = (e: KeyboardEvent) => {
+    if (!e.repeat) pending.add(e.code);
     realKeys.add(e.code);
     if (GAME_KEYS.has(e.code)) e.preventDefault();
   };
   const up = (e: KeyboardEvent) => realKeys.delete(e.code);
   const clear = () => {
     realKeys.clear();
+    pending.clear();
     touch.steer = 0;
     touch.trolley = 0;
     touch.hoist = 0;
@@ -54,6 +129,7 @@ export function installInput() {
     window.removeEventListener("keyup", up);
     window.removeEventListener("blur", clear);
     realKeys.clear();
+    pending.clear();
   };
 }
 
@@ -89,6 +165,11 @@ export type Actions = {
   hoist: number;
   extend: number;
   modeDown: boolean;
+  /** One-shot edges, consumed by the first read of a frame. */
+  hookPressed?: boolean;
+  deployPressed?: boolean;
+  /** Escape is handled by the UI, not the sim. */
+  pausePressed?: boolean;
 };
 
 const ZERO: Actions = { steer: 0, trolley: 0, hoist: 0, extend: 0, modeDown: false };
@@ -103,18 +184,20 @@ function clamp(v: number, a: number, b: number) {
 
 export function readActions(): Actions {
   const keys = qaKeys ?? realKeys;
+  const held = (action: ActionId) => binds[action].some((code) => keys.has(code));
+  const pressed = (action: ActionId) => binds[action].some((code) => pending.has(code));
   let steer = 0;
   let trolley = 0;
   let hoist = 0;
   let extend = 0;
-  if (keys.has("KeyA") || keys.has("ArrowLeft")) steer += 1;
-  if (keys.has("KeyD") || keys.has("ArrowRight")) steer -= 1;
-  if (keys.has("KeyW") || keys.has("ArrowUp")) trolley += 1;
-  if (keys.has("KeyS") || keys.has("ArrowDown")) trolley -= 1;
-  if (keys.has("KeyQ") || keys.has("KeyR")) hoist += 1;
-  if (keys.has("KeyE") || keys.has("KeyF")) hoist -= 1;
-  if (keys.has("KeyZ")) extend += 1;
-  if (keys.has("KeyC")) extend -= 1;
+  if (held("slewLeft")) steer += 1;
+  if (held("slewRight")) steer -= 1;
+  if (held("driveForward")) trolley += 1;
+  if (held("driveBack")) trolley -= 1;
+  if (held("hoistUp")) hoist += 1;
+  if (held("hoistDown")) hoist -= 1;
+  if (held("extendOut")) extend += 1;
+  if (held("extendIn")) extend -= 1;
 
   steer += touch.steer * touchSensitivity;
   trolley += touch.trolley * touchSensitivity;
@@ -140,11 +223,16 @@ export function readActions(): Actions {
 
   if (steerOverride != null) steer = steerOverride;
 
-  return {
+  const actions: Actions = {
     steer: clamp(steer, -1, 1),
     trolley: clamp(trolley, -1, 1),
     hoist: clamp(hoist, -1, 1),
     extend: clamp(extend, -1, 1),
     modeDown,
+    hookPressed: pressed("hook"),
+    deployPressed: pressed("deploy"),
+    pausePressed: pending.has("Escape"),
   };
+  pending.clear();
+  return actions;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronLeft, ChevronRight, Lightbulb } from "lucide-react";
-import { CraneSim, CRANE_CHOICES, HOUSES, MAPLE_LANE_SETUP, type CraneId, type Mode, type Pace } from "@/game/sim";
+import { CraneSim, CRANE_CHOICES, HOUSES, MAPLE_LANE_SETUP, PADS, type CraneId, type Mode, type Pace, type SetReport } from "@/game/sim";
 import {
   ECONOMY,
   ALL_JOBS,
@@ -12,6 +12,8 @@ import {
   jobBoard,
   levelOf,
   money,
+  gradeSpread,
+  nextUpgradeCost,
   type CareerState,
   type JobId,
   type JobOffer,
@@ -19,26 +21,43 @@ import {
 import { SITE_THEME_LABEL } from "@/game/levels";
 import { loadSpec } from "@/game/loads";
 import {
+  BIND_ACTIONS,
+  DEFAULT_BINDS,
+  bindLabel,
   idleActions,
   installInput,
+  keyLabel,
   readActions,
+  setKeyBinds,
   setQaKeys,
   setSteerOverride,
   setTouchAxes,
   setTouchExtend,
   setTouchHoist,
   setTouchSensitivity,
+  type ActionId,
+  type KeyBinds,
 } from "@/game/input";
 import { createYard, type CamView } from "@/game/world";
 import { limitAlarm } from "@/game/alarm";
-import { rigAudio, setAudioVolume, unlockAudio } from "@/game/rig-audio";
+import { audioContext, audioVolume, cueCount, rigAudio, rigCue, setAudioVolume, unlockAudio } from "@/game/rig-audio";
 import {
   readSettingsStore,
   sensitivityScale,
   writeSettingsStore,
+  type Quality,
   type Scheme,
   type Sensitivity,
 } from "@/game/settings";
+import { dailyLine, dailyRecordLine, dailyRun, dailyStreak, readDailyHistory, readDailyResult, type DailyResult, type DailyHistoryEntry } from "@/game/daily";
+import type { Grade } from "@/game/grade";
+import { encodeSave, decodeSave, describeSave } from "@/game/save";
+import { MAX_UPGRADE, UPGRADES, UPGRADE_IDS, wearLabel } from "@/game/upgrades";
+import { haptic, setHapticsEnabled } from "@/game/haptics";
+import { coachChecklist, coachPrompt } from "@/game/coach";
+import { QualityGovernor } from "@/game/quality";
+import { gradeColor, gradeGlyph } from "@/game/ring-palette";
+import { challengeCode, paintShareCard, parseChallenge, shareText, type ShareCard } from "@/game/share";
 
 const GUIDE_KEY = "slingline-guide";
 
@@ -81,6 +100,9 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
     dest,
     ...sim.pieces.map((piece) => ({ x: piece.x, z: piece.z })),
   ];
+  // The far bearing of a two-pad call still has to fit on the map.
+  const secondPad = sim.secondPad;
+  if (secondPad !== null) spots.push({ x: PADS[secondPad]!.x, z: PADS[secondPad]!.z });
   if (sim.career.job === "spa") {
     spots.push({ x: MAPLE_LANE_SETUP.x, z: MAPLE_LANE_SETUP.z });
     for (const house of HOUSES) {
@@ -146,6 +168,41 @@ function paintJobMap(canvas: HTMLCanvasElement, sim: CraneSim) {
   ctx.font = "10px sans-serif";
   ctx.fillText(spot.name, dx + 8, dz - 4);
 
+  // A two-pad call has two bearings to land on, not one centre.
+  if (secondPad !== null) {
+    const bearing = PADS[secondPad]!;
+    const bx = px(bearing.x);
+    const bz = py(bearing.z);
+    ctx.beginPath();
+    ctx.arc(bx, bz, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx - 5, bz);
+    ctx.lineTo(bx + 5, bz);
+    ctx.moveTo(bx, bz - 5);
+    ctx.lineTo(bx, bz + 5);
+    ctx.stroke();
+  }
+
+  // Live boom radius, so the set can be planned before slewing.
+  const chart = sim.loadChart();
+  if (sim.state === "lifting" && chart.radius > 0.5) {
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "#6f7b88";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(px(sim.truckX), py(sim.truckZ), chart.radius * scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#9aa3ad";
+    ctx.beginPath();
+    ctx.moveTo(px(sim.truckX), py(sim.truckZ));
+    ctx.lineTo(px(sim.hx), py(sim.hz));
+    ctx.stroke();
+    ctx.restore();
+  }
+
   for (const piece of sim.pieces) {
     const job = piece.kind === jobKind;
     ctx.fillStyle = job ? "#8fc17a" : "#5c656e";
@@ -179,6 +236,35 @@ const VOLUME_STEPS = [
 
 const STEP = 1 / 60;
 
+function gradeTint(grade: Grade): string {
+  return gradeColor(grade);
+}
+
+const PART_ROWS = ["off", "impact", "sway", "chart", "heading"] as const;
+
+/** Trigger a browser download for the rendered result card. */
+function downloadCard(card: ShareCard) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 500;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  paintShareCard(ctx, card);
+  const link = document.createElement("a");
+  link.download = `slingline-${card.day}-${card.grade}.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function CraneYard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playingRef = useRef(false);
@@ -199,6 +285,27 @@ export function CraneYard() {
   const [sensitivity, setSensitivity] = useState<Sensitivity>(storedSettings.sensitivity);
   const [volume, setVolume] = useState(storedSettings.volume);
   const [nightAny, setNightAny] = useState(storedSettings.night);
+  const [quality, setQuality] = useState<Quality>(storedSettings.quality);
+  const [contrast, setContrast] = useState(storedSettings.contrast);
+  const [reduceMotion, setReduceMotion] = useState(storedSettings.reduceMotion);
+  const [binds, setBinds] = useState<KeyBinds>(storedSettings.binds);
+  const [capturing, setCapturing] = useState<ActionId | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [debrief, setDebrief] = useState<SetReport | null>(null);
+  const [daily] = useState(() => dailyRun());
+  const [dailyResult, setDailyResult] = useState<DailyResult | null>(() => readDailyResult());
+  const [dailyHistory, setDailyHistory] = useState<DailyHistoryEntry[]>(() => readDailyHistory());
+  const [captions, setCaptions] = useState(storedSettings.captions);
+  const [haptics, setHaptics] = useState(storedSettings.haptics);
+  const [autoFrame, setAutoFrame] = useState(storedSettings.autoFrame);
+  const [gestureSwing, setGestureSwing] = useState(storedSettings.gestureSwing);
+  const [shareStatus, setShareStatus] = useState("");
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importNote, setImportNote] = useState("");
+  const [challengeText, setChallengeText] = useState("");
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [qualityNote, setQualityNote] = useState("");
   const [workLights, setWorkLights] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [contextLost, setContextLost] = useState(false);
@@ -253,6 +360,27 @@ export function CraneYard() {
   const dotRef = useRef<HTMLSpanElement>(null);
   const swayWrapRef = useRef<HTMLDivElement>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const coachCardRef = useRef<HTMLDivElement>(null);
+  const coachWrapRef = useRef<HTMLDivElement>(null);
+  const coachTitleRef = useRef<HTMLParagraphElement>(null);
+  const coachBodyRef = useRef<HTMLParagraphElement>(null);
+  const coachPadsRef = useRef<HTMLSpanElement>(null);
+  const coachHookRef = useRef<HTMLSpanElement>(null);
+  const coachSetRef = useRef<HTMLSpanElement>(null);
+  const captionRef = useRef<HTMLParagraphElement>(null);
+  const captionTextRef = useRef("");
+  const announceRef = useRef<HTMLParagraphElement>(null);
+  const captureRef = useRef(false);
+  const captionTimer = useRef(0);
+  const qualityGovRef = useRef(new QualityGovernor());
+  const qualityRef = useRef<Quality>(storedSettings.quality);
+  const autoFrameRef = useRef(storedSettings.autoFrame);
+  const frameRestoreRef = useRef<CamView | null>(null);
+  const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
+  const gestureRef = useRef(storedSettings.gestureSwing);
+  const hapticsRef = useRef(storedSettings.haptics);
+  const captionsRef = useRef(storedSettings.captions);
+  const camRef = useRef<CamView>("chase");
   const upRef = useRef<HTMLButtonElement>(null);
   const downRef = useRef<HTMLButtonElement>(null);
   const windWrapRef = useRef<HTMLParagraphElement>(null);
@@ -264,13 +392,16 @@ export function CraneYard() {
   const chartPctRef = useRef<HTMLParagraphElement>(null);
   const chartBarRef = useRef<HTMLSpanElement>(null);
   const chartPanelRef = useRef<HTMLDivElement>(null);
-  const debriefRef = useRef<HTMLDivElement>(null);
-  const debriefGradeRef = useRef<HTMLSpanElement>(null);
-  const debriefRingRef = useRef<HTMLSpanElement>(null);
-  const debriefImpactRef = useRef<HTMLSpanElement>(null);
-  const debriefSwayRef = useRef<HTMLSpanElement>(null);
-  const debriefChartRef = useRef<HTMLSpanElement>(null);
-  const debriefPayRef = useRef<HTMLSpanElement>(null);
+  const lastReportRef = useRef<SetReport | null>(null);
+  const chartChipRef = useRef<HTMLSpanElement>(null);
+  const swayMiniRef = useRef<HTMLSpanElement>(null);
+  const limitMiniRef = useRef<HTMLSpanElement>(null);
+  const speedMiniRef = useRef<HTMLSpanElement>(null);
+  const forecastRef = useRef<HTMLParagraphElement>(null);
+  const liveRef = useRef<HTMLParagraphElement>(null);
+  const pausedRef = useRef(false);
+  const prevAttached = useRef(false);
+  const prevReady = useRef(false);
   const lightsBtnRef = useRef<HTMLButtonElement>(null);
   const lightsRef = useRef(false);
   const nightRef = useRef(storedSettings.night);
@@ -299,8 +430,96 @@ export function CraneYard() {
   }, [nightAny]);
 
   useEffect(() => {
-    writeSettingsStore({ mode, pace, scheme, sensitivity, volume, night: nightAny });
-  }, [mode, pace, scheme, sensitivity, volume, nightAny]);
+    writeSettingsStore({
+      mode,
+      pace,
+      scheme,
+      sensitivity,
+      volume,
+      night: nightAny,
+      quality,
+      contrast,
+      reduceMotion,
+      haptics,
+      captions,
+      autoFrame,
+      gestureSwing,
+      binds,
+    });
+  }, [mode, pace, scheme, sensitivity, volume, nightAny, quality, contrast, reduceMotion, haptics, captions, autoFrame, gestureSwing, binds]);
+
+  useEffect(() => {
+    setHapticsEnabled(haptics);
+    hapticsRef.current = haptics;
+  }, [haptics]);
+
+  useEffect(() => {
+    gestureRef.current = gestureSwing;
+  }, [gestureSwing]);
+
+  useEffect(() => {
+    captionsRef.current = captions;
+  }, [captions]);
+
+  useEffect(() => {
+    camRef.current = cam;
+  }, [cam]);
+
+  useEffect(() => {
+    qualityRef.current = quality;
+    qualityGovRef.current.reset();
+  }, [quality]);
+
+  useEffect(() => {
+    autoFrameRef.current = autoFrame;
+  }, [autoFrame]);
+
+  useEffect(() => {
+    setKeyBinds(binds);
+  }, [binds]);
+
+  useEffect(() => {
+    const yard = yardRef.current;
+    if (!yard) return;
+    yard.setQuality(quality);
+    yard.setContrast(contrast);
+    yard.setReduceMotion(reduceMotion);
+  }, [quality, contrast, reduceMotion]);
+
+  // Pause whenever the tab loses focus, so a shift cannot run on unattended.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden || !playingRef.current || pausedRef.current) return;
+      pausedRef.current = true;
+      simRef.current?.setPaused(true);
+      setPaused(true);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  // Capture the next physical key for a binding.
+  useEffect(() => {
+    if (!capturing) return;
+    const onKey = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.code === "Escape") {
+        setCapturing(null);
+        return;
+      }
+      const code = event.code;
+      setBinds((current) => {
+        const next: KeyBinds = { ...current };
+        for (const action of BIND_ACTIONS) next[action] = next[action].filter((entry) => entry !== code);
+        next[capturing] = [code];
+        return next;
+      });
+      setCapturing(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [capturing]);
 
   const shownBest = useRef(0);
   const beatShown = useRef<string | null>(null);
@@ -344,7 +563,10 @@ export function CraneYard() {
         },
       });
       yardRef.current = yard;
-      const initialCam: CamView = sim.career.job === "spa" || sim.career.job === "wind" ? "wide" : "chase";
+      yard.setQuality(storedSettings.quality);
+      yard.setContrast(storedSettings.contrast);
+      yard.setReduceMotion(storedSettings.reduceMotion);
+      const initialCam: CamView = sim.career.job === "spa" || sim.windSite ? "wide" : "chase";
       setCam(initialCam);
       yard.setView(initialCam);
     } catch (err) {
@@ -365,8 +587,65 @@ export function CraneYard() {
         setSteer: (v) => setSteerOverride(v),
         getHook: () => ({ hy: sim.hy, extension: sim.extension, cable: sim.cable, state: sim.state, pitch: sim.boomPitch, safety: sim.safetyLock }),
         getInput: () => ({ playing: playingRef.current, actions: readActions(), boardPause: sim.boardPause, beat: sim.careerBeat }),
+        getRig: () => ({
+          state: sim.state,
+          phase: sim.phase,
+          attached: sim.attached,
+          landed: sim.landed,
+          canRelease: sim.canRelease,
+          hookReady: sim.hookReady,
+          outrigger: sim.outrigger,
+          message: sim.message,
+          debriefLeft: sim.debriefLeft,
+          debriefHold: sim.debriefHold,
+          lastSet: sim.lastSet,
+          align: sim.hookAlignment(),
+          carry: sim.carryAlignment(),
+          spot: sim.setSpot(),
+          paused: sim.paused,
+          job: sim.career.job,
+          leg: sim.career.leg,
+          hx: sim.hx,
+          hy: sim.hy,
+          hz: sim.hz,
+          yaw: sim.yaw,
+          heading: sim.heading,
+          speed: sim.speed,
+          extension: sim.extension,
+          pitch: sim.boomPitch,
+          truckX: sim.truckX,
+          truckZ: sim.truckZ,
+        }),
+        getRing: () => yardRef.current?.ringColor() ?? null,
+        getAudio: () => ({ state: audioContext()?.state ?? "none", volume: audioVolume(), cues: cueCount() }),
+        getCareer: () => ({ ...sim.career }),
       };
     }
+
+    /** Short on-screen caption plus an assertive screen-reader announcement. */
+    const flashCaption = (text: string) => {
+      if (announceRef.current) announceRef.current.textContent = text;
+      if (!captionsRef.current) {
+        captionTextRef.current = "";
+        return;
+      }
+      captionTextRef.current = text;
+      window.clearTimeout(captionTimer.current);
+      captionTimer.current = window.setTimeout(() => {
+        captionTextRef.current = "";
+      }, 1700);
+    };
+
+    const captureStill = () => {
+      const link = document.createElement("a");
+      link.download = `slingline-${new Date().toISOString().slice(0, 10)}.png`;
+      try {
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      } catch {
+        setQualityNote("The browser would not save the still.");
+      }
+    };
 
     const paintHud = () => {
       if (scoreRef.current) scoreRef.current.textContent = String(sim.score);
@@ -380,7 +659,8 @@ export function CraneYard() {
           const note = sim.career.note > 0 ? `  NOTE ${money(sim.career.note)}` : "";
           const down = sim.career.downtime > 0 ? `  DOWNTIME ${sim.career.downtime}` : "";
           const mark = sim.career.status === "hired" ? `STANDING ${sim.career.standing}` : `REP ${sim.career.reputation}`;
-          bookRef.current.textContent = `${mark}${note}${down}`;
+          const health = sim.career.status === "independent" && sim.career.wear > 0.5 ? `  ${wearLabel(sim.career.wear)}` : "";
+          bookRef.current.textContent = `${mark}${note}${down}${health}`;
         }
       }
       if (buyRef.current) buyRef.current.textContent = sim.buyLabel();
@@ -405,9 +685,20 @@ export function CraneYard() {
       if (coachRef.current) {
         const text = sim.toastLeft > 0 ? sim.toast : sim.message;
         coachRef.current.textContent = text;
+        coachRef.current.dataset.live = sim.toastLeft > 0 ? "true" : "false";
         coachRef.current.style.display = text === sim.contractLabel() ? "none" : "block";
       }
       if (swayNumRef.current) swayNumRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
+      if (swayMiniRef.current) swayMiniRef.current.textContent = `${sim.swayDeg.toFixed(0)}°`;
+      if (limitMiniRef.current) {
+        limitMiniRef.current.textContent = `${Math.round(sim.limitRatio * 100)}%`;
+        limitMiniRef.current.style.color =
+          sim.limitState === "over" ? "#e05252" : sim.limitState === "near" ? "#e3a23a" : "";
+      }
+      if (speedMiniRef.current) {
+        speedMiniRef.current.textContent =
+          sim.state === "lifting" ? `${sim.hookSpeed.toFixed(1)}` : `${Math.abs(sim.speed).toFixed(1)}`;
+      }
       if (limitRef.current) {
         const pct = Math.round(sim.limitRatio * 100);
         limitRef.current.textContent = `${pct}%`;
@@ -443,6 +734,19 @@ export function CraneYard() {
           }
         }
       }
+      if (forecastRef.current) {
+        const forecast = sim.windForecast();
+        forecastRef.current.style.display = forecast.length ? "flex" : "none";
+        const warning = sim.gustWarning();
+        const soon =
+          warning && warning.seconds <= 1.6 && warning.amp >= 1
+            ? `GUST IN ${Math.max(1, Math.round(warning.seconds))}s · `
+            : "";
+        forecastRef.current.textContent = `${soon}NEXT ${forecast
+          .map((gust) => `${Math.max(1, Math.round(gust.seconds))}s ${gust.amp < 0.8 ? "LIGHT" : gust.amp < 1.15 ? "STEADY" : "GUST"}`)
+          .join(" · ")}`;
+        forecastRef.current.dataset.soon = soon ? "true" : "false";
+      }
       if (deployLabelRef.current) {
         const label = sim.flipped
           ? "RIGHT"
@@ -461,7 +765,7 @@ export function CraneYard() {
       if (hookBtnRef.current) {
         const ready = sim.attached || sim.hookReady;
         hookBtnRef.current.disabled = !ready;
-        hookBtnRef.current.dataset.ready = ready ? "true" : "false";
+        hookBtnRef.current.dataset.ready = sim.canRelease ? "mark" : ready ? "true" : "false";
         hookBtnRef.current.dataset.on = sim.attached ? "true" : "false";
         if (hookLabelRef.current) hookLabelRef.current.textContent = sim.attached ? "RELEASE" : "HOOK";
       }
@@ -508,7 +812,15 @@ export function CraneYard() {
         } else {
           objective = `PICKUP · Find the marked ${liveCargo}; use the HOOK camera if needed.`;
         }
+        const headingOff = sim.phase === "carry" ? sim.headingError() : null;
+        if (headingOff !== null) {
+          objective += headingOff <= 2 ? " · SQUARE" : ` · ${Math.round(headingOff)}° OFF SQUARE`;
+        }
         objectiveRef.current.textContent = objective;
+      }
+      if (liveRef.current) {
+        const line = objectiveRef.current?.textContent ?? "";
+        if (liveRef.current.textContent !== line) liveRef.current.textContent = line;
       }
       if (alignmentRef.current) {
         const pickup = !sim.attached ? sim.hookAlignment() : null;
@@ -537,33 +849,53 @@ export function CraneYard() {
         }
       }
       if (mapRef.current && mapBoxRef.current?.open) paintJobMap(mapRef.current, sim);
-      const debrief = debriefRef.current;
-      if (debrief) {
-        const report = sim.lastSet;
-        const show = sim.debriefLeft > 0 && report != null;
-        debrief.style.display = show ? "block" : "none";
-        if (show && report) {
-          const tint =
-            report.grade === "S" ? "#e3a23a" : report.grade === "A" ? "#8fc17a" : report.grade === "B" ? "#cfd6dd" : "#e05252";
-          if (debriefGradeRef.current) {
-            debriefGradeRef.current.textContent = report.grade;
-            debriefGradeRef.current.style.color = tint;
-          }
-          if (debriefRingRef.current) {
-            debriefRingRef.current.textContent = `${report.off.toFixed(1)} / ${report.tolerance.toFixed(1)} m`;
-          }
-          if (debriefImpactRef.current) debriefImpactRef.current.textContent = `${report.impact.toFixed(1)} m/s`;
-          if (debriefSwayRef.current) debriefSwayRef.current.textContent = `${report.sway.toFixed(1)}°`;
-          if (debriefChartRef.current) debriefChartRef.current.textContent = `${Math.round(report.chart * 100)}%`;
-          if (debriefPayRef.current) {
-            const repLabel = sim.career.status === "hired" ? "STANDING" : "REP";
-            debriefPayRef.current.textContent =
-              report.pay > 0
-                ? `${money(report.pay)}${report.rep > 0 ? ` · +${report.rep} ${repLabel}` : ""}`
-                : "Practice — no pay";
+      if (lastReportRef.current !== sim.lastSet) {
+        lastReportRef.current = sim.lastSet;
+        setDebrief(sim.lastSet);
+        if (sim.lastSet) {
+          const report = sim.lastSet;
+          rigCue("grade", performance.now(), {
+            grade: report.grade,
+            error: report.impact / Math.max(0.1, report.impactLimit),
+          });
+          flashCaption(`SET — GRADE ${report.grade} ${gradeGlyph(report.grade)}`);
+          haptic("grade");
+          if (autoFrameRef.current && camRef.current !== "cab" && camRef.current !== "operator" && !frameRestoreRef.current) {
+            frameRestoreRef.current = camRef.current;
+            setCam("wide");
+            yard.setView("wide");
           }
         }
-        if (chartPanelRef.current) chartPanelRef.current.style.display = show ? "none" : "block";
+        if (sim.lastSet && sim.daily) {
+          setDailyResult(readDailyResult());
+          setDailyHistory(readDailyHistory());
+        }
+      }
+      if (chartPanelRef.current) {
+        chartPanelRef.current.style.display = sim.lastSet && sim.debriefLeft > 0 ? "none" : "block";
+      }
+      if (sim.canRelease && !prevReady.current) {
+        rigCue("ready");
+        haptic("ready");
+        flashCaption("ON THE MARK — RELEASE");
+      }
+      if (sim.attached && !prevAttached.current) {
+        rigCue("latch");
+        haptic("latch");
+        flashCaption("LOAD ON THE HOOK");
+      }
+      if (!sim.attached && prevAttached.current) {
+        rigCue("release");
+        haptic("release");
+        flashCaption("LOAD RELEASED");
+      }
+      prevReady.current = sim.canRelease;
+      prevAttached.current = sim.attached;
+      if (chartChipRef.current) {
+        const readout = sim.loadChart();
+        chartChipRef.current.textContent = sim.attached
+          ? `${readout.radius.toFixed(1)} m · ${Math.round(readout.ratio * 100)}%`
+          : "—";
       }
       if (chartRadiusRef.current) {
         const chart = sim.loadChart();
@@ -593,6 +925,40 @@ export function CraneYard() {
         const show = sim.state === "lifting" && sim.swayDeg > 3;
         swayWrapRef.current.style.display = show ? "block" : "none";
       }
+      if (coachWrapRef.current) {
+        const firstShift = sim.career.status === "hired" && sim.career.jobsDone === 0 && !sim.practicing;
+        coachWrapRef.current.style.display = firstShift ? "flex" : "none";
+        if (firstShift) {
+          const spot = sim.setSpot();
+          const input = {
+            state: sim.state,
+            usesOutriggers: sim.usesOutriggers(),
+            outrigger: sim.outrigger,
+            attached: sim.attached,
+            landed: sim.landed,
+            canRelease: sim.canRelease,
+            phase: sim.phase,
+            hookReady: sim.hookReady,
+            hookGap: sim.hookGap,
+            spotMeters: spot.meters,
+            tolerance: sim.setTolerance,
+            hauling: sim.hauling,
+          };
+          const prompt = coachPrompt(input);
+          if (coachTitleRef.current) coachTitleRef.current.textContent = prompt.title;
+          if (coachBodyRef.current) coachBodyRef.current.textContent = prompt.body;
+          const checks = coachChecklist(input);
+          const nodes = [coachPadsRef.current, coachHookRef.current, coachSetRef.current];
+          checks.forEach((check, index) => {
+            const node = nodes[index];
+            if (!node) return;
+            node.textContent = `${check.done ? "■" : "□"} ${check.label}`;
+            node.dataset.done = check.done ? "true" : "false";
+          });
+          if (sim.phase === "done") setCoachOpen(false);
+        }
+      }
+      if (captionRef.current) captionRef.current.textContent = captionTextRef.current;
       const hot = sim.warn ? "hold-hot" : "";
       if (upRef.current) upRef.current.classList.toggle("hold-hot", hot === "hold-hot");
       if (downRef.current) downRef.current.classList.toggle("hold-hot", hot === "hold-hot");
@@ -643,6 +1009,12 @@ export function CraneYard() {
       }
       const frameDt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
+      if (qualityRef.current === "auto" && qualityGovRef.current.sample(frameDt, now)) {
+        // Drop the render tier for this shift only. The saved setting stays on
+        // auto, so the next device or session gets its own measurement.
+        setQualityNote("Slow frames: auto quality dropped to LOW for this shift.");
+        yard.setQuality("low");
+      }
       acc += frameDt;
       let steps = 0;
       while (acc >= STEP && steps < 4) {
@@ -655,6 +1027,20 @@ export function CraneYard() {
             setMode(next);
           }
           prevMode = actions.modeDown;
+          if (actions.pausePressed) {
+            const next = !pausedRef.current;
+            pausedRef.current = next;
+            sim.setPaused(next);
+            setPaused(next);
+          }
+          if (!sim.paused && actions.hookPressed) {
+            if (sim.attached) sim.requestRelease();
+            else sim.requestHook();
+          }
+          if (!sim.paused && actions.deployPressed) {
+            if (sim.flipped) sim.recover();
+            else sim.requestDeploy();
+          }
         }
         sim.mode = modeRef.current;
         sim.pace = paceRef.current;
@@ -669,6 +1055,10 @@ export function CraneYard() {
         setBest(sim.best);
       }
       yard.render(sim, frameDt || STEP);
+      if (captureRef.current) {
+        captureRef.current = false;
+        captureStill();
+      }
       paintHud();
     });
 
@@ -679,7 +1069,7 @@ export function CraneYard() {
       removeInput();
       if (import.meta.env.DEV) delete window.__controlsTest;
     };
-  }, []);
+  }, [storedSettings]);
 
   const pickScheme = (next: Scheme) => {
     releaseArrows();
@@ -708,6 +1098,9 @@ export function CraneYard() {
     setSettingsOpen(false);
     setConfirmReset(false);
     setTrainingOpen(false);
+    setCoachOpen(false);
+    setDebrief(null);
+    frameRestoreRef.current = null;
     playingRef.current = false;
     setPlaying(false);
     refreshBooks();
@@ -732,6 +1125,7 @@ export function CraneYard() {
     unlockAudio();
     setTrainingStep(0);
     setTrainingOpen(sim.career.jobsDone === 0 && sim.career.status === "hired" && !guideSeen());
+    setCoachOpen(sim.career.jobsDone === 0 && sim.career.status === "hired");
     setPlaying(true);
   };
 
@@ -762,6 +1156,42 @@ export function CraneYard() {
     setPlaying(true);
   };
 
+  const startDaily = () => {
+    const sim = simRef.current;
+    if (!sim) return;
+    sim.practiceDaily(daily);
+    setPracticeId(daily.crane);
+    setCrane(daily.crane);
+    setDailyResult(readDailyResult());
+    pausedRef.current = false;
+    sim.setPaused(false);
+    setPaused(false);
+    playingRef.current = true;
+    unlockAudio();
+    setPlaying(true);
+    setCam("wide");
+    yardRef.current?.setView("wide");
+  };
+
+  const resumeShift = () => {
+    pausedRef.current = false;
+    simRef.current?.setPaused(false);
+    setPaused(false);
+  };
+
+  const quitShift = () => {
+    const sim = simRef.current;
+    sim?.setPaused(false);
+    sim?.clockIn();
+    pausedRef.current = false;
+    setPaused(false);
+    playingRef.current = false;
+    setPlaying(false);
+    setDebrief(null);
+    frameRestoreRef.current = null;
+    refreshBooks();
+  };
+
   const cycleCrane = () => {
     const ids = CRANE_CHOICES.map((choice) => choice.id);
     const index = ids.indexOf(simRef.current?.crane ?? crane);
@@ -774,6 +1204,12 @@ export function CraneYard() {
   const onCamDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    const sim = simRef.current;
+    if (gestureRef.current && playingRef.current && sim?.state === "lifting") {
+      // Drag-to-swing: one finger in the yard maps straight onto the boom.
+      gestureStartRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
     camPointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (camPointers.current.size === 2) {
       const points = [...camPointers.current.values()];
@@ -782,6 +1218,12 @@ export function CraneYard() {
   };
 
   const onCamMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const start = gestureStartRef.current;
+    if (start) {
+      const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+      setTouchAxes(clamp((start.x - e.clientX) / 90), clamp((start.y - e.clientY) / 90));
+      return;
+    }
     const previous = camPointers.current.get(e.pointerId);
     if (!previous) return;
     const next = { x: e.clientX, y: e.clientY };
@@ -798,15 +1240,88 @@ export function CraneYard() {
   };
 
   const onCamEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (gestureStartRef.current) {
+      gestureStartRef.current = null;
+      setTouchAxes(0, 0);
+    }
     camPointers.current.delete(e.pointerId);
     if (camPointers.current.size < 2) pinchDistance.current = null;
   };
 
+  const buildCard = (): ShareCard | null => {
+    const sim = simRef.current;
+    const report = sim?.lastSet;
+    if (!sim || !report) return null;
+    const run = sim.daily;
+    return {
+      company: summary.company,
+      job: levelOf(sim.career.job).title,
+      grade: report.grade,
+      pay: report.pay,
+      off: report.off,
+      tolerance: report.tolerance,
+      impact: report.impact,
+      sway: report.sway,
+      chart: report.chart,
+      day: run?.day ?? new Date().toISOString().slice(0, 10),
+      streak: run ? dailyStreak(dailyHistory, run.day) : undefined,
+    };
+  };
+
+  const importSave = () => {
+    const decoded = decodeSave(importText);
+    if (!decoded.ok) {
+      setImportNote(decoded.message);
+      return;
+    }
+    simRef.current?.importCareer(decoded.state);
+    setBooks({ ...decoded.state });
+    setCrane(decoded.state.crane);
+    setPracticeId(null);
+    playingRef.current = false;
+    setPlaying(false);
+    setImportNote(`Imported: ${describeSave(decoded.state)}`);
+    setImportText("");
+  };
+
+  const startChallenge = () => {
+    const code = parseChallenge(challengeText);
+    if (!code) {
+      setImportNote("That challenge code is not valid.");
+      return;
+    }
+    const sim = simRef.current;
+    if (!sim) return;
+    const seeded = dailyRun(new Date(`${code.day}T12:00:00Z`));
+    sim.practiceDaily({ ...seeded, job: code.job, crane: code.crane, day: code.day, label: code.day });
+    setCrane(code.crane);
+    setPracticeId(code.crane);
+    playingRef.current = true;
+    unlockAudio();
+    setPlaying(true);
+    setCam("wide");
+    yardRef.current?.setView("wide");
+    setChallengeText("");
+    setImportNote(`Challenge ${code.day} loaded.`);
+  };
+
+  const liveJob = simRef.current?.career.job ?? books.job;
+  const bestRun = books.bestRuns[liveJob];
+  const isNewBest =
+    !!debrief &&
+    !!bestRun &&
+    bestRun.grade === debrief.grade &&
+    Math.abs(bestRun.off - debrief.off) < 0.02 &&
+    Math.abs(bestRun.impact - debrief.impact) < 0.02;
+
   return (
     <main
       className="yard relative h-dvh w-full overflow-hidden bg-bg text-fg"
+      data-reduce-motion={reduceMotion ? "true" : "false"}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <p ref={liveRef} aria-live="polite" className="sr-only" />
+      <p ref={announceRef} aria-live="assertive" className="sr-only" />
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none"
@@ -835,16 +1350,19 @@ export function CraneYard() {
         </div>
         <div className="bg-surface px-3 py-2 text-right">
           <p className="font-display text-sm tracking-widest text-muted">SETS</p>
-          <p className="font-display text-4xl leading-none text-fg">
+          <p className="font-display text-2xl leading-none text-fg sm:text-4xl">
             <span ref={scoreRef}>0</span>
             <span className="text-muted"> / </span>
             <span ref={bestRef}>{best}</span>
           </p>
-          <p className="mt-1 font-display text-sm tracking-widest text-muted">
+          <p className="mt-1 font-display text-[11px] tracking-widest text-muted sm:text-sm">
             CASH <span ref={cashRef} className="text-fg">NOW RENTAL  $0</span>
           </p>
-          <p ref={bookRef} className="font-display text-xs tracking-widest text-steel">
+          <p ref={bookRef} className="hidden font-display text-xs tracking-widest text-steel sm:block">
             STANDING 70
+          </p>
+          <p className="hidden font-display text-[10px] tracking-widest text-steel sm:block">
+            RADIUS <span ref={chartChipRef} className="text-fg">—</span>
           </p>
           <button
             ref={buyRef}
@@ -853,12 +1371,12 @@ export function CraneYard() {
               simRef.current?.buyNext();
               refreshBooks();
             }}
-            className="pointer-events-auto mt-1 min-h-11 w-full border border-primary bg-bg px-2 py-1 font-display text-xs leading-tight tracking-wide text-fg"
+            className="pointer-events-auto mt-1 min-h-9 w-full border border-primary bg-bg px-1.5 py-0.5 font-display text-[10px] leading-tight tracking-wide text-fg sm:min-h-11 sm:px-2 sm:py-1 sm:text-xs"
           >
             HARGROVE'S CRANE
           </button>
           {playing ? (
-            <div className="mt-2 border-t border-line pt-2 font-display text-sm tracking-wide text-fg">
+            <div className="mt-2 hidden border-t border-line pt-2 font-display text-sm tracking-wide text-fg sm:block">
               <p>
                 SWAY <span ref={swayNumRef}>0°</span>
               </p>
@@ -879,6 +1397,7 @@ export function CraneYard() {
                   LIGHT
                 </span>
               </p>
+              <p ref={forecastRef} className="wind-row text-[10px] tracking-wider text-muted" style={{ display: "none" }} />
               <p>
                 <span ref={meterRef}>SPEED</span> <span ref={speedRef}>0.0</span>
               </p>
@@ -895,6 +1414,9 @@ export function CraneYard() {
         data-show=""
         className="banner pointer-events-none absolute inset-x-0 top-16 px-4 text-center font-display text-2xl tracking-wide"
       />
+      {playing && captions ? (
+        <p ref={captionRef} className="caption-line pointer-events-none absolute inset-x-0 bottom-44 px-4 text-center font-display text-sm tracking-widest text-fg" />
+      ) : null}
 
       {playing && trainingOpen ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-bg/75 p-4">
@@ -936,28 +1458,56 @@ export function CraneYard() {
       ) : null}
 
       {playing ? (
-        <div className="pointer-events-none absolute left-3 top-36 flex max-w-[11.5rem] flex-col items-start gap-2 sm:max-w-xs">
-          <p ref={callRef} className="bg-surface px-3 py-2 font-display text-base leading-tight tracking-wide text-primary">
+        <div className="pointer-events-none absolute left-2 right-24 top-[9.5rem] flex flex-col items-start gap-1.5 sm:left-3 sm:right-auto sm:top-36 sm:max-w-xs sm:gap-2">
+          <p ref={callRef} className="hidden w-full truncate bg-surface px-2 py-1 font-display text-[11px] leading-tight tracking-wide text-primary sm:block sm:whitespace-normal sm:px-3 sm:py-2 sm:text-base">
             YARD MOVE: CRATE · WAGE $810 OF $1,800
           </p>
-          <p ref={coachRef} className="bg-surface px-3 py-2 text-left text-base text-fg">
+          <p ref={coachRef} data-live="false" className="coach-line line-clamp-2 w-full bg-surface px-2 py-1 text-left text-[11px] leading-snug text-fg sm:line-clamp-none sm:px-3 sm:py-2 sm:text-base">
             Find the marked load. Lower the hook until it is over the crate, attach it, then carry it to the amber set ring.
           </p>
           <p
             ref={objectiveRef}
-            className="border-l-2 border-primary bg-surface px-3 py-2 text-left font-display text-sm tracking-wide text-fg"
+            className="w-full border-l-2 border-primary bg-surface px-2 py-1 text-left font-display text-[11px] leading-snug tracking-wide text-fg sm:px-3 sm:py-2 sm:text-sm"
           >
             SETUP · Stop in the work area, then deploy the pads.
           </p>
+          {coachOpen ? (
+            <section ref={coachWrapRef} className="pointer-events-auto w-full border border-primary border-t-2 bg-surface/95 px-2 py-1 shadow-xl">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-display text-[10px] tracking-widest text-primary">FIRST SHIFT</p>
+                <button type="button" onClick={() => setCoachOpen(false)} className="min-h-7 border border-line px-1.5 font-display text-[10px] tracking-wide text-fg">CLOSE</button>
+              </div>
+              <div ref={coachCardRef}>
+                <p ref={coachTitleRef} className="mt-0.5 font-display text-base leading-tight text-fg">Pads first</p>
+                <p ref={coachBodyRef} className="mt-0.5 text-[11px] leading-snug text-muted">Stop the carrier, then press DEPLOY.</p>
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 border-t border-line pt-1 text-[10px] tracking-wide">
+                  <span ref={coachPadsRef} data-done="false" className="text-steel">□ Pads</span>
+                  <span ref={coachHookRef} data-done="false" className="text-steel">□ Hook</span>
+                  <span ref={coachSetRef} data-done="false" className="text-steel">□ Set</span>
+                </div>
+              </div>
+            </section>
+          ) : null}
           <p
             ref={alignmentRef}
             data-ready="false"
             style={{ display: "none" }}
-            className="border-l-2 border-line bg-surface px-3 py-2 text-left font-display text-sm tracking-wide text-fg"
+            className="w-full border-l-2 border-line bg-surface px-2 py-1 text-left font-display text-[11px] leading-snug tracking-wide text-fg sm:px-3 sm:py-2 sm:text-sm"
           >
             ALIGN · SLEW · REACH · HOIST
           </p>
-          <details ref={mapBoxRef} className="pointer-events-auto w-full max-w-[16rem] bg-surface px-3 py-2">
+          <p className="flex w-full justify-between gap-2 bg-surface px-2 py-1 font-display text-[10px] tracking-wide text-fg sm:hidden">
+            <span>
+              SWAY <span ref={swayMiniRef}>0°</span>
+            </span>
+            <span>
+              LIMIT <span ref={limitMiniRef}>0%</span>
+            </span>
+            <span>
+              SPEED <span ref={speedMiniRef}>0.0</span>
+            </span>
+          </p>
+          <details ref={mapBoxRef} className="short-hide pointer-events-auto w-full max-w-[16rem] bg-surface px-3 py-2">
             <summary className="cursor-pointer font-display text-sm tracking-wide text-primary">JOB MAP</summary>
             <canvas ref={mapRef} className="mt-2 h-[156px] w-full bg-bg" />
             <p className="mt-1 font-display text-[10px] tracking-widest text-muted">NORTH UP · CROSS IS THE EXACT SET</p>
@@ -983,7 +1533,7 @@ export function CraneYard() {
                   simRef.current?.skipTutorial();
                   refreshBooks();
                 }}
-                className="h-11 border border-line bg-surface px-3 font-display text-sm tracking-wide text-fg"
+                className="hidden h-11 border border-line bg-surface px-3 font-display text-sm tracking-wide text-fg sm:block"
               >
                 SKIP TUTORIAL
               </button>
@@ -1002,7 +1552,7 @@ export function CraneYard() {
       ) : null}
 
       {playing ? (
-        <div className="pointer-events-auto absolute right-3 top-64 z-20 flex flex-col items-end gap-2">
+        <div className="pointer-events-auto absolute right-2 top-[9.5rem] z-20 flex flex-col items-end gap-1 sm:right-3 sm:top-64 sm:gap-2">
           <button
             ref={lightsBtnRef}
             type="button"
@@ -1022,12 +1572,12 @@ export function CraneYard() {
           <button
             type="button"
             onClick={() => setTestOpen(true)}
-            className="border border-primary bg-surface px-2 py-1.5 font-display text-xs tracking-widest text-primary shadow-lg"
+            className="border border-primary bg-surface px-1.5 py-1 font-display text-[10px] tracking-widest text-primary shadow-lg sm:px-2 sm:py-1.5 sm:text-xs"
           >
             TEST JOB
           </button>
           <details className="pointer-events-auto relative">
-            <summary className="cursor-pointer border border-line bg-surface px-2 py-1.5 font-display text-xs tracking-widest text-fg shadow-lg">
+            <summary className="cursor-pointer border border-line bg-surface px-1.5 py-1 font-display text-[10px] tracking-widest text-fg shadow-lg sm:px-2 sm:py-1.5 sm:text-xs">
               CAM · {cam === "operator" ? "SEAT" : cam.toUpperCase()}
             </summary>
             <div className="absolute right-0 top-full z-20 mt-1 grid grid-cols-2 gap-1 border border-line bg-surface p-1">
@@ -1053,7 +1603,7 @@ export function CraneYard() {
             aria-label="Open game settings"
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((open) => !open)}
-            className="flex size-12 items-center justify-center rounded-full border border-primary bg-surface text-2xl text-fg shadow-lg"
+            className="flex size-10 items-center justify-center rounded-full border border-primary bg-surface text-xl text-fg shadow-lg sm:size-12 sm:text-2xl"
           >
             ⚙
           </button>
@@ -1114,6 +1664,26 @@ export function CraneYard() {
                 <ModeButton active={!nightAny} onClick={() => setNightAny(false)} label="Day" detail="As the job says" />
                 <ModeButton active={nightAny} onClick={() => setNightAny(true)} label="Night" detail="Every job after dark" />
               </div>
+              <ExtraSettings
+                quality={quality}
+                onQuality={setQuality}
+                contrast={contrast}
+                onContrast={setContrast}
+                reduceMotion={reduceMotion}
+                onReduceMotion={setReduceMotion}
+                haptics={haptics}
+                onHaptics={setHaptics}
+                captions={captions}
+                onCaptions={setCaptions}
+                autoFrame={autoFrame}
+                onAutoFrame={setAutoFrame}
+                gestureSwing={gestureSwing}
+                onGestureSwing={setGestureSwing}
+                binds={binds}
+                onBinds={setBinds}
+                capturing={capturing}
+                onCapture={setCapturing}
+              />
               <button
                 type="button"
                 onClick={() => {
@@ -1156,37 +1726,109 @@ export function CraneYard() {
         </div>
       ) : null}
 
-      {playing ? (
-        <div
-          ref={debriefRef}
-          style={{ display: "none" }}
-          className="pointer-events-none absolute bottom-24 left-1/2 w-56 -translate-x-1/2 border border-line bg-surface px-3 py-2 font-display tracking-wide text-fg"
-        >
+      {playing && debrief ? (
+        <div className="pointer-events-auto absolute left-1/2 top-1/2 z-30 w-[min(17rem,calc(100vw-1rem))] -translate-x-1/2 -translate-y-1/2 border border-line bg-surface px-3 py-2 font-display tracking-wide text-fg sm:bottom-24 sm:top-auto sm:translate-y-0">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs tracking-widest text-muted">SET DEBRIEF</span>
-            <span ref={debriefGradeRef} className="text-3xl leading-none">
-              B
+            <span className="text-xs tracking-widest text-muted">SET DEBRIEF · {debrief.cost}</span>
+            <span className="text-3xl leading-none" style={{ color: gradeTint(debrief.grade) }} aria-label={`Grade ${debrief.grade}`}>
+              {gradeGlyph(debrief.grade)} {debrief.grade}
             </span>
           </div>
-          <p className="mt-1 flex justify-between gap-2 text-xs">
-            <span className="text-muted">RING</span>
-            <span ref={debriefRingRef}>0.0 / 0.0 m</span>
+          <div className="mt-1 divide-y divide-line/60 text-[11px]">
+            {PART_ROWS.filter((part) => part !== "heading" || (debrief.headingTolerance ?? 0) > 0).map((part) => (
+              <p key={part} className="flex items-baseline justify-between gap-2 py-0.5">
+                <span className="text-muted">{part === "off" ? "RING" : part.toUpperCase()}</span>
+                <span className="flex items-baseline gap-2 tabular-nums">
+                  <span className="text-steel">
+                    {part === "off"
+                      ? `${debrief.off.toFixed(1)} / ${debrief.tolerance.toFixed(1)} m`
+                      : part === "impact"
+                        ? `${debrief.impact.toFixed(1)} m/s`
+                        : part === "sway"
+                          ? `${debrief.sway.toFixed(1)}°`
+                          : part === "heading"
+                            ? `${Math.round(debrief.heading ?? 0)}° / ${Math.round(debrief.headingTolerance ?? 0)}°`
+                            : `${Math.round(debrief.chart * 100)}%`}
+                  </span>
+                  <span className="w-3 text-right" style={{ color: gradeTint(debrief.parts[part] ?? "C") }}>
+                    {debrief.parts[part] ?? "—"}
+                  </span>
+                </span>
+              </p>
+            ))}
+          </div>
+          <p className="mt-1 border-t border-line pt-1 text-[11px] leading-snug text-steel">{debrief.tip}</p>
+          <p className="mt-0.5 text-[10px] tracking-widest text-muted">
+            {isNewBest
+              ? "PERSONAL BEST ON THIS CALL"
+              : bestRun
+                ? `BEST ${bestRun.grade} · RING ${bestRun.off.toFixed(1)} m · IMPACT ${bestRun.impact.toFixed(1)} m/s`
+                : "FIRST SET ON THIS CALL"}
           </p>
-          <p className="flex justify-between gap-2 text-xs">
-            <span className="text-muted">IMPACT</span>
-            <span ref={debriefImpactRef}>0.0 m/s</span>
-          </p>
-          <p className="flex justify-between gap-2 text-xs">
-            <span className="text-muted">SWAY</span>
-            <span ref={debriefSwayRef}>0.0°</span>
-          </p>
-          <p className="flex justify-between gap-2 text-xs">
-            <span className="text-muted">CHART</span>
-            <span ref={debriefChartRef}>0%</span>
-          </p>
-          <p className="mt-1 border-t border-line pt-1 text-right text-sm">
-            <span ref={debriefPayRef}>—</span>
-          </p>
+          <div className="mt-1 flex flex-wrap gap-1 border-t border-line pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                const card = buildCard();
+                if (!card) return;
+                downloadCard(card);
+                setShareStatus("CARD SAVED");
+              }}
+              className="min-h-8 flex-1 border border-line bg-bg px-2 font-display text-[10px] tracking-wide text-fg"
+            >
+              SAVE CARD
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const card = buildCard();
+                if (!card) return;
+                const copied = await copyText(shareText(card));
+                setShareStatus(copied ? "RESULT COPIED" : shareText(card));
+              }}
+              className="min-h-8 flex-1 border border-line bg-bg px-2 font-display text-[10px] tracking-wide text-fg"
+            >
+              COPY RESULT
+            </button>
+            {simRef.current?.daily ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const sim = simRef.current;
+                  if (!sim?.daily || !sim.lastSet) return;
+                  const copied = await copyText(challengeCode(sim.daily.day, sim.daily.job, sim.daily.crane, sim.lastSet.grade));
+                  setShareStatus(copied ? "CHALLENGE COPIED" : challengeCode(sim.daily.day, sim.daily.job, sim.daily.crane, sim.lastSet.grade));
+                }}
+                className="min-h-8 flex-1 border border-primary bg-bg px-2 font-display text-[10px] tracking-wide text-primary"
+              >
+                CHALLENGE
+              </button>
+            ) : null}
+          </div>
+          {shareStatus ? <p className="mt-0.5 text-[10px] tracking-wide text-primary">{shareStatus}</p> : null}
+          <div className="mt-1 flex items-center justify-between gap-2 border-t border-line pt-1 text-sm">
+            <span>
+              {debrief.pay > 0
+                ? `${money(debrief.pay)}${debrief.rep > 0 ? ` · +${debrief.rep} ${books.status === "hired" ? "STANDING" : "REP"}` : ""}`
+                : "Practice — no pay"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                simRef.current?.dismissDebrief();
+                setDebrief(null);
+                setShareStatus("");
+                if (frameRestoreRef.current) {
+                  setCam(frameRestoreRef.current);
+                  yardRef.current?.setView(frameRestoreRef.current);
+                  frameRestoreRef.current = null;
+                }
+              }}
+              className="min-h-9 border border-primary bg-bg px-2 font-display text-xs tracking-wide text-fg"
+            >
+              DISMISS
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -1208,6 +1850,18 @@ export function CraneYard() {
             >
               TEST ANY JOB OR CRANE
             </button>
+            <button
+              type="button"
+              className="mt-2 h-12 w-full border border-line bg-bg font-display text-lg tracking-wide text-fg"
+              onClick={startDaily}
+            >
+              DAILY RUN · {levelOf(daily.job).title} · {daily.crane.toUpperCase()}
+            </button>
+            <p className="mt-1 text-center font-display text-[10px] tracking-widest text-muted">
+              {dailyResult && dailyResult.day === daily.day
+                ? `${dailyLine(daily, dailyResult)} · ${dailyRecordLine(dailyHistory, daily.day)}`
+                : dailyRecordLine(dailyHistory, daily.day)}
+            </p>
             {summary.tutorial ? (
               <button
                 type="button"
@@ -1266,6 +1920,24 @@ export function CraneYard() {
                 })}
               </ol>
             ) : null}
+            {summary.campaignDone ? (
+              <div className="mt-3 border border-primary bg-bg p-2">
+                <p className="font-display text-xs tracking-widest text-primary">RIDGE COMPLETE · SCORECARD</p>
+                <div className="mt-1 grid grid-cols-4 gap-1 text-center">
+                  {gradeSpread(books).map((row) => (
+                    <p key={row.grade}>
+                      <span className="block font-display text-2xl leading-none" style={{ color: gradeTint(row.grade) }}>
+                        {row.count}
+                      </span>
+                      <span className="text-[10px] tracking-widest text-muted">{row.grade}</span>
+                    </p>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-muted">
+                  {summary.sets} sets · {summary.cash} banked · {summary.note > 0 ? `note ${money(summary.note)} left` : "clear of the note"}
+                </p>
+              </div>
+            ) : null}
             <p className="mt-2 text-sm leading-relaxed text-fg">{summary.hired ? summary.found.reason : summary.buyDetail}</p>
             {summary.downtime > 0 ? (
               <p className="mt-2 text-sm text-danger">Downtime {summary.downtime}. A yard move is the way back out.</p>
@@ -1305,8 +1977,164 @@ export function CraneYard() {
                 >
                   {summary.buy}
                 </button>
+
+                <div className="mt-3 border border-line bg-bg p-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-display text-xs tracking-widest text-primary">CRANE SHOP</p>
+                    <p className="font-display text-[10px] tracking-widest text-steel">
+                      WEAR {summary.wearLabel} · {Math.round(summary.wear)}%
+                    </p>
+                  </div>
+                  <div className="mt-1 grid gap-1">
+                    {UPGRADE_IDS.map((id) => {
+                      const level = books.upgrades[id] ?? 0;
+                      const cost = nextUpgradeCost(books, id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={cost == null}
+                          onClick={() => {
+                            simRef.current?.buyUpgrade(id);
+                            refreshBooks();
+                          }}
+                          className="border border-line bg-surface px-2 py-1 text-left disabled:opacity-60"
+                        >
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="font-display text-sm tracking-wide text-fg">
+                              {UPGRADES[id].label}{" "}
+                              <span className="text-primary">{"■".repeat(level)}</span>
+                              <span className="text-muted">{"□".repeat(Math.max(0, MAX_UPGRADE - level))}</span>
+                            </span>
+                            <span className="font-display text-[11px] tracking-wide text-primary">
+                              {cost == null ? "MAX" : money(cost)}
+                            </span>
+                          </span>
+                          <span className="mt-0.5 block text-[10px] leading-snug text-muted">{UPGRADES[id].detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={summary.serviceCost === 0}
+                    onClick={() => {
+                      simRef.current?.serviceCrane();
+                      refreshBooks();
+                    }}
+                    className="mt-1 min-h-9 w-full border border-primary bg-bg px-2 font-display text-xs tracking-wide text-fg disabled:opacity-50"
+                  >
+                    SERVICE THE CRANE{summary.serviceCost > 0 ? ` · ${money(summary.serviceCost)}` : " · TIGHT"}
+                  </button>
+                </div>
+
+                <div className="mt-3 border border-line bg-bg p-2">
+                  <p className="font-display text-xs tracking-widest text-primary">YOUR SETS</p>
+                  {books.recentSets.length > 0 ? (
+                    <>
+                      <div className="relative mt-1 h-24 w-full border border-line bg-surface">
+                        <span className="absolute left-1/2 top-0 h-full w-px bg-line" />
+                        <span className="absolute left-0 top-1/2 h-px w-full bg-line" />
+                        {books.recentSets.slice(-12).map((set, index) => {
+                          const ratio = Math.min(1, set.off / Math.max(0.1, set.tolerance));
+                          const angle = index * 2.39996;
+                          const x = 50 + Math.cos(angle) * ratio * 44;
+                          const y = 50 + Math.sin(angle) * ratio * 44;
+                          return (
+                            <span
+                              key={`${set.job}-${index}`}
+                              title={`${set.grade} · ${set.off.toFixed(1)} m`}
+                              style={{ left: `${x}%`, top: `${y}%`, background: gradeTint(set.grade) }}
+                              className="absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                            />
+                          );
+                        })}
+                      </div>
+                      <p className="mt-1 text-[10px] tracking-wide text-muted">
+                        LAST {books.recentSets.slice(-12).length} SETS · DISTANCE FROM THE MARK, AS A SHARE OF THE RING
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-[10px] leading-snug text-muted">No sets logged yet. The scatter fills as you work.</p>
+                  )}
+                  {summary.incidents.length > 0 ? (
+                    <p className="mt-1 border-t border-line pt-1 text-[10px] leading-snug text-steel">
+                      INCIDENTS {summary.incidents.length}:{" "}
+                      {summary.incidents
+                        .slice(-3)
+                        .map((incident) => `${incident.kind.toUpperCase()} ${money(incident.cost + incident.insurance)}`)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
               </>
             ) : null}
+
+            <details className="mt-2 border border-line bg-bg p-2">
+              <summary className="cursor-pointer font-display text-sm tracking-wide">SAVE · EXPORT, IMPORT &amp; CHALLENGE</summary>
+              <p className="mt-1 text-[10px] leading-snug text-muted">
+                Copy this text to keep the career. Paste it back on another device to restore it.
+              </p>
+              <textarea
+                readOnly
+                value={encodeSave(books)}
+                onFocus={(event) => event.currentTarget.select()}
+                className="mt-1 h-16 w-full resize-none border border-line bg-surface p-1 font-display text-[10px] text-steel"
+              />
+              <div className="mt-1 flex gap-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const copied = await copyText(encodeSave(books));
+                    setImportNote(copied ? "Save copied to the clipboard." : "Copy the text in the box.");
+                  }}
+                  className="min-h-9 flex-1 border border-primary bg-bg px-2 font-display text-[10px] tracking-wide text-primary"
+                >
+                  COPY SAVE
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaveOpen((open) => !open)}
+                  className="min-h-9 flex-1 border border-line bg-bg px-2 font-display text-[10px] tracking-wide text-fg"
+                >
+                  {saveOpen ? "HIDE IMPORT" : "IMPORT SAVE"}
+                </button>
+              </div>
+              {saveOpen ? (
+                <>
+                  <textarea
+                    value={importText}
+                    onChange={(event) => setImportText(event.target.value)}
+                    placeholder="Paste SLING1.…"
+                    className="mt-1 h-16 w-full resize-none border border-line bg-surface p-1 font-display text-[10px] text-fg"
+                  />
+                  <button
+                    type="button"
+                    onClick={importSave}
+                    className="mt-1 min-h-9 w-full bg-primary px-2 font-display text-[10px] tracking-wide text-bg"
+                  >
+                    IMPORT THIS SAVE
+                  </button>
+                </>
+              ) : null}
+              <p className="mt-2 font-display text-[10px] tracking-widest text-muted">CHALLENGE CODE</p>
+              <div className="mt-1 flex gap-1">
+                <input
+                  value={challengeText}
+                  onChange={(event) => setChallengeText(event.target.value)}
+                  placeholder="SLING-CH|day|job|crane|grade"
+                  className="min-w-0 flex-1 border border-line bg-surface px-1 font-display text-[10px] text-fg"
+                />
+                <button
+                  type="button"
+                  onClick={startChallenge}
+                  className="min-h-9 border border-primary bg-bg px-2 font-display text-[10px] tracking-wide text-primary"
+                >
+                  PLAY
+                </button>
+              </div>
+              {importNote ? <p className="mt-1 text-[10px] leading-snug text-primary">{importNote}</p> : null}
+            </details>
             </details>
             <details className="mt-2 border border-line bg-bg p-3">
               <summary className="cursor-pointer font-display text-base tracking-wide">SETTINGS · CONTROLS &amp; DIFFICULTY</summary>
@@ -1358,6 +2186,26 @@ export function CraneYard() {
               <ModeButton active={!nightAny} onClick={() => setNightAny(false)} label="Day" detail="As the job says" />
               <ModeButton active={nightAny} onClick={() => setNightAny(true)} label="Night" detail="Every job after dark" />
             </div>
+            <ExtraSettings
+              quality={quality}
+              onQuality={setQuality}
+              contrast={contrast}
+              onContrast={setContrast}
+              reduceMotion={reduceMotion}
+              onReduceMotion={setReduceMotion}
+              haptics={haptics}
+              onHaptics={setHaptics}
+              captions={captions}
+              onCaptions={setCaptions}
+              autoFrame={autoFrame}
+              onAutoFrame={setAutoFrame}
+              gestureSwing={gestureSwing}
+              onGestureSwing={setGestureSwing}
+              binds={binds}
+              onBinds={setBinds}
+              capturing={capturing}
+              onCapture={setCapturing}
+            />
             <button
               type="button"
               onClick={() => setConfirmReset(true)}
@@ -1387,7 +2235,7 @@ export function CraneYard() {
             </span>
             {scheme === "stick" ? <Stick /> : <ArrowPad />}
           </div>
-          <div className="machine-plate pointer-events-auto flex items-center gap-3 px-3 py-2 max-sm:absolute max-sm:bottom-44 max-sm:left-1/2 max-sm:-translate-x-1/2">
+          <div className="machine-plate pointer-events-auto flex items-center gap-3 px-3 py-2 max-sm:absolute max-sm:bottom-[13.5rem] max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:gap-2 max-sm:px-2">
             <button
               ref={deployRef}
               type="button"
@@ -1481,6 +2329,48 @@ export function CraneYard() {
           </div>
         </div>
       )}
+      {playing && paused ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-bg/80 p-4">
+          <section className="w-full max-w-sm border border-primary border-t-4 bg-surface p-4">
+            <p className="font-display text-xs tracking-widest text-primary">SHIFT PAUSED</p>
+            <h2 className="mt-1 font-display text-3xl leading-none">Take a breath</h2>
+            <p className="mt-2 text-sm leading-relaxed text-fg">{simRef.current?.message}</p>
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              W/A/S/D drive or slew, Q/R hoist, Z/C telescope, Space hooks or releases, Enter deploys the pads, Escape pauses.
+            </p>
+            <button type="button" onClick={resumeShift} className="mt-3 h-12 w-full bg-primary font-display text-xl tracking-wide text-bg">
+              RESUME
+            </button>
+            {summary.tutorial ? (
+              <button
+                type="button"
+                onClick={() => {
+                  simRef.current?.skipTutorial();
+                  refreshBooks();
+                  resumeShift();
+                }}
+                className="mt-2 h-11 w-full border border-line bg-bg font-display text-base tracking-wide text-fg"
+              >
+                SKIP TUTORIAL
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                captureRef.current = true;
+                setQualityNote("Saving the current view as a still.");
+              }}
+              className="mt-2 h-11 w-full border border-primary bg-bg font-display text-base tracking-wide text-fg"
+            >
+              SAVE A PHOTO
+            </button>
+            {qualityNote ? <p className="mt-1 text-center text-[10px] tracking-wide text-primary">{qualityNote}</p> : null}
+            <button type="button" onClick={quitShift} className="mt-2 h-11 w-full border border-line bg-bg font-display text-base tracking-wide text-fg">
+              QUIT TO START
+            </button>
+          </section>
+        </div>
+      ) : null}
       {testOpen ? (
         <div className="absolute inset-0 z-30 flex items-end justify-center bg-bg/80 p-3 sm:items-center">
           <section className="max-h-[86dvh] w-full max-w-md overflow-y-auto border border-line border-t-4 border-t-primary bg-surface p-4">
@@ -1631,7 +2521,14 @@ function JobButton({
       <span className="block font-display text-[10px] tracking-widest text-steel">
         {offer.phase === "tutorial" ? "TUTORIAL" : offer.phase === "odd" ? "ODD JOB" : offer.id === "yard" ? "SHOP" : `LV ${String(offer.no).padStart(2, "0")}`} · {SITE_THEME_LABEL[offer.theme]} · {loadSpec(offer.kind).label}
       </span>
-      <span className="block font-display text-xl leading-none text-fg">{offer.title}</span>
+      <span className="block font-display text-xl leading-none text-fg">
+        {offer.title}
+        {offer.best ? (
+          <span className="ml-2 border border-primary px-1 align-middle font-display text-[10px] tracking-widest text-primary">
+            BEST {offer.best}
+          </span>
+        ) : null}
+      </span>
       <span className={`mt-1 block text-xs leading-snug ${offer.locked ? "text-muted" : "text-steel"}`}>
         {hired && !offer.locked ? "Assigned. " : ""}
         {pay}
@@ -1950,5 +2847,97 @@ function Hold({
     >
       {icon}
     </button>
+  );
+}
+
+function ExtraSettings({
+  quality,
+  onQuality,
+  contrast,
+  onContrast,
+  reduceMotion,
+  onReduceMotion,
+  haptics,
+  onHaptics,
+  captions,
+  onCaptions,
+  autoFrame,
+  onAutoFrame,
+  gestureSwing,
+  onGestureSwing,
+  binds,
+  onBinds,
+  capturing,
+  onCapture,
+}: {
+  quality: Quality;
+  onQuality: (quality: Quality) => void;
+  contrast: boolean;
+  onContrast: (on: boolean) => void;
+  reduceMotion: boolean;
+  onReduceMotion: (on: boolean) => void;
+  haptics: boolean;
+  onHaptics: (on: boolean) => void;
+  captions: boolean;
+  onCaptions: (on: boolean) => void;
+  autoFrame: boolean;
+  onAutoFrame: (on: boolean) => void;
+  gestureSwing: boolean;
+  onGestureSwing: (on: boolean) => void;
+  binds: KeyBinds;
+  onBinds: React.Dispatch<React.SetStateAction<KeyBinds>>;
+  capturing: ActionId | null;
+  onCapture: (action: ActionId | null) => void;
+}) {
+  return (
+    <div className="mt-3 border-t border-line pt-2">
+      <p className="font-display text-xs tracking-widest text-muted">GRAPHICS QUALITY</p>
+      <div className="mt-1 grid grid-cols-3 gap-2">
+        <ModeButton active={quality === "auto"} onClick={() => onQuality("auto")} label="Auto" detail="Adapts" />
+        <ModeButton active={quality === "high"} onClick={() => onQuality("high")} label="High" detail="Sharp" />
+        <ModeButton active={quality === "low"} onClick={() => onQuality("low")} label="Low" detail="Fast" />
+      </div>
+      <p className="mt-3 font-display text-xs tracking-widest text-muted">ACCESSIBILITY</p>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        <ModeButton active={contrast} onClick={() => onContrast(!contrast)} label="Ring" detail={contrast ? "High contrast" : "Amber"} />
+        <ModeButton active={reduceMotion} onClick={() => onReduceMotion(!reduceMotion)} label="Motion" detail={reduceMotion ? "Reduced" : "Full"} />
+        <ModeButton active={haptics} onClick={() => onHaptics(!haptics)} label="Haptics" detail={haptics ? "On" : "Off"} />
+        <ModeButton active={captions} onClick={() => onCaptions(!captions)} label="Captions" detail={captions ? "Cue text" : "Off"} />
+        <ModeButton active={autoFrame} onClick={() => onAutoFrame(!autoFrame)} label="Set frame" detail={autoFrame ? "Camera pulls out" : "Stay put"} />
+        <ModeButton active={gestureSwing} onClick={() => onGestureSwing(!gestureSwing)} label="Drag swing" detail={gestureSwing ? "Drag the yard" : "Buttons only"} />
+      </div>
+      <p className="mt-3 font-display text-xs tracking-widest text-muted">KEYBOARD BINDINGS</p>
+      <div className="mt-1 grid gap-1">
+        {BIND_ACTIONS.map((action) => (
+          <div key={action} className="flex items-center justify-between gap-2 border border-line bg-bg px-2 py-1">
+            <span className="text-[11px] leading-tight text-muted">{bindLabel(action)}</span>
+            <span className="flex items-center gap-1">
+              {binds[action].map((code) => (
+                <kbd key={code} className="border border-line px-1 font-display text-[10px] text-fg">
+                  {keyLabel(code)}
+                </kbd>
+              ))}
+              <button
+                type="button"
+                onClick={() => onCapture(action)}
+                className="min-h-8 border border-primary px-1.5 font-display text-[10px] tracking-wide text-primary"
+              >
+                {capturing === action ? "PRESS…" : "BIND"}
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onBinds({ ...DEFAULT_BINDS })}
+        className="mt-1 min-h-8 w-full border border-line px-2 font-display text-[10px] tracking-wide text-muted"
+      >
+        RESET KEYS
+      </button>
+      <p className="mt-1 text-[10px] leading-snug text-steel">
+        Space hooks or releases, Enter deploys, Escape pauses.
+      </p>
+    </div>
   );
 }

@@ -241,7 +241,7 @@ describe("save and reload", () => {
     writeCareer(hired, hiredSave.storage);
     assert.deepEqual(readCareer(hiredSave.storage), hired);
     const raw = JSON.parse(hiredSave.mem.get(CAREER_KEY) ?? "{}") as { v?: number; status?: string };
-    assert.equal(raw.v, 2);
+    assert.equal(raw.v, 4);
     assert.equal(raw.status, "hired");
 
     const company = owner({
@@ -331,9 +331,12 @@ describe("job unlocks", () => {
     assert.equal(isUnlocked(owner({ reputation: 10, crane: "heavy" }), "wind").ok, true);
   });
 
-  it("lists the ridge blade as company level 6", () => {
+  it("lists the ridge blade as company level 6 and the rotor as the capstone", () => {
     const wind = levelOf("wind");
-    assert.equal(LEVEL_COUNT, 6);
+    assert.equal(LEVEL_COUNT, 11);
+    assert.equal(levelOf("rotor").no, 7);
+    assert.equal(levelOf("rotor").kind, "rotor");
+    assert.match(levelOf("rotor").title, /ROTOR/i);
     assert.equal(wind.no, 6);
     assert.equal(wind.phase, "company");
     assert.equal(wind.kind, "blade");
@@ -588,5 +591,56 @@ describe("set ring tightness", () => {
     assert.equal(restored.roofActive, false);
     assert.equal(activeOffer(restored).kind, "hotTub");
     assert.equal(activeOffer(restored).pad, 7);
+  });
+});
+
+describe("career ledger", () => {
+  it("keeps the best grade per call and counts every set", () => {
+    const state = owner({ reputation: 3, crane: "yard", job: "spa" });
+    const first = resolveSet(state, "deck", "C");
+    assert.equal(first.state.bestGrades.spa, "C");
+    assert.equal(first.state.gradeCounts.C, 1);
+
+    const better = resolveSet({ ...first.state, leg: 0 }, "deck", "S");
+    assert.equal(better.state.bestGrades.spa, "S");
+    assert.equal(better.state.gradeCounts.S, 1);
+    assert.equal(better.state.gradeCounts.C, 1);
+
+    const worse = resolveSet({ ...better.state, leg: 0 }, "deck", "B");
+    assert.equal(worse.state.bestGrades.spa, "S", "a later sloppy set must not erase the best");
+    assert.equal(worse.state.gradeCounts.B, 1);
+    assert.equal(activeOffer({ ...worse.state, job: "spa", leg: 0 }).best, "S");
+  });
+
+  it("keeps the rotor locked until the ridge blade is set, then finishes the campaign", () => {
+    const ready = owner({ reputation: 14, crane: "crawler", crawlerOnSite: true, job: "wind" });
+    const locked = isUnlocked(ready, "rotor");
+    assert.equal(locked.ok, false);
+    assert.match(locked.reason, /ridge blade/i);
+
+    const blade = resolveSet({ ...ready, crane: "heavy" }, "blade", "A");
+    assert.equal(blade.matched, true);
+    assert.equal(blade.state.campaignDone, false);
+    const open = isUnlocked({ ...blade.state, crane: "crawler" }, "rotor");
+    assert.equal(open.ok, true, open.reason);
+
+    const finish = resolveSet({ ...blade.state, crane: "crawler", crawlerOnSite: true, job: "rotor" }, "rotor", "A");
+    assert.equal(finish.matched, true);
+    assert.equal(finish.state.campaignDone, true);
+    assert.equal(finish.state.bestGrades.rotor, "A");
+    assert.match(finish.message, /signed off/i);
+  });
+
+  it("round-trips the ledger and the capstone flag", () => {
+    const state = owner({ reputation: 14, crane: "crawler", crawlerOnSite: true, job: "rotor" });
+    state.bestGrades = { wind: "S", spa: "A" };
+    state.gradeCounts = { S: 3, A: 2, B: 1, C: 0 };
+    state.campaignDone = true;
+    const save = memory();
+    writeCareer(state, save.storage);
+    const loaded = readCareer(save.storage);
+    assert.deepEqual(loaded.bestGrades, { wind: "S", spa: "A" });
+    assert.deepEqual(loaded.gradeCounts, { S: 3, A: 2, B: 1, C: 0 });
+    assert.equal(loaded.campaignDone, true);
   });
 });

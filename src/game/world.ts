@@ -6,8 +6,11 @@ import { dressSite } from "@/game/scenery";
 import { applyCraneLook, createCraneModel, operatorSeat, setBeaconPulse } from "@/game/rig-model";
 import { placeSling } from "@/game/sling";
 import { detectShadowQuality, SHADOW_MAP_SIZE } from "./shadow-quality.ts";
+import { RING_AMBER, RING_CONTRAST, RING_READY, ringColorHex } from "./ring-palette.ts";
 
 export type CamView = "chase" | "cab" | "hook" | "high" | "wide" | "truck" | "operator";
+
+export type PixelQuality = "auto" | "high" | "low";
 
 export type YardHandlers = {
   /** The GPU dropped the WebGL context; the caller should pause and say so. */
@@ -24,6 +27,14 @@ export type Yard = {
   setView: (view: CamView) => void;
   nudge: (dx: number, dy: number) => void;
   zoomBy: (factor: number) => void;
+  /** Render scale: auto reacts to slow frames, high and low pin it. */
+  setQuality: (quality: PixelQuality) => void;
+  /** Swap the amber set ring for a high-contrast colour. */
+  setContrast: (on: boolean) => void;
+  /** Stop ring pulsing and beacon bobbing. */
+  setReduceMotion: (on: boolean) => void;
+  /** The set ring's current colour as a hex string, for the dev probe. */
+  ringColor: () => string;
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -173,7 +184,19 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   });
   // Unlit so the set ring stays a clear amber at night and in every theme.
   const ringAmber = new THREE.MeshBasicMaterial({
-    color: 0xffb02e,
+    color: RING_AMBER,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  // High contrast keeps the ring legible when amber sits on brick or sunlight.
+  const ringContrast = new THREE.MeshBasicMaterial({
+    color: RING_CONTRAST,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  // The mark is made: the ring turns green so the next input is obvious.
+  const ringReady = new THREE.MeshBasicMaterial({
+    color: RING_READY,
     toneMapped: false,
     side: THREE.DoubleSide,
   });
@@ -319,6 +342,15 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     if (kind === "crate") {
       addBox(group, body, 1.6, 1.6, 1.6);
       addBox(group, stripe, 1.62, 0.18, 1.62);
+    } else if (kind === "girder") {
+      // A plate girder: two flanges, a web and a run of stiffeners.
+      addBox(group, body, 0.9, 0.12, 5.2, 0, 0.36, 0);
+      addBox(group, body, 0.9, 0.12, 5.2, 0, -0.36, 0);
+      addBox(group, body, 0.12, 0.72, 5.2);
+      for (const z of [-2.1, -1.05, 0, 1.05, 2.1]) {
+        addBox(group, steelDark, 0.16, 0.62, 0.1, 0, 0, z);
+      }
+      addBox(group, stripe, 0.92, 0.03, 5.2, 0, 0.43, 0);
     } else if (kind === "beam") {
       addBox(group, body, 0.62, 0.1, 4.3, 0, 0.22, 0);
       addBox(group, body, 0.62, 0.1, 4.3, 0, -0.22, 0);
@@ -391,6 +423,33 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
         jet.position.set(x, 0.48, z);
         group.add(jet);
       }
+    } else if (kind === "nacelle") {
+      addBox(group, body, 3.0, 2.8, 4.0);
+      addBox(group, steelDark, 3.04, 0.24, 4.04, 0, 1.3, 0);
+      addBox(group, stripe, 3.06, 0.1, 4.06, 0, 0.9, 0);
+      for (const z of [-1.2, 0, 1.2]) {
+        addBox(group, steelDark, 3.06, 1.1, 0.08, 0, -0.3, z);
+      }
+      const nose = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.35, 16), steelDark);
+      nose.rotation.x = Math.PI / 2;
+      nose.position.z = 2.1;
+      group.add(nose);
+    } else if (kind === "rotor") {
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 1.9, 18), body);
+      hub.rotation.x = Math.PI / 2;
+      group.add(hub);
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 10), steelDark);
+      nose.position.z = 1.0;
+      nose.scale.z = 0.7;
+      group.add(nose);
+      for (let i = 0; i < 3; i += 1) {
+        const stub = new THREE.Mesh(box, steelDark);
+        stub.scale.set(0.5, 1.15, 0.5);
+        stub.position.set(Math.sin((i / 3) * Math.PI * 2) * 1.35, Math.cos((i / 3) * Math.PI * 2) * 1.35, 0);
+        stub.rotation.z = -(i / 3) * Math.PI * 2;
+        group.add(stub);
+      }
+      addBox(group, stripe, 3.04, 0.1, 0.6, 0, 0, -0.2);
     } else if (kind === "blade") {
       const stations = 20;
       const sides = 8;
@@ -466,10 +525,44 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   }
   const sourceRing = ring(ringSteel);
   const targetRing = ring(ringAmber);
+  // A two-pad call marks both bearings, not one centre.
+  const targetRing2 = ring(ringAmber);
+  targetRing2.visible = false;
+
+  // Casting-bed guides for calls that have to land square: two low rails the
+  // load has to settle between, so the required heading is visible instead of
+  // only graded. They are unit-length and stretched to the load's own footprint
+  // each frame, so the same rails frame a short panel and a long pipe.
+  const wallGuides = new THREE.Group();
+  const guideMat = new THREE.MeshStandardMaterial({ color: 0x8f9aa4, roughness: 0.92, metalness: 0.05 });
+  const guideRails: THREE.Mesh[] = [];
+  for (let index = 0; index < 2; index += 1) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 0.16), guideMat);
+    rail.position.y = 0.09;
+    wallGuides.add(rail);
+    guideRails.push(rail);
+  }
+  wallGuides.visible = false;
+  scene.add(wallGuides);
   const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), beaconMat);
   scene.add(beacon);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2, 6), ringAmber);
   scene.add(pole);
+
+  // A windsock on the ridge. The HUD has numbers; this is the read the player
+  // gets without looking away from the load.
+  const sockPole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 5.2, 6), ringSteel);
+  sockPole.position.set(92, 2.6, 86);
+  scene.add(sockPole);
+  const windTell = new THREE.Group();
+  windTell.position.set(92, 4.9, 86);
+  const sockMat = new THREE.MeshStandardMaterial({ color: 0xe36a2c, roughness: 0.85, metalness: 0 });
+  const sock = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.7, 8, 1, true), sockMat);
+  sock.rotation.z = Math.PI / 2;
+  sock.position.x = 0.9;
+  windTell.add(sock);
+  windTell.visible = false;
+  scene.add(windTell);
 
   const containers: THREE.Mesh[] = [];
   for (const [x, y, z, h] of [
@@ -628,6 +721,11 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   let view: CamView = "chase";
   let orbit = 0;
   let pitch = 0;
+  let quality: PixelQuality = "auto";
+  let pixelScale = 1;
+  let contrast = false;
+  let reduceMotion = false;
+  let slowFor = 0;
 
   function setView(next: CamView) {
     view = next;
@@ -651,15 +749,36 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     camera.updateProjectionMatrix();
   }
 
+  function pixelRatioFor(width: number) {
+    const device = window.devicePixelRatio || 1;
+    if (quality === "low") return Math.min(device, 1);
+    const base = quality === "high" ? Math.min(device, 2) : Math.min(device, width < 800 ? 1.25 : 1.75);
+    return Math.max(1, base * pixelScale);
+  }
+
   function resize() {
     const w = canvas.clientWidth || 1;
     const h = canvas.clientHeight || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, w < 800 ? 1.25 : 1.75);
-    renderer.setPixelRatio(dpr);
+    renderer.setPixelRatio(pixelRatioFor(w));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.fov = view === "operator" ? 54 : camera.aspect < 1 ? 48 : 40;
     camera.updateProjectionMatrix();
+  }
+
+  function setQuality(next: PixelQuality) {
+    quality = next;
+    pixelScale = 1;
+    slowFor = 0;
+    resize();
+  }
+
+  function setContrast(on: boolean) {
+    contrast = on;
+  }
+
+  function setReduceMotion(on: boolean) {
+    reduceMotion = on;
   }
 
   const observer = new ResizeObserver(() => resize());
@@ -667,13 +786,25 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
   resize();
 
   function render(sim: CraneSim, frameDt: number) {
+    // Auto quality: a phone that starts throttling loses resolution before it
+    // loses the frame rate. It never scales back up, so it cannot oscillate.
+    if (quality === "auto" && frameDt > 1 / 42 && pixelScale > 0.7) {
+      slowFor += frameDt;
+      if (slowFor > 2.2) {
+        pixelScale = Math.max(0.7, pixelScale - 0.12);
+        slowFor = 0;
+        resize();
+      }
+    } else if (frameDt <= 1 / 42) {
+      slowFor = Math.max(0, slowFor - frameDt);
+    }
     const wantNight = sim.night ? 1 : 0;
     nightMix += (wantNight - nightMix) * Math.min(1, frameDt * 1.4);
     elapsed += frameDt;
     site.applyNight(nightMix, sim.lightsOn ? 1 : 0);
     site.setTheme(levelOf(sim.career.job).theme);
     site.update(frameDt);
-    setBeaconPulse(craneModel, nightMix, elapsed);
+    setBeaconPulse(craneModel, nightMix, reduceMotion ? 0 : elapsed);
     const face = sim.bodyHeading();
     slew.rotation.y = sim.yaw - face;
     const mount = sim.crane === "tower" ? 1.45 + (sim.mountY - 1.45) * (1 - sim.stow) : sim.mountY;
@@ -759,20 +890,29 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       const halfLength = spec.halfZ;
       const attachY = carried.y + spec.halfY;
       const apex = new THREE.Vector3(sim.hx, sim.hy - 0.18, sim.hz);
+      const cosYaw = Math.cos(carried.yaw);
+      const sinYaw = Math.sin(carried.yaw);
       for (let i = 0; i < 4; i += 1) {
         const xSign = i % 2 === 0 ? -1 : 1;
         const zSign = i < 2 ? -1 : 1;
+        const localX = xSign * halfSpan;
+        const localZ = zSign * halfLength;
         const end = new THREE.Vector3(
-          carried.x + xSign * halfSpan,
+          carried.x + localX * cosYaw + localZ * sinYaw,
           attachY,
-          carried.z + zSign * halfLength,
+          carried.z - localX * sinYaw + localZ * cosYaw,
         );
         placeSling(slingLegs[i]!, apex, end);
         shackles[i]!.position.copy(end);
       }
     }
 
-    for (const piece of sim.pieces) loadViews.get(piece.kind)?.position.set(piece.x, piece.y, piece.z);
+    for (const piece of sim.pieces) {
+      const view = loadViews.get(piece.kind);
+      if (!view) continue;
+      view.position.set(piece.x, piece.y, piece.z);
+      view.rotation.y = piece.yaw;
+    }
     // Only the stocked kinds are drawn; the rest stay parked off-stage.
     for (const [kind, group] of loadViews) group.visible = sim.pieces.some((piece) => piece.kind === kind);
 
@@ -798,15 +938,55 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     targetRing.position.set(deck ? deck.x : dst.x, deck ? deck.y + 0.08 : 0.04, deck ? deck.z : dst.z);
     // The amber ring is the landing tolerance: draw it at the job's radius so
     // precision work visibly asks for a smaller target than a yard move.
-    const pulse = 1 + Math.sin(performance.now() * 0.003) * 0.045;
-    targetRing.scale.setScalar((sim.setTolerance / 2.15) * pulse);
+    const ringMat = contrast ? ringContrast : sim.canRelease ? ringReady : ringAmber;
+    windTell.visible = sim.windSite && sim.mode === "hard";
+    if (windTell.visible) {
+      // The sock flies with the live gust, and drops as the gust eases.
+      const dx = sim.windX;
+      const dz = sim.windZ;
+      const mag = Math.hypot(dx, dz) || 1;
+      windTell.rotation.y = Math.atan2(dz / mag, -dx / mag);
+      sock.rotation.z = Math.PI / 2 - (0.18 + sim.windAmp * 0.16);
+      sock.scale.set(1, 0.7 + sim.windAmp * 0.55, 1);
+    }
+    const beat = reduceMotion ? 0 : Math.sin(performance.now() * 0.003) * (sim.canRelease ? 0.1 : 0.045);
+    targetRing.scale.setScalar((sim.setTolerance / 2.15) * (1 + beat));
+    if (targetRing.material !== ringMat) targetRing.material = ringMat;
+    const secondPad = sim.secondPad;
+    targetRing2.visible = secondPad !== null;
+    if (secondPad !== null) {
+      const second = PADS[secondPad]!;
+      targetRing2.position.set(second.x, 0.04, second.z);
+      targetRing2.scale.setScalar((sim.setTolerance / 2.15) * (1 + beat));
+      if (targetRing2.material !== ringMat) targetRing2.material = ringMat;
+    }
+    const guideHeading = sim.headingTarget;
+    wallGuides.visible = guideHeading !== null;
+    if (guideHeading !== null) {
+      // The guides sit at the landing centre: a pad, the middle of a two-pad
+      // span, or the tower deck, so the heading reads the same wherever it is.
+      const guideSpot = sim.setSpot();
+      wallGuides.position.set(guideSpot.x, guideSpot.y + 0.02, guideSpot.z);
+      wallGuides.rotation.y = guideHeading;
+      const spec = loadSpec(sim.load);
+      const alongX = spec.halfX >= spec.halfZ;
+      const length = 2 * (alongX ? spec.halfX : spec.halfZ) + 0.6;
+      const gap = 2 * (alongX ? spec.halfZ : spec.halfX) + 0.6;
+      for (let i = 0; i < guideRails.length; i += 1) {
+        const rail = guideRails[i]!;
+        const side = i === 0 ? -1 : 1;
+        rail.scale.set(length, 1, 1);
+        rail.rotation.y = alongX ? 0 : Math.PI / 2;
+        rail.position.set(alongX ? 0 : side * (gap / 2), 0.09, alongX ? side * (gap / 2) : 0);
+      }
+    }
     const edge = 2.3;
     const sign = (deck ? deck.x : dst.x) >= 0 ? 1 : -1;
     const px = (deck ? deck.x : dst.x) + (deck ? -4.2 : sign * edge);
     const pz = deck ? deck.z : dst.z;
     const py = deck ? deck.y : 0;
     pole.position.set(px, py + 1.6, pz);
-    beacon.position.set(px, py + 3.5 + Math.sin(performance.now() * 0.002) * 0.22, pz);
+    beacon.position.set(px, py + 3.5 + (reduceMotion ? 0 : Math.sin(performance.now() * 0.002) * 0.22), pz);
     beacon.rotation.y += frameDt * 0.8;
 
     const fx = -Math.sin(sim.yaw);
@@ -839,9 +1019,9 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
       lookTarget.set(sim.hx, sim.hy, sim.hz);
     } else if (view === "wide") {
       const dist = 28 + pitch;
-      const wideOrbit = orbit + (sim.career.job === "wind" ? 2.4 : 0);
+      const wideOrbit = orbit + (sim.windSite ? 2.4 : 0);
       desired.set(sim.truckX + Math.sin(wideOrbit) * dist, 6 + pitch * 0.7, sim.truckZ + Math.cos(wideOrbit) * dist);
-      lookTarget.set(sim.truckX, sim.career.job === "wind" ? 10 : 5, sim.truckZ);
+      lookTarget.set(sim.truckX, sim.windSite ? 10 : 5, sim.truckZ);
     } else if (view === "high") {
       desired.set(sim.hx + Math.sin(yaw) * 8, Math.max(16, 28 + pitch), sim.hz + Math.cos(yaw) * 8);
       lookTarget.set((sim.hx + dst.x) * 0.5, 1.5, (sim.hz + dst.z) * 0.5);
@@ -883,5 +1063,17 @@ export function createYard(canvas: HTMLCanvasElement, handlers: YardHandlers = {
     for (const m of mats) m.dispose();
   }
 
-  return { renderer, render, resize, dispose, setView, nudge, zoomBy };
+  return {
+    renderer,
+    render,
+    resize,
+    dispose,
+    setView,
+    nudge,
+    zoomBy,
+    setQuality,
+    setContrast,
+    setReduceMotion,
+    ringColor: () => ringColorHex(targetRing.material === ringReady, contrast),
+  };
 }

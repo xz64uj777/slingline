@@ -9,6 +9,23 @@ import {
 import { gradePay, gradeRep, type Grade } from "./grade.ts";
 import { LOAD_SPECS, type LoadKind } from "./loads.ts";
 import type { SiteTheme } from "./levels.ts";
+import { ALL_JOBS, COMPANY_JOBS, JOBS, LEVEL_COUNT, RENTAL_LEVELS, type JobId, type JobPhase } from "./jobs.ts";
+import {
+  buyUpgrade,
+  freshUpgrades,
+  readUpgrades,
+  serviceCost,
+  serviceCrane as serviceUpgrades,
+  upgradeCost,
+  wearAfterSet,
+  wearLabel,
+  type UpgradeId,
+  type UpgradeState,
+} from "./upgrades.ts";
+
+export type { JobId, JobPhase } from "./jobs.ts";
+export type { UpgradeId, UpgradeState } from "./upgrades.ts";
+export { ALL_JOBS, COMPANY_JOBS, JOBS, LEVEL_COUNT, RENTAL_LEVELS } from "./jobs.ts";
 
 export type { CraneId } from "./cranes.ts";
 export type { Grade } from "./grade.ts";
@@ -17,20 +34,6 @@ export type { SiteTheme } from "./levels.ts";
 export { CRANES, CRANE_CHOICES, nextCrane, reachesRoof } from "./cranes.ts";
 
 export type CareerStatus = "hired" | "independent";
-export type JobId =
-  | "yard"
-  | "pipe"
-  | "truss"
-  | "panel"
-  | "garage"
-  | "container"
-  | "roof"
-  | "hvac"
-  | "tracks"
-  | "spa"
-  | "wind";
-
-export type JobPhase = "tutorial" | "odd" | "company";
 
 export const CAREER_KEY = "slingline-career-v3";
 export const BOSS = "Hargrove Crane";
@@ -91,223 +94,60 @@ export const REPAIR: Record<CraneId, number> = {
   crawler: 1200,
 };
 
-type JobDef = {
-  id: JobId;
-  /** Campaign number, shown on the board and the HUD. */
-  no: number;
-  phase: JobPhase;
-  title: string;
-  kind: LoadKind;
-  pad: number;
-  theme: SiteTheme;
-  brief: string;
-  pay: number;
-  /** Set ring radius in metres: how far off centre the load may land. */
-  ring: number;
-  follow?: { title: string; kind: LoadKind; pad: number; pay: number; ring: number };
-  rep: number;
-  crane: CraneId;
-  roof: boolean;
-  repGain: number;
+/** The readings that decide a grade, shared by the sim and the career ledger. */
+export type SetMetricsInput = {
+  off: number;
+  tolerance: number;
+  impact: number;
+  impactLimit: number;
+  sway: number;
+  chart: number;
 };
+
+/** The best set on a call, kept so the debrief can compare against it. */
+export type BestRun = SetMetricsInput & { grade: Grade; pay: number };
+
+/** A recent set, kept for the local scatter in the career ledger. */
+export type SetRecord = SetMetricsInput & { job: JobId; grade: Grade; pay: number };
+
+/** A drop or a tip, with what it cost and how much of that was insurance. */
+export type IncidentRecord = { kind: "drop" | "tip"; job: JobId; cost: number; insurance: number };
 
 /**
- * Hired work is three tutorials and two small jobs. The wages pay the filing
- * fee. After Slingline is filed, the board is only calls that change the work:
- * a backyard, the docks, one roof, a rooftop unit, the crawler, and a blade.
- * The yard move stays as the shop shift so a bad streak cannot trap the player.
+ * The better of two runs. Grade first, then the tighter ring reading, so a
+ * clean set is not displaced by a sloppier one of the same grade.
  */
-const JOBS: Record<JobId, JobDef> = {
-  yard: {
-    id: "yard",
-    no: 1,
-    phase: "tutorial",
-    title: "YARD MOVE",
-    kind: "crate",
-    pad: 5,
-    theme: "yard",
-    brief: "Tutorial. Hook the crate, keep the sway down, and set it inside the amber ring.",
-    pay: 1800,
-    rep: 0,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 2.4,
-  },
-  pipe: {
-    id: "pipe",
-    no: 2,
-    phase: "tutorial",
-    title: "PIPE DROP",
-    kind: "pipe",
-    pad: 3,
-    theme: "steel",
-    brief: "Tutorial. Set the pads before you lift the pipe, or it leans the crane. The ring is across the yard. Stow, drive to it, set the pads again, and lower the pipe in.",
-    pay: 2800,
-    rep: 0,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 1.6,
-  },
-  truss: {
-    id: "truss",
-    no: 3,
-    phase: "tutorial",
-    title: "TRUSS PICK",
-    kind: "truss",
-    pad: 4,
-    theme: "steel",
-    brief: "Tutorial. A light truss catches every gust. Set it in the ring, or skip ahead if you already know the controls.",
-    pay: 2600,
-    rep: 0,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 1.2,
-  },
-  panel: {
-    id: "panel",
-    no: 4,
-    phase: "odd",
-    title: "PANEL SET",
-    kind: "panel",
-    pad: 2,
-    theme: "warehouse",
-    brief: "Small job. A flat panel tips if you rush it. Short pay, and it counts toward the fee.",
-    pay: 3000,
-    rep: 0,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 1.3,
-  },
-  garage: {
-    id: "garage",
-    no: 5,
-    phase: "odd",
-    title: "GARAGE UNIT",
-    kind: "hvac",
-    pad: 1,
-    theme: "warehouse",
-    brief: "Small job. A condenser for the shop office. Short swing, and this wage should clear the filing fee.",
-    pay: 3400,
-    rep: 0,
-    crane: "rental",
-    roof: false,
-    repGain: 1,
-    ring: 1.4,
-  },
-  spa: {
-    id: "spa",
-    no: 1,
-    phase: "company",
-    title: "BACKYARD SPA DECK",
-    kind: "deck",
-    pad: 6,
-    theme: "residential",
-    brief: "Drive down Maple Lane and park in the marked setup box. Then set the deck kit and the hot tub in the backyard.",
-    pay: 3200,
-    follow: { title: "HOT TUB SET", kind: "hotTub", pad: 7, pay: 6200, ring: 0.95 },
-    rep: 2,
-    crane: "yard",
-    roof: false,
-    repGain: 4,
-    ring: 1.2,
-  },
-  container: {
-    id: "container",
-    no: 2,
-    phase: "company",
-    title: "DOCK BOX",
-    kind: "container",
-    pad: 2,
-    theme: "port",
-    brief: "A loaded box at the docks. Long, heavy, and it catches the wind off the water.",
-    pay: 4600,
-    rep: 3,
-    crane: "yard",
-    roof: false,
-    repGain: 2,
-    ring: 1.4,
-  },
-  roof: {
-    id: "roof",
-    no: 3,
-    phase: "company",
-    title: "ROOF SET",
-    kind: "beam",
-    pad: 0,
-    theme: "tower",
-    brief: "One beam for the roof line. The ring is small and the boom is near its limit.",
-    pay: 7000,
-    rep: 4,
-    crane: "yard",
-    roof: true,
-    repGain: 2,
-    ring: 0.8,
-  },
-  hvac: {
-    id: "hvac",
-    no: 4,
-    phase: "company",
-    title: "ROOFTOP UNIT",
-    kind: "hvac",
-    pad: 0,
-    theme: "tower",
-    brief: "A packaged unit over the parapet. Do not clip the edge on the way down.",
-    pay: 8200,
-    rep: 6,
-    crane: "lattice",
-    roof: true,
-    repGain: 3,
-    ring: 0.9,
-  },
-  tracks: {
-    id: "tracks",
-    no: 5,
-    phase: "company",
-    title: "TRACK PICK",
-    kind: "heavy",
-    pad: 2,
-    theme: "yard",
-    brief: "The crawler arrives on the lowboy. Deliver it, then lift the base off the deck.",
-    pay: 8600,
-    rep: 8,
-    crane: "crawler",
-    roof: false,
-    repGain: 3,
-    ring: 1.3,
-  },
-  wind: {
-    id: "wind",
-    no: 6,
-    phase: "company",
-    title: "RIDGE BLADE SET",
-    kind: "blade",
-    pad: 11,
-    theme: "windFarm",
-    brief: "Lift a turbine blade from the delivery cradle to the stand beside the tower. Hard mode adds the ridge wind.",
-    pay: 14800,
-    rep: 10,
-    crane: "heavy",
-    roof: false,
-    repGain: 4,
-    ring: 1.4,
-  },
-};
+export function pickBestRun(current: BestRun | undefined, next: BestRun): BestRun {
+  if (!current) return next;
+  if (GRADE_RANK[next.grade] !== GRADE_RANK[current.grade]) {
+    return GRADE_RANK[next.grade] < GRADE_RANK[current.grade] ? next : current;
+  }
+  const currentRatio = current.off / Math.max(0.1, current.tolerance);
+  const nextRatio = next.off / Math.max(0.1, next.tolerance);
+  return nextRatio < currentRatio ? next : current;
+}
 
-/** Shop shift plus the company calls. Tutorials and odd jobs are not on this board. */
-export const COMPANY_JOBS: JobId[] = ["yard", "spa", "container", "roof", "hvac", "tracks", "wind"];
 
-/** Three tutorials, then two small jobs. That is the whole hired list. */
-export const RENTAL_LEVELS: JobId[] = ["yard", "pipe", "truss", "panel", "garage"];
+/** Grades in the order the ledger and the scorecard read them. */
+export const GRADE_ORDER: Grade[] = ["S", "A", "B", "C"];
 
-/** Every call, in play order, so a test can open one without owning it. */
-export const ALL_JOBS: JobId[] = ["yard", "pipe", "truss", "panel", "garage", "spa", "container", "roof", "hvac", "tracks", "wind"];
+const GRADE_RANK: Record<Grade, number> = { S: 0, A: 1, B: 2, C: 3 };
 
-/** Company calls only. The yard move is a shop shift, not a level. */
-export const LEVEL_COUNT = 6;
+/** The best of two grades, so a sloppy replay never erases a clean set. */
+export function betterGrade(current: Grade | undefined, next: Grade): Grade {
+  if (!current) return next;
+  return GRADE_RANK[next] < GRADE_RANK[current] ? next : current;
+}
+
+/** A job's recorded best grade, or null when it has never been set. */
+export function bestGradeOf(state: CareerState, job: JobId): Grade | null {
+  return state.bestGrades[job] ?? null;
+}
+
+/** Ledger rows in grade order, with a zero for anything never earned. */
+export function gradeSpread(state: CareerState): { grade: Grade; count: number }[] {
+  return GRADE_ORDER.map((grade) => ({ grade, count: state.gradeCounts[grade] ?? 0 }));
+}
 
 /** Level card data for the board and the HUD. */
 export function levelOf(job: JobId) {
@@ -337,7 +177,7 @@ export const FOUNDING_MESSAGE =
   "The papers are filed. Slingline is yours. Hargrove's rental is now your crane. From here you keep the contract, and you pay the fuel, the note, and the shop.";
 
 export type CareerState = {
-  v: 2;
+  v: 4;
   cash: number;
   crane: CraneId;
   reputation: number;
@@ -353,6 +193,22 @@ export type CareerState = {
   job: JobId;
   crawlerOnSite: boolean;
   note: number;
+  /** Best grade recorded per call, across the whole career. */
+  bestGrades: Partial<Record<JobId, Grade>>;
+  /** How many sets of each grade have been landed. */
+  gradeCounts: Record<Grade, number>;
+  /** The ridge capstone has been set. */
+  campaignDone: boolean;
+  /** Bought handling upgrades. */
+  upgrades: UpgradeState;
+  /** 0 is a tight crane, 100 is ready for the shop. */
+  wear: number;
+  /** Drops and tips, newest last, capped for the ledger. */
+  incidents: IncidentRecord[];
+  /** Personal best per call, for the debrief comparison. */
+  bestRuns: Partial<Record<JobId, BestRun>>;
+  /** Last sets for the local miss scatter. */
+  recentSets: SetRecord[];
 };
 
 export type JobOffer = {
@@ -374,6 +230,8 @@ export type JobOffer = {
   reason: string;
   current: boolean;
   leg: number;
+  /** Best grade already recorded for this call, if any. */
+  best: Grade | null;
 };
 
 export type CareerResult = {
@@ -396,7 +254,7 @@ export function money(n: number): string {
 
 export function freshCareer(): CareerState {
   return {
-    v: 2,
+    v: 4,
     cash: 0,
     crane: "rental",
     reputation: 0,
@@ -412,6 +270,14 @@ export function freshCareer(): CareerState {
     job: "yard",
     crawlerOnSite: true,
     note: 0,
+    bestGrades: {},
+    gradeCounts: { S: 0, A: 0, B: 0, C: 0 },
+    campaignDone: false,
+    upgrades: freshUpgrades(),
+    wear: 0,
+    incidents: [],
+    bestRuns: {},
+    recentSets: [],
   };
 }
 
@@ -440,6 +306,64 @@ function isCrane(value: unknown): value is CraneId {
 
 function isJob(value: unknown): value is JobId {
   return typeof value === "string" && value in JOBS;
+}
+
+function isGrade(value: unknown): value is Grade {
+  return value === "S" || value === "A" || value === "B" || value === "C";
+}
+
+function readMetrics(raw: unknown): SetMetricsInput | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const off = finite(row.off, NaN);
+  const tolerance = finite(row.tolerance, NaN);
+  const impact = finite(row.impact, NaN);
+  const impactLimit = finite(row.impactLimit, NaN);
+  const sway = finite(row.sway, NaN);
+  const chart = finite(row.chart, NaN);
+  if (![off, tolerance, impact, impactLimit, sway, chart].every((value) => Number.isFinite(value))) return null;
+  return { off, tolerance, impact, impactLimit, sway, chart };
+}
+
+function readBestRuns(raw: unknown): Partial<Record<JobId, BestRun>> {
+  const table: Partial<Record<JobId, BestRun>> = {};
+  if (!raw || typeof raw !== "object") return table;
+  const record = raw as Record<string, unknown>;
+  for (const job of ALL_JOBS) {
+    const entry = record[job];
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const metrics = readMetrics(entry);
+    if (!metrics || !isGrade(row.grade)) continue;
+    table[job] = { ...metrics, grade: row.grade, pay: finite(row.pay, 0) };
+  }
+  return table;
+}
+
+function readRecentSets(raw: unknown): SetRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: SetRecord[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const metrics = readMetrics(entry);
+    if (!metrics || !isGrade(row.grade) || !isJob(row.job)) continue;
+    rows.push({ ...metrics, job: row.job, grade: row.grade, pay: finite(row.pay, 0) });
+  }
+  return rows.slice(-24);
+}
+
+function readIncidents(raw: unknown): IncidentRecord[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: IncidentRecord[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    if (row.kind !== "drop" && row.kind !== "tip") continue;
+    if (!isJob(row.job)) continue;
+    rows.push({ kind: row.kind, job: row.job, cost: finite(row.cost, 0), insurance: finite(row.insurance, 0) });
+  }
+  return rows.slice(-10);
 }
 
 function copy(state: CareerState): CareerState {
@@ -490,7 +414,10 @@ export function isUnlocked(state: CareerState, job: JobId): { ok: boolean; reaso
   if (craneRank(state.crane) < craneRank(def.crane)) {
     return { ok: false, reason: `Needs the ${CRANES[def.crane].label.toLowerCase()} crane. You own the ${CRANES[state.crane].label.toLowerCase()}.` };
   }
-  if (job === "roof" && !reachesRoof(state.crane)) {
+  if (def.after && !state.bestGrades[def.after]) {
+    return { ok: false, reason: `Set the ${JOBS[def.after].title} first.` };
+  }
+  if ((job === "roof" || job === "curtain") && !reachesRoof(state.crane)) {
     return { ok: false, reason: "This crane cannot reach the roof." };
   }
   if (job === "tracks" && !state.crawlerOnSite) {
@@ -547,6 +474,7 @@ export function activeOffer(state: CareerState): JobOffer {
     reason: gate.reason,
     current: true,
     leg,
+    best: state.bestGrades[id] ?? null,
   };
 }
 
@@ -575,6 +503,7 @@ export function jobBoard(state: CareerState): JobOffer[] {
       reason: gate.reason,
       current,
       leg: 0,
+      best: state.bestGrades[id] ?? null,
     };
   });
 }
@@ -637,6 +566,37 @@ export function foundCompany(state: CareerState): CareerResult {
   next.reputation = Math.max(2, next.reputation);
   next.standing = 100;
   return { ok: true, state: next, message: FOUNDING_MESSAGE, haul: false, banked: 0, matched: false };
+}
+
+/** Buy one handling upgrade. Only a filed company can spend on the crane. */
+export function buyUpgradeLevel(state: CareerState, id: UpgradeId): CareerResult {
+  if (state.status !== "independent") {
+    return { ok: false, state, message: "File Slingline before you spend on upgrades.", haul: false, banked: 0, matched: false };
+  }
+  const purchase = buyUpgrade(state.cash, state.upgrades, id);
+  if (!purchase.ok) return { ok: false, state, message: purchase.message, haul: false, banked: 0, matched: false };
+  const next = copy(state);
+  next.cash = purchase.cash;
+  next.upgrades = purchase.upgrades;
+  return { ok: true, state: next, message: purchase.message, haul: false, banked: 0, matched: false };
+}
+
+/** Clear wear at the shop. */
+export function serviceCareerCrane(state: CareerState): CareerResult {
+  if (state.status !== "independent") {
+    return { ok: false, state, message: "The rental is Hargrove's to service.", haul: false, banked: 0, matched: false };
+  }
+  const serviced = serviceUpgrades(state.cash, state.wear);
+  if (!serviced.ok) return { ok: false, state, message: serviced.message, haul: false, banked: 0, matched: false };
+  const next = copy(state);
+  next.cash = serviced.cash;
+  next.wear = serviced.wear;
+  return { ok: true, state: next, message: serviced.message, haul: false, banked: 0, matched: false };
+}
+
+/** Next upgrade price for the shop button, or null at the top level. */
+export function nextUpgradeCost(state: CareerState, id: UpgradeId): number | null {
+  return upgradeCost(id, state.upgrades);
 }
 
 export function buyLabel(state: CareerState): string {
@@ -732,7 +692,12 @@ function payLine(state: CareerState, offer: JobOffer, banked: number, upkeep: nu
   return `Contract ${money(offer.gross)}. You banked ${money(banked)}.${fuel}${note}`;
 }
 
-export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B"): CareerResult {
+export function resolveSet(
+  state: CareerState,
+  load: LoadKind,
+  grade: Grade = "B",
+  metrics?: SetMetricsInput,
+): CareerResult {
   const offer = activeOffer(state);
   if (load !== offer.kind) return resolveWrongLoad(state);
 
@@ -755,8 +720,19 @@ export function resolveSet(state: CareerState, load: LoadKind, grade: Grade = "B
   next.cash += banked;
   next.note = Math.max(0, next.note - notePaid);
   next.jobsDone += 1;
+  next.bestGrades[offer.id] = betterGrade(next.bestGrades[offer.id], grade);
+  next.gradeCounts[grade] = (next.gradeCounts[grade] ?? 0) + 1;
+  if (metrics) {
+    // Wear and the local history follow the set itself, so a clean set leaves
+    // the crane tight and a hard one shows up in the next service bill.
+    next.wear = wearAfterSet(next.wear, grade, metrics.impact, metrics.impactLimit);
+    next.recentSets = [...next.recentSets, { job: offer.id, grade, pay: banked, ...metrics }].slice(-24);
+    next.bestRuns[offer.id] = pickBestRun(next.bestRuns[offer.id], { grade, pay: banked, ...metrics });
+  }
+  if (offer.id === "rotor") next.campaignDone = true;
 
   let message = `${payLine(next, offer, banked, upkeep, notePaid)} Graded ${grade}.`;
+  if (offer.id === "rotor") message += " The ridge is signed off. Slingline's card is full.";
 
   if (next.status === "hired") {
     next.standing = clamp(next.standing + ECONOMY.standingGain + gradeRep(grade), 0, 100);
@@ -856,6 +832,7 @@ export function resolveFailure(state: CareerState, kind: "drop" | "tip"): Career
     next.job = assignedJob(next);
     next.leg = 0;
     next.roofActive = false;
+    next.incidents = [...next.incidents, { kind, job: state.job, cost: paid, insurance: 0 }].slice(-10);
     const dockLine = paid > 0 ? `Hargrove docked ${money(paid)}.` : "Hargrove had nothing left to dock.";
     const message =
       kind === "tip"
@@ -865,9 +842,14 @@ export function resolveFailure(state: CareerState, kind: "drop" | "tip"): Career
   }
 
   const bill = REPAIR[next.crane] * (kind === "tip" ? 2 : 1);
-  const paid = Math.min(next.cash, bill);
+  // A tip is an insurance event as well as a repair. The cover is charged with
+  // the bill, so the ledger shows the real cost of going over.
+  const cover = kind === "tip" ? Math.round(REPAIR[next.crane] * 0.12) : 0;
+  const paid = Math.min(next.cash, bill + cover);
   next.cash -= paid;
   const unpaid = paid < bill;
+  const insurance = Math.min(cover, Math.max(0, paid - bill));
+  next.incidents = [...next.incidents, { kind, job: state.job, cost: paid - insurance, insurance }].slice(-10);
   if (kind === "tip" || unpaid) next.downtime = Math.min(ECONOMY.downtimeCap, next.downtime + 1);
   if (!isUnlocked(next, next.job).ok) {
     next.job = "yard";
@@ -879,13 +861,14 @@ export function resolveFailure(state: CareerState, kind: "drop" | "tip"): Career
   const what = kind === "tip" ? "Crane went over." : "Dropped load.";
   const billLine = unpaid
     ? `Shop bill took ${money(paid)}, all you had.`
-    : `Shop bill ${money(paid)}.`;
+    : `Shop bill ${money(paid - insurance)}.`;
+  const coverLine = insurance > 0 ? ` Insurance ${money(insurance)}.` : "";
   const shop = next.downtime > 0 ? " One shop shift. A yard move clears it." : "";
   const locked = next.job === "yard" && state.job !== "yard" ? " That call is off the board." : "";
   return {
     ok: true,
     state: next,
-    message: `${what} ${billLine} You have ${money(next.cash)}.${shop}${locked}`,
+    message: `${what} ${billLine}${coverLine} You have ${money(next.cash)}.${shop}${locked}`,
     haul: false,
     banked: -paid,
     matched: false,
@@ -923,6 +906,18 @@ export function careerSummary(state: CareerState) {
     tutorial: state.status === "hired" && offer.phase === "tutorial",
     found,
     hired: state.status === "hired",
+    best: offer.best,
+    gradeCounts: state.gradeCounts,
+    sets: GRADE_ORDER.reduce((sum, grade) => sum + (state.gradeCounts[grade] ?? 0), 0),
+    campaignDone: state.campaignDone,
+    upgrades: state.upgrades,
+    wear: state.wear,
+    wearLabel: wearLabel(state.wear),
+    serviceCost: serviceCost(state.wear),
+    bestRuns: state.bestRuns,
+    recentSets: state.recentSets,
+    incidents: state.incidents,
+    lastIncident: state.incidents[state.incidents.length - 1] ?? null,
   };
 }
 
@@ -962,7 +957,8 @@ export function loadCareer(raw: unknown): CareerState {
   const reputation = finite(record.reputation, 0, 0, 9999);
   const roofDone = record.roofDone === true;
   const roofActive = record.roofActive === true;
-  const versioned = record.v === 2 || record.status === "hired" || record.status === "independent";
+  const versioned =
+    record.v === 2 || record.v === 3 || record.v === 4 || record.status === "hired" || record.status === "independent";
   if (!versioned) return migrateLegacy({ cash, crane, reputation, roofDone, roofActive });
 
   const next = freshCareer();
@@ -978,6 +974,30 @@ export function loadCareer(raw: unknown): CareerState {
   next.contract = finite(record.contract, 0, 0, 100000);
   next.leg = record.leg === 1 ? 1 : 0;
   next.note = finite(record.note, 0);
+  next.campaignDone = record.campaignDone === true;
+  next.upgrades = readUpgrades(record.upgrades);
+  next.wear = finite(record.wear, 0, 0, 100);
+  next.bestRuns = readBestRuns(record.bestRuns);
+  next.recentSets = readRecentSets(record.recentSets);
+  next.incidents = readIncidents(record.incidents);
+  const savedBest = record.bestGrades;
+  if (savedBest && typeof savedBest === "object") {
+    const table = savedBest as Record<string, unknown>;
+    for (const job of ALL_JOBS) {
+      const grade = table[job];
+      if (grade === "S" || grade === "A" || grade === "B" || grade === "C") next.bestGrades[job] = grade;
+    }
+  }
+  const savedCounts = record.gradeCounts;
+  if (savedCounts && typeof savedCounts === "object") {
+    const table = savedCounts as Record<string, unknown>;
+    next.gradeCounts = {
+      S: finite(table.S, 0, 0, 1_000_000),
+      A: finite(table.A, 0, 0, 1_000_000),
+      B: finite(table.B, 0, 0, 1_000_000),
+      C: finite(table.C, 0, 0, 1_000_000),
+    };
+  }
   if (record.crawlerOnSite === false) next.crawlerOnSite = false;
   else if (record.crawlerOnSite === true) next.crawlerOnSite = true;
   else next.crawlerOnSite = crane !== "crawler";
@@ -996,21 +1016,39 @@ export function loadCareer(raw: unknown): CareerState {
 }
 
 export function saveCareer(state: CareerState) {
-  return { ...state, v: 2 as const };
+  return { ...state, v: 4 as const };
 }
 
-export function readCareer(storage: Store): CareerState {
+export const CAREER_BACKUP_KEY = "slingline-career-backup";
+
+function readStored(storage: Store, key: string): CareerState | null {
   try {
-    const text = storage.getItem(CAREER_KEY);
-    if (!text) return freshCareer();
+    const text = storage.getItem(key);
+    if (!text) return null;
     return loadCareer(JSON.parse(text) as unknown);
   } catch {
-    return freshCareer();
+    return null;
   }
 }
 
+/**
+ * Read the career, falling back to the last good copy when the primary save is
+ * corrupt or half-written. A crash mid-write should cost one session, not a
+ * campaign.
+ */
+export function readCareer(storage: Store): CareerState {
+  return readStored(storage, CAREER_KEY) ?? readStored(storage, CAREER_BACKUP_KEY) ?? freshCareer();
+}
+
 export function writeCareer(state: CareerState, storage: Store) {
-  storage.setItem(CAREER_KEY, JSON.stringify(saveCareer(state)));
+  const text = JSON.stringify(saveCareer(state));
+  try {
+    const previous = storage.getItem(CAREER_KEY);
+    if (previous) storage.setItem(CAREER_BACKUP_KEY, previous);
+  } catch {
+    /* a full quota should not stop the new save */
+  }
+  storage.setItem(CAREER_KEY, text);
 }
 
 export function readCareerStore(): CareerState {
