@@ -18,6 +18,7 @@ import {
   buyDetail,
   buyLabel as careerBuyLabel,
   buyUpgradeLevel,
+  campaignComplete,
   companyName as careerCompanyName,
   nextUpgradeCost,
   serviceCareerCrane,
@@ -132,6 +133,15 @@ const FLOOR = { x: 36, z: -32, y: 6.71 };
 
 function clamp(v: number, a: number, b: number) {
   return Math.max(a, Math.min(b, v));
+}
+
+/** Degrees between a heading and the wanted line, folded to a half turn. */
+function offSquare(angle: number, want: number) {
+  const delta = Math.atan2(Math.sin(angle - want), Math.cos(angle - want));
+  // A panel or girder turned end for end is the same piece on the same
+  // guides, so heading is measured modulo half a turn.
+  const symmetric = Math.atan2(Math.sin(2 * delta), Math.cos(2 * delta)) / 2;
+  return Math.abs((symmetric * 180) / Math.PI);
 }
 
 function readBest() {
@@ -373,12 +383,19 @@ export class CraneSim {
   /** Degrees between the load's current heading and the job's guides. */
   headingError(): number | null {
     const want = this.headingTarget;
-    if (want === null) return null;
-    const delta = Math.atan2(Math.sin(this.loadYaw() - want), Math.cos(this.loadYaw() - want));
-    // A panel or girder turned end for end is the same piece on the same
-    // guides, so heading is measured modulo half a turn.
-    const symmetric = Math.atan2(Math.sin(2 * delta), Math.cos(2 * delta)) / 2;
-    return Math.abs((symmetric * 180) / Math.PI);
+    return want === null ? null : offSquare(this.loadYaw(), want);
+  }
+
+  /**
+   * Degrees between the carrier's heading and the job's guides while the rig
+   * is still being spotted. The pads lock this heading in, so the player can
+   * square the truck before the boom goes live. Nothing to square once the
+   * load is on the hook or the crawler is still on the lowboy.
+   */
+  setupHeadingError(): number | null {
+    const want = this.headingTarget;
+    if (want === null || this.phase !== "seek" || this.state === "lifting" || this.hauling) return null;
+    return offSquare(this.heading, want);
   }
 
   get atMapleSetup() {
@@ -2115,9 +2132,9 @@ export class CraneSim {
       this.lastSet = this.report(grade, metrics, result.banked, gradeRep(grade));
       this.debriefLeft = 14;
       this.debriefHold = true;
-      if (result.state.campaignDone && !before.campaignDone) {
+      if (campaignComplete(result.state) && !campaignComplete(before)) {
         this.careerBeat = result.message;
-        this.beatTitle = "The ridge is signed off";
+        this.beatTitle = "The card is full";
       }
     }
     this.park(true);
