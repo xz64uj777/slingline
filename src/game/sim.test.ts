@@ -666,6 +666,26 @@ describe("set ring tolerance", () => {
     assert.ok((sim.headingError() ?? 0) > 80);
   });
 
+  it("squares the carrier heading only while the rig is being spotted", () => {
+    const sim = new CraneSim();
+    sim.career = { ...sim.career, status: "independent", job: "culvert", reputation: 24 };
+    sim.stockYard(false);
+
+    sim.heading = 0;
+    assert.ok((sim.setupHeadingError() ?? 0) > 80, "the truck is across the pipe's line");
+    sim.heading = Math.PI / 2;
+    assert.ok((sim.setupHeadingError() ?? 99) < 0.001);
+    // End for end still lines the carrier up with the same guide.
+    sim.heading = Math.PI / 2 + Math.PI;
+    assert.ok((sim.setupHeadingError() ?? 99) < 0.001);
+
+    sim.state = "lifting";
+    assert.equal(sim.setupHeadingError(), null, "the pads are down, so the heading is already locked in");
+    sim.state = "driving";
+    sim.hauling = true;
+    assert.equal(sim.setupHeadingError(), null, "the crawler is on the lowboy, not spotting");
+  });
+
   it("sets the curtain-wall panel on the high deck, square to the facade", () => {
     const sim = new CraneSim();
     // acceptJob sets roofActive from the job's roof flag on the way in.

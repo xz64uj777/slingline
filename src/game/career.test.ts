@@ -8,6 +8,8 @@ import {
   buyCrane,
   canFound,
   CAREER_KEY,
+  COMPANY_JOBS,
+  careerSummary,
   companyName,
   contractLabel,
   downPayment,
@@ -612,7 +614,7 @@ describe("career ledger", () => {
     assert.equal(activeOffer({ ...worse.state, job: "spa", leg: 0 }).best, "S");
   });
 
-  it("keeps the rotor locked until the ridge blade is set, then finishes the campaign", () => {
+  it("keeps the rotor locked until the ridge blade is set, then signs off the ridge", () => {
     const ready = owner({ reputation: 14, crane: "crawler", crawlerOnSite: true, job: "wind" });
     const locked = isUnlocked(ready, "rotor");
     assert.equal(locked.ok, false);
@@ -620,27 +622,59 @@ describe("career ledger", () => {
 
     const blade = resolveSet({ ...ready, crane: "heavy" }, "blade", "A");
     assert.equal(blade.matched, true);
-    assert.equal(blade.state.campaignDone, false);
+    assert.equal(careerSummary(blade.state).campaignDone, false);
     const open = isUnlocked({ ...blade.state, crane: "crawler" }, "rotor");
     assert.equal(open.ok, true, open.reason);
 
     const finish = resolveSet({ ...blade.state, crane: "crawler", crawlerOnSite: true, job: "rotor" }, "rotor", "A");
     assert.equal(finish.matched, true);
-    assert.equal(finish.state.campaignDone, true);
-    assert.equal(finish.state.bestGrades.rotor, "A");
+    assert.equal(careerSummary(finish.state).campaignDone, false, "the second contract still has four calls open");
     assert.match(finish.message, /signed off/i);
+    assert.doesNotMatch(finish.message, /card is full/i);
   });
 
-  it("round-trips the ledger and the capstone flag", () => {
+  it("fills the card only once every call on the board is set", () => {
+    const open = COMPANY_JOBS.filter((id) => id !== "curtain");
+    const state = owner({
+      reputation: 24,
+      crane: "lattice",
+      crawlerOnSite: true,
+      job: "curtain",
+      bestGrades: Object.fromEntries(open.map((id) => [id, "B"])) as CareerState["bestGrades"],
+    });
+    assert.equal(careerSummary(state).campaignDone, false);
+
+    const finish = resolveSet(state, "panel", "A");
+    assert.equal(finish.matched, true);
+    assert.match(finish.message, /card is full/i);
+    assert.equal(careerSummary(finish.state).campaignDone, true);
+  });
+
+  it("round-trips the ledger and counts a card as full only when it is", () => {
     const state = owner({ reputation: 14, crane: "crawler", crawlerOnSite: true, job: "rotor" });
     state.bestGrades = { wind: "S", spa: "A" };
     state.gradeCounts = { S: 3, A: 2, B: 1, C: 0 };
-    state.campaignDone = true;
     const save = memory();
     writeCareer(state, save.storage);
+
     const loaded = readCareer(save.storage);
     assert.deepEqual(loaded.bestGrades, { wind: "S", spa: "A" });
     assert.deepEqual(loaded.gradeCounts, { S: 3, A: 2, B: 1, C: 0 });
-    assert.equal(loaded.campaignDone, true);
+    assert.equal(careerSummary(loaded).campaignDone, false);
+
+    state.bestGrades = Object.fromEntries(COMPANY_JOBS.map((id) => [id, "B"])) as CareerState["bestGrades"];
+    writeCareer(state, save.storage);
+    assert.equal(careerSummary(readCareer(save.storage)).campaignDone, true);
+  });
+
+  it("ignores a finished flag from a save written before the second contract", () => {
+    const state = owner({ reputation: 14, crane: "crawler", crawlerOnSite: true, job: "rotor" });
+    state.bestGrades = { wind: "S", spa: "A" };
+    const save = memory();
+    writeCareer(state, save.storage);
+    const raw = JSON.parse(save.storage.getItem(CAREER_KEY) ?? "{}") as Record<string, unknown>;
+    save.storage.setItem(CAREER_KEY, JSON.stringify({ ...raw, campaignDone: true }));
+
+    assert.equal(careerSummary(readCareer(save.storage)).campaignDone, false, "four calls are still open");
   });
 });

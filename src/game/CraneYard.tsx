@@ -812,7 +812,7 @@ export function CraneYard() {
         } else {
           objective = `PICKUP · Find the marked ${liveCargo}; use the HOOK camera if needed.`;
         }
-        const headingOff = sim.phase === "carry" ? sim.headingError() : null;
+        const headingOff = sim.phase === "carry" ? sim.headingError() : sim.setupHeadingError();
         if (headingOff !== null) {
           objective += headingOff <= 2 ? " · SQUARE" : ` · ${Math.round(headingOff)}° OFF SQUARE`;
         }
@@ -1922,7 +1922,7 @@ export function CraneYard() {
             ) : null}
             {summary.campaignDone ? (
               <div className="mt-3 border border-primary bg-bg p-2">
-                <p className="font-display text-xs tracking-widest text-primary">RIDGE COMPLETE · SCORECARD</p>
+                <p className="font-display text-xs tracking-widest text-primary">CAMPAIGN COMPLETE · SCORECARD</p>
                 <div className="mt-1 grid grid-cols-4 gap-1 text-center">
                   {gradeSpread(books).map((row) => (
                     <p key={row.grade}>

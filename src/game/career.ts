@@ -144,6 +144,15 @@ export function bestGradeOf(state: CareerState, job: JobId): Grade | null {
   return state.bestGrades[job] ?? null;
 }
 
+/**
+ * The card is full once every call on the board has a set on the books. The
+ * rotor signs off the ridge, but the second contract still has calls open
+ * after it, so the capstone cannot be the end of the campaign.
+ */
+export function campaignComplete(state: CareerState): boolean {
+  return COMPANY_JOBS.every((job) => state.bestGrades[job] !== undefined);
+}
+
 /** Ledger rows in grade order, with a zero for anything never earned. */
 export function gradeSpread(state: CareerState): { grade: Grade; count: number }[] {
   return GRADE_ORDER.map((grade) => ({ grade, count: state.gradeCounts[grade] ?? 0 }));
@@ -197,8 +206,6 @@ export type CareerState = {
   bestGrades: Partial<Record<JobId, Grade>>;
   /** How many sets of each grade have been landed. */
   gradeCounts: Record<Grade, number>;
-  /** The ridge capstone has been set. */
-  campaignDone: boolean;
   /** Bought handling upgrades. */
   upgrades: UpgradeState;
   /** 0 is a tight crane, 100 is ready for the shop. */
@@ -272,7 +279,6 @@ export function freshCareer(): CareerState {
     note: 0,
     bestGrades: {},
     gradeCounts: { S: 0, A: 0, B: 0, C: 0 },
-    campaignDone: false,
     upgrades: freshUpgrades(),
     wear: 0,
     incidents: [],
@@ -367,7 +373,8 @@ function readIncidents(raw: unknown): IncidentRecord[] {
 }
 
 function copy(state: CareerState): CareerState {
-  return { ...state };
+  // The ledgers are cloned so a set never writes through to the state it came from.
+  return { ...state, bestGrades: { ...state.bestGrades }, gradeCounts: { ...state.gradeCounts }, bestRuns: { ...state.bestRuns } };
 }
 
 function roofFor(job: JobId) {
@@ -729,10 +736,10 @@ export function resolveSet(
     next.recentSets = [...next.recentSets, { job: offer.id, grade, pay: banked, ...metrics }].slice(-24);
     next.bestRuns[offer.id] = pickBestRun(next.bestRuns[offer.id], { grade, pay: banked, ...metrics });
   }
-  if (offer.id === "rotor") next.campaignDone = true;
-
   let message = `${payLine(next, offer, banked, upkeep, notePaid)} Graded ${grade}.`;
-  if (offer.id === "rotor") message += " The ridge is signed off. Slingline's card is full.";
+  if (offer.id === "rotor") message += " The ridge is signed off.";
+  // A skipped call still has to be set, so only a full card ends the campaign.
+  if (campaignComplete(next) && !campaignComplete(state)) message += " Slingline's card is full.";
 
   if (next.status === "hired") {
     next.standing = clamp(next.standing + ECONOMY.standingGain + gradeRep(grade), 0, 100);
@@ -909,7 +916,7 @@ export function careerSummary(state: CareerState) {
     best: offer.best,
     gradeCounts: state.gradeCounts,
     sets: GRADE_ORDER.reduce((sum, grade) => sum + (state.gradeCounts[grade] ?? 0), 0),
-    campaignDone: state.campaignDone,
+    campaignDone: campaignComplete(state),
     upgrades: state.upgrades,
     wear: state.wear,
     wearLabel: wearLabel(state.wear),
@@ -974,7 +981,6 @@ export function loadCareer(raw: unknown): CareerState {
   next.contract = finite(record.contract, 0, 0, 100000);
   next.leg = record.leg === 1 ? 1 : 0;
   next.note = finite(record.note, 0);
-  next.campaignDone = record.campaignDone === true;
   next.upgrades = readUpgrades(record.upgrades);
   next.wear = finite(record.wear, 0, 0, 100);
   next.bestRuns = readBestRuns(record.bestRuns);
